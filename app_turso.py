@@ -3,7 +3,7 @@ import pandas as pd
 import libsql
 import re
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -195,9 +195,29 @@ def get_db():
             divergentes INTEGER DEFAULT 0
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS reposicao_loja (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            qtd INTEGER NOT NULL DEFAULT 0,
+            criado_em TEXT NOT NULL,
+            reposto INTEGER DEFAULT 0,
+            reposto_em TEXT DEFAULT ''
+        )
+    """)
     conn.commit()
 
     return conn
+
+
+# Categorias que são de DEPÓSITO (não vão para reposição na loja)
+CATEGORIAS_DEPOSITO = {
+    "HERBICIDAS", "INSETICIDAS", "FUNGICIDAS", "NEMATICIDAS",
+    "ADUBOS FOLIARES", "ADUBOS QUÍMICOS", "ADUBOS CORRETIVOS",
+    "ADJUVANTES", "ÓLEOS", "SEMENTES", "RAÇÃO MINERAL",
+}
 
 
 def sync_db():
@@ -228,6 +248,59 @@ def reset_db():
     conn = get_db()
     conn.execute("DELETE FROM estoque_mestre")
     conn.execute("DELETE FROM historico_uploads")
+    conn.execute("DELETE FROM reposicao_loja")
+    conn.commit()
+    sync_db()
+
+
+def detectar_reposicao_loja(records: list, conn, now: str):
+    """
+    Detecta produtos fora das categorias de depósito e adiciona à lista de reposição.
+    Só adiciona se o produto não estiver já pendente (não reposto) na tabela.
+    """
+    count = 0
+    for r in records:
+        if r["categoria"] in CATEGORIAS_DEPOSITO:
+            continue
+
+        # Verifica se já existe pendente (não reposto) para esse código
+        existing = conn.execute(
+            "SELECT id FROM reposicao_loja WHERE codigo = ? AND reposto = 0",
+            (r["codigo"],)
+        ).fetchone()
+
+        if not existing:
+            conn.execute("""
+                INSERT INTO reposicao_loja (codigo, produto, categoria, qtd, criado_em)
+                VALUES (?, ?, ?, ?, ?)
+            """, (r["codigo"], r["produto"], r["categoria"], r["qtd_sistema"], now))
+            count += 1
+
+    return count
+
+
+def get_reposicao_pendente() -> pd.DataFrame:
+    """Retorna itens de reposição pendentes (não repostos E com menos de 7 dias)."""
+    conn = get_db()
+    cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+    rows = conn.execute("""
+        SELECT id, codigo, produto, categoria, qtd, criado_em
+        FROM reposicao_loja
+        WHERE reposto = 0 AND criado_em >= ?
+        ORDER BY criado_em DESC
+    """, (cutoff,)).fetchall()
+    cols = ["id", "codigo", "produto", "categoria", "qtd", "criado_em"]
+    return pd.DataFrame(rows, columns=cols)
+
+
+def marcar_reposto(item_id: int):
+    """Marca um item como reposto na loja."""
+    conn = get_db()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    conn.execute(
+        "UPDATE reposicao_loja SET reposto = 1, reposto_em = ? WHERE id = ?",
+        (now, item_id)
+    )
     conn.commit()
     sync_db()
 
@@ -673,6 +746,7 @@ def upload_parcial(uploaded_file) -> tuple:
             novos += 1
 
     n_div = sum(1 for r in records if r["status"] != "ok")
+    n_repo = detectar_reposicao_loja(records, conn, now)
     conn.execute("""
         INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -688,6 +762,8 @@ def upload_parcial(uploaded_file) -> tuple:
         msg += f" · {novos} novos"
     if n_div:
         msg += f" · {n_div} divergências"
+    if n_repo:
+        msg += f" · 🏪 {n_repo} para repor na loja"
     return (True, msg)
 
 
@@ -933,6 +1009,9 @@ if has_mestre:
         ]
     )
 
+    df_reposicao = get_reposicao_pendente()
+    n_repor = len(df_reposicao)
+
     st.markdown(f"""
     <div class="stat-row">
         <div class="stat-card">
@@ -956,8 +1035,8 @@ if has_mestre:
             <div class="stat-label">Danificados</div>
         </div>
         <div class="stat-card">
-            <div class="stat-value blue">{n_sem_contagem}</div>
-            <div class="stat-label">Sem Contagem</div>
+            <div class="stat-value blue">{n_repor}</div>
+            <div class="stat-label">Repor Loja</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -969,7 +1048,7 @@ if has_mestre:
         "🗺️ Mapa Estoque",
         "⚠️ Divergências",
         "💔 Danificados",
-        "🔘 Sem Contagem",
+        "🏪 Repor na Loja",
         "📝 Log de Uploads",
     ])
 
@@ -997,18 +1076,39 @@ if has_mestre:
             )
 
     with t4:
-        df_sem = df_view[
-            (df_view["ultima_contagem"].isna())
-            | (df_view["ultima_contagem"].astype(str).isin(["", "nan", "None"]))
-        ]
-        if df_sem.empty:
-            st.success("Todos os produtos foram contados! 🎉")
+        if df_reposicao.empty:
+            st.success("Nenhum produto pendente de reposição na loja! 🎉")
         else:
-            st.caption(f"{len(df_sem)} produtos ainda não tiveram contagem parcial.")
-            st.dataframe(
-                df_sem[["codigo", "produto", "categoria", "qtd_sistema"]],
-                hide_index=True, use_container_width=True,
+            st.caption(
+                f"{n_repor} produto(s) para levar/repor na loja. "
+                "Itens somem automaticamente após 7 dias ou quando marcados como repostos."
             )
+            for _, item in df_reposicao.iterrows():
+                dias_atras = (datetime.now() - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
+                if dias_atras == 0:
+                    tempo = "hoje"
+                elif dias_atras == 1:
+                    tempo = "ontem"
+                else:
+                    tempo = f"{dias_atras} dias atrás"
+
+                col_info, col_btn = st.columns([5, 1])
+                with col_info:
+                    st.markdown(
+                        f'<div style="background:#111827; border:1px solid #1e293b; border-radius:8px; '
+                        f'padding:8px 12px; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">'
+                        f'<div>'
+                        f'<span style="color:#e0e6ed; font-weight:700; font-size:0.85rem;">{item["produto"]}</span>'
+                        f'<span style="color:#64748b; font-size:0.65rem; margin-left:8px;">{item["categoria"]} · Qtd: {item["qtd"]}</span>'
+                        f'</div>'
+                        f'<span style="color:#3b82f6; font-size:0.6rem; font-family:monospace;">{tempo}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                with col_btn:
+                    if st.button("✅", key=f"repor_{item['id']}", help="Marcar como reposto"):
+                        marcar_reposto(int(item["id"]))
+                        st.rerun()
 
     with t5:
         conn = get_db()
