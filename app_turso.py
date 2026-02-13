@@ -94,25 +94,6 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════════════════════
 # DATABASE — TURSO (libSQL na nuvem) com Embedded Replica local
 # ══════════════════════════════════════════════════════════════════════════════
-#
-# Como funciona:
-#   - O banco "verdadeiro" fica no Turso (nuvem).
-#   - Cada máquina mantém uma réplica local (camda_local.db) que sincroniza
-#     automaticamente com o Turso.
-#   - Leituras são instantâneas (local), escritas vão pro Turso e sincronizam.
-#
-# Variáveis de ambiente necessárias (colocar no .env ou no Streamlit Secrets):
-#   TURSO_DATABASE_URL=libsql://seu-banco-xxx.turso.io
-#   TURSO_AUTH_TOKEN=eyJhbGc...
-#
-# Para criar o banco no Turso:
-#   1. Instalar CLI: curl -sSfL https://get.tur.so/install.sh | bash
-#   2. turso auth login
-#   3. turso db create camda-estoque
-#   4. turso db show --url camda-estoque       → TURSO_DATABASE_URL
-#   5. turso db tokens create camda-estoque    → TURSO_AUTH_TOKEN
-#
-# ══════════════════════════════════════════════════════════════════════════════
 
 # Tenta carregar do .env se existir
 try:
@@ -230,27 +211,94 @@ def sync_db():
             st.warning(f"⚠️ Sync falhou: {e}. Os dados foram salvos localmente e serão sincronizados depois.")
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# LEITURAS DO BANCO — todas com try/except + fallback para DataFrame vazio
+# ══════════════════════════════════════════════════════════════════════════════
+
 def get_current_stock() -> pd.DataFrame:
-    conn = get_db()
-    rows = conn.execute("SELECT * FROM estoque_mestre ORDER BY categoria, produto").fetchall()
+    """Retorna todo o estoque mestre. Fallback para DF vazio se houver erro."""
     cols = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
             "diferenca", "nota", "status", "ultima_contagem", "criado_em"]
-    return pd.DataFrame(rows, columns=cols)
+    try:
+        conn = get_db()
+        rows = conn.execute("SELECT * FROM estoque_mestre ORDER BY categoria, produto").fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao carregar estoque: {e}")
+        return pd.DataFrame(columns=cols)
 
 
 def get_stock_count() -> int:
-    conn = get_db()
-    row = conn.execute("SELECT COUNT(*) FROM estoque_mestre").fetchone()
-    return row[0] if row else 0
+    """Retorna quantidade de produtos no estoque. Fallback para 0 se houver erro."""
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT COUNT(*) FROM estoque_mestre").fetchone()
+        return row[0] if row else 0
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao contar estoque: {e}")
+        return 0
+
+
+def get_reposicao_pendente() -> pd.DataFrame:
+    """Retorna itens de reposição pendentes (não repostos E com menos de 7 dias).
+    Fallback para DF vazio se houver erro."""
+    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "criado_em"]
+    try:
+        conn = get_db()
+        cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
+        rows = conn.execute("""
+            SELECT id, codigo, produto, categoria, qtd_vendida, criado_em
+            FROM reposicao_loja
+            WHERE reposto = 0 AND criado_em >= ?
+            ORDER BY criado_em DESC
+        """, [cutoff]).fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao buscar reposição: {e}")
+        return pd.DataFrame(columns=cols)
+
+
+def get_historico_uploads() -> pd.DataFrame:
+    """Retorna histórico de uploads. Fallback para DF vazio se houver erro."""
+    cols = ["data", "tipo", "arquivo", "total_produtos_lote", "novos", "atualizados", "divergentes"]
+    try:
+        conn = get_db()
+        rows = conn.execute(
+            "SELECT data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes "
+            "FROM historico_uploads ORDER BY id DESC LIMIT 20"
+        ).fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao carregar histórico: {e}")
+        return pd.DataFrame(columns=cols)
 
 
 def reset_db():
-    conn = get_db()
-    conn.execute("DELETE FROM estoque_mestre")
-    conn.execute("DELETE FROM historico_uploads")
-    conn.execute("DELETE FROM reposicao_loja")
-    conn.commit()
-    sync_db()
+    """Limpa todas as tabelas. Com try/except para não quebrar o app."""
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM estoque_mestre")
+        conn.execute("DELETE FROM historico_uploads")
+        conn.execute("DELETE FROM reposicao_loja")
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao limpar banco: {e}")
+
+
+def marcar_reposto(item_id: int):
+    """Marca um item como reposto na loja."""
+    try:
+        conn = get_db()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "UPDATE reposicao_loja SET reposto = 1, reposto_em = ? WHERE id = ?",
+            [now, item_id]
+        )
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao marcar reposto: {e}")
 
 
 def detectar_reposicao_loja(records: list, conn, now: str):
@@ -261,53 +309,27 @@ def detectar_reposicao_loja(records: list, conn, now: str):
     """
     count = 0
     for r in records:
-        # Normaliza a categoria para comparação
         cat_upper = r["categoria"].upper().strip()
         if cat_upper not in CATEGORIAS_REPOSICAO_LOJA:
             continue
 
-        # Verifica se já existe pendente (não reposto) para esse código
-        existing = conn.execute(
-            "SELECT id FROM reposicao_loja WHERE codigo = ? AND reposto = 0",
-            (r["codigo"],)
-        ).fetchone()
+        try:
+            existing = conn.execute(
+                "SELECT id FROM reposicao_loja WHERE codigo = ? AND reposto = 0",
+                [r["codigo"]]
+            ).fetchone()
 
-        if not existing:
-            # Usa qtd_vendida se existir, senão qtd_sistema
-            qtd_v = r.get("qtd_vendida", r["qtd_sistema"])
-            conn.execute("""
-                INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em)
-                VALUES (?, ?, ?, ?, ?)
-            """, (r["codigo"], r["produto"], r["categoria"], qtd_v, now))
-            count += 1
+            if not existing:
+                qtd_v = r.get("qtd_vendida", r["qtd_sistema"])
+                conn.execute("""
+                    INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em)
+                    VALUES (?, ?, ?, ?, ?)
+                """, [r["codigo"], r["produto"], r["categoria"], qtd_v, now])
+                count += 1
+        except Exception:
+            continue
 
     return count
-
-
-def get_reposicao_pendente() -> pd.DataFrame:
-    """Retorna itens de reposição pendentes (não repostos E com menos de 7 dias)."""
-    conn = get_db()
-    cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-    rows = conn.execute("""
-        SELECT id, codigo, produto, categoria, qtd_vendida, criado_em
-        FROM reposicao_loja
-        WHERE reposto = 0 AND criado_em >= ?
-        ORDER BY criado_em DESC
-    """, (cutoff,)).fetchall()
-    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "criado_em"]
-    return pd.DataFrame(rows, columns=cols)
-
-
-def marcar_reposto(item_id: int):
-    """Marca um item como reposto na loja."""
-    conn = get_db()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute(
-        "UPDATE reposicao_loja SET reposto = 1, reposto_em = ? WHERE id = ?",
-        (now, item_id)
-    )
-    conn.commit()
-    sync_db()
 
 
 # ── Classificação e Parsing ──────────────────────────────────────────────────
@@ -685,31 +707,34 @@ def upload_mestre(uploaded_file) -> tuple:
         return (False, result)
 
     records = result
-    conn = get_db()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn = get_db()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    conn.execute("DELETE FROM estoque_mestre")
+        conn.execute("DELETE FROM estoque_mestre")
 
-    for r in records:
+        for r in records:
+            conn.execute("""
+                INSERT INTO estoque_mestre
+                    (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                r["codigo"], r["produto"], r["categoria"],
+                r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                r["nota"], r["status"], now, now,
+            ])
+
+        n_div = sum(1 for r in records if r["status"] != "ok")
         conn.execute("""
-            INSERT INTO estoque_mestre
-                (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            r["codigo"], r["produto"], r["categoria"],
-            r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
-            r["nota"], r["status"], now, now,
-        ))
+            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, [now, "MESTRE", uploaded_file.name, len(records), len(records), 0, n_div])
 
-    n_div = sum(1 for r in records if r["status"] != "ok")
-    conn.execute("""
-        INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (now, "MESTRE", uploaded_file.name, len(records), len(records), 0, n_div))
-
-    conn.commit()
-    sync_db()  # ← Sincroniza com Turso após escrita
-    return (True, f"✅ Mestre carregado: {len(records)} produtos ({n_div} divergências)")
+        conn.commit()
+        sync_db()
+        return (True, f"✅ Mestre carregado: {len(records)} produtos ({n_div} divergências)")
+    except Exception as e:
+        return (False, f"❌ Erro ao salvar mestre: {e}")
 
 
 # ── Upload Parcial ───────────────────────────────────────────────────────────
@@ -720,60 +745,63 @@ def upload_parcial(uploaded_file) -> tuple:
         return (False, result)
 
     records = result
-    conn = get_db()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    novos = 0
-    atualizados = 0
+    try:
+        conn = get_db()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        novos = 0
+        atualizados = 0
 
-    for r in records:
-        existing = conn.execute(
-            "SELECT codigo FROM estoque_mestre WHERE codigo = ?", (r["codigo"],)
-        ).fetchone()
+        for r in records:
+            existing = conn.execute(
+                "SELECT codigo FROM estoque_mestre WHERE codigo = ?", [r["codigo"]]
+            ).fetchone()
 
-        if existing:
-            conn.execute("""
-                UPDATE estoque_mestre SET
-                    produto = ?, categoria = ?, qtd_sistema = ?, qtd_fisica = ?,
-                    diferenca = ?, nota = ?, status = ?, ultima_contagem = ?
-                WHERE codigo = ?
-            """, (
-                r["produto"], r["categoria"],
-                r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
-                r["nota"], r["status"], now, r["codigo"],
-            ))
-            atualizados += 1
-        else:
-            conn.execute("""
-                INSERT INTO estoque_mestre
-                    (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                r["codigo"], r["produto"], r["categoria"],
-                r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
-                r["nota"], r["status"], now, now,
-            ))
-            novos += 1
+            if existing:
+                conn.execute("""
+                    UPDATE estoque_mestre SET
+                        produto = ?, categoria = ?, qtd_sistema = ?, qtd_fisica = ?,
+                        diferenca = ?, nota = ?, status = ?, ultima_contagem = ?
+                    WHERE codigo = ?
+                """, [
+                    r["produto"], r["categoria"],
+                    r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                    r["nota"], r["status"], now, r["codigo"],
+                ])
+                atualizados += 1
+            else:
+                conn.execute("""
+                    INSERT INTO estoque_mestre
+                        (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, [
+                    r["codigo"], r["produto"], r["categoria"],
+                    r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                    r["nota"], r["status"], now, now,
+                ])
+                novos += 1
 
-    n_div = sum(1 for r in records if r["status"] != "ok")
-    n_repo = detectar_reposicao_loja(records, conn, now)
-    conn.execute("""
-        INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (now, "PARCIAL", uploaded_file.name, len(records), novos, atualizados, n_div))
+        n_div = sum(1 for r in records if r["status"] != "ok")
+        n_repo = detectar_reposicao_loja(records, conn, now)
+        conn.execute("""
+            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, [now, "PARCIAL", uploaded_file.name, len(records), novos, atualizados, n_div])
 
-    conn.commit()
-    sync_db()  # ← Sincroniza com Turso após escrita
+        conn.commit()
+        sync_db()
 
-    msg = f"✅ Parcial processada: {len(records)} produtos"
-    if atualizados:
-        msg += f" · {atualizados} atualizados"
-    if novos:
-        msg += f" · {novos} novos"
-    if n_div:
-        msg += f" · {n_div} divergências"
-    if n_repo:
-        msg += f" · 🏪 {n_repo} para repor na loja"
-    return (True, msg)
+        msg = f"✅ Parcial processada: {len(records)} produtos"
+        if atualizados:
+            msg += f" · {atualizados} atualizados"
+        if novos:
+            msg += f" · {novos} novos"
+        if n_div:
+            msg += f" · {n_div} divergências"
+        if n_repo:
+            msg += f" · 🏪 {n_repo} para repor na loja"
+        return (True, msg)
+    except Exception as e:
+        return (False, f"❌ Erro ao salvar parcial: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1095,7 +1123,11 @@ if has_mestre:
                 "Itens somem após 7 dias ou quando marcados como repostos."
             )
             for _, item in df_reposicao.iterrows():
-                dias_atras = (datetime.now() - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
+                try:
+                    dias_atras = (datetime.now() - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
+                except (ValueError, TypeError):
+                    dias_atras = 0
+
                 if dias_atras == 0:
                     tempo = "hoje"
                 elif dias_atras == 1:
@@ -1128,13 +1160,7 @@ if has_mestre:
                         st.rerun()
 
     with t5:
-        conn = get_db()
-        rows_hist = conn.execute(
-            "SELECT data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes "
-            "FROM historico_uploads ORDER BY id DESC LIMIT 20"
-        ).fetchall()
-        cols_hist = ["data", "tipo", "arquivo", "total_produtos_lote", "novos", "atualizados", "divergentes"]
-        df_hist = pd.DataFrame(rows_hist, columns=cols_hist)
+        df_hist = get_historico_uploads()
         if df_hist.empty:
             st.info("Nenhum upload registrado.")
         else:
