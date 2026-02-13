@@ -68,16 +68,6 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 1px;
     }
 
-    .stRadio > div {
-        flex-direction: row !important; gap: 4px !important;
-        flex-wrap: wrap; justify-content: center;
-    }
-    .stRadio > div > label {
-        background: #111827 !important; border: 1px solid #1e293b !important;
-        border-radius: 20px !important; padding: 4px 14px !important;
-        font-size: 0.75rem !important; color: #94a3b8 !important;
-    }
-
     .stPlotlyChart { border-radius: 12px; overflow: hidden; }
 
     .mode-indicator {
@@ -214,8 +204,21 @@ def get_db():
 # CORREÇÃO 1: REPOSIÇÃO LOJA — agora pega TUDO que foi vendido (sem whitelist)
 # ══════════════════════════════════════════════════════════════════════════════
 
-# REMOVIDO: CATEGORIAS_REPOSICAO_LOJA (whitelist eliminada)
-# Agora TUDO que tem qtd_vendida > 0 vai para reposição na loja.
+# BLACKLIST: categorias que NÃO devem aparecer em "Repor na Loja"
+# (produtos de campo/granel que não ficam na loja)
+CATEGORIAS_EXCLUIDAS_REPOSICAO = {
+    "HERBICIDAS",
+    "FUNGICIDAS",
+    "INSETICIDAS",
+    "NEMATICIDAS",
+    "ÓLEOS",
+    "ADUBOS FOLIARES",
+    "ADUBOS QUÍMICOS",
+    "ADUBOS CORRETIVOS",
+    "ADJUVANTES",
+    "ADJUVANTES/ESPALHANTES ADESIVO",
+    "SUPLEMENTO MINERAL",
+}
 
 
 def sync_db():
@@ -264,15 +267,19 @@ def get_reposicao_pendente() -> pd.DataFrame:
     try:
         conn = get_db()
         cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-        rows = conn.execute("""
+        # Monta placeholders para excluir categorias
+        excl = list(CATEGORIAS_EXCLUIDAS_REPOSICAO)
+        placeholders = ",".join(["?" for _ in excl])
+        rows = conn.execute(f"""
             SELECT
                 r.id, r.codigo, r.produto, r.categoria,
                 r.qtd_vendida AS qtd_repor,
                 r.criado_em
             FROM reposicao_loja r
             WHERE r.reposto = 0 AND r.criado_em >= ? AND r.qtd_vendida > 0
+              AND UPPER(r.categoria) NOT IN ({placeholders})
             ORDER BY r.criado_em DESC
-        """, [cutoff]).fetchall()
+        """, [cutoff] + excl).fetchall()
         return pd.DataFrame(rows, columns=cols)
     except Exception as e:
         st.warning(f"⚠️ Erro ao buscar reposição: {e}")
@@ -324,8 +331,8 @@ def marcar_reposto(item_id: int):
 
 def detectar_reposicao_loja(records: list, conn, now: str):
     """
-    CORREÇÃO: Detecta TODOS os produtos vendidos (qtd_vendida > 0) e adiciona à
-    lista de reposição. Sem whitelist — tudo que vendeu precisa ser reposto.
+    Detecta produtos vendidos (qtd_vendida > 0) e adiciona à lista de reposição,
+    EXCLUINDO categorias que não ficam na loja (herbicidas, fungicidas, inseticidas, etc.).
     Só adiciona se o produto não estiver já pendente (não reposto) na tabela.
     """
     count = 0
@@ -333,6 +340,11 @@ def detectar_reposicao_loja(records: list, conn, now: str):
         qtd_v = r.get("qtd_vendida", 0)
         if qtd_v <= 0:
             continue  # Só repor o que realmente foi vendido
+
+        # Filtrar categorias que NÃO devem ir para reposição na loja
+        cat = str(r.get("categoria", "")).strip().upper()
+        if cat in CATEGORIAS_EXCLUIDAS_REPOSICAO:
+            continue
 
         try:
             existing = conn.execute(
@@ -1124,10 +1136,8 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    # CORREÇÃO: Categorias ordenadas com prioridade (Herbicidas > Fungicidas > Inseticidas > ...)
-    raw_cats = sorted(df_view["categoria"].unique().tolist())
-    cats = ["TODOS"] + sort_categorias(raw_cats)
-    f_cat = st.radio("🏷️ Categoria", cats, horizontal=True, label_visibility="collapsed")
+    # CORREÇÃO: Removido filtro por categoria (radio buttons)
+    # Agora usa apenas o campo de pesquisa por nome/código
 
     t1, t2, t3, t4, t5 = st.tabs([
         "🗺️ Mapa Estoque",
@@ -1138,7 +1148,7 @@ if has_mestre:
     ])
 
     with t1:
-        st.markdown(build_css_treemap(df_view, f_cat), unsafe_allow_html=True)
+        st.markdown(build_css_treemap(df_view, "TODOS"), unsafe_allow_html=True)
 
     with t2:
         df_div = df_view[(df_view["status"] == "falta") | (df_view["status"] == "sobra")]
