@@ -210,12 +210,12 @@ def get_db():
     return conn
 
 
-# Categorias que VÃO para reposição na loja (whitelist)
-CATEGORIAS_REPOSICAO_LOJA = {
-    "LUBRIFICANTES",
-    "EPI",
-    "ACESSORIOS DE FAZENDA",
-}
+# ══════════════════════════════════════════════════════════════════════════════
+# CORREÇÃO 1: REPOSIÇÃO LOJA — agora pega TUDO que foi vendido (sem whitelist)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# REMOVIDO: CATEGORIAS_REPOSICAO_LOJA (whitelist eliminada)
+# Agora TUDO que tem qtd_vendida > 0 vai para reposição na loja.
 
 
 def sync_db():
@@ -258,7 +258,7 @@ def get_stock_count() -> int:
 
 def get_reposicao_pendente() -> pd.DataFrame:
     """Retorna itens de reposição pendentes (não repostos E com menos de 7 dias).
-    Usa qtd_sistema do estoque_mestre como fallback quando qtd_vendida = 0.
+    Usa qtd_vendida da reposicao_loja.
     Fallback para DF vazio se houver erro."""
     cols = ["id", "codigo", "produto", "categoria", "qtd_repor", "criado_em"]
     try:
@@ -267,15 +267,10 @@ def get_reposicao_pendente() -> pd.DataFrame:
         rows = conn.execute("""
             SELECT
                 r.id, r.codigo, r.produto, r.categoria,
-                CASE
-                    WHEN r.qtd_vendida > 0 THEN r.qtd_vendida
-                    WHEN e.qtd_sistema IS NOT NULL THEN e.qtd_sistema
-                    ELSE 0
-                END AS qtd_repor,
+                r.qtd_vendida AS qtd_repor,
                 r.criado_em
             FROM reposicao_loja r
-            LEFT JOIN estoque_mestre e ON r.codigo = e.codigo
-            WHERE r.reposto = 0 AND r.criado_em >= ?
+            WHERE r.reposto = 0 AND r.criado_em >= ? AND r.qtd_vendida > 0
             ORDER BY r.criado_em DESC
         """, [cutoff]).fetchall()
         return pd.DataFrame(rows, columns=cols)
@@ -329,15 +324,15 @@ def marcar_reposto(item_id: int):
 
 def detectar_reposicao_loja(records: list, conn, now: str):
     """
-    Detecta produtos de categorias de loja (whitelist) e adiciona à lista de reposição.
-    Usa qtd_vendida se disponível, senão usa qtd_sistema.
+    CORREÇÃO: Detecta TODOS os produtos vendidos (qtd_vendida > 0) e adiciona à
+    lista de reposição. Sem whitelist — tudo que vendeu precisa ser reposto.
     Só adiciona se o produto não estiver já pendente (não reposto) na tabela.
     """
     count = 0
     for r in records:
-        cat_upper = r["categoria"].upper().strip()
-        if cat_upper not in CATEGORIAS_REPOSICAO_LOJA:
-            continue
+        qtd_v = r.get("qtd_vendida", 0)
+        if qtd_v <= 0:
+            continue  # Só repor o que realmente foi vendido
 
         try:
             existing = conn.execute(
@@ -346,7 +341,6 @@ def detectar_reposicao_loja(records: list, conn, now: str):
             ).fetchone()
 
             if not existing:
-                qtd_v = r.get("qtd_vendida", r["qtd_sistema"])
                 conn.execute("""
                     INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em)
                     VALUES (?, ?, ?, ?, ?)
@@ -411,7 +405,7 @@ def short_name(prod: str) -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CORREÇÃO 1: parse_annotation com regex abrangente
+# parse_annotation com regex abrangente
 # ══════════════════════════════════════════════════════════════════════════════
 
 def parse_annotation(nota: str, qtd_sistema: int) -> tuple:
@@ -671,7 +665,7 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
                 pass
         if qtd_sistema <= 0 and qtd_vendida_val > 0:
             qtd_sistema = qtd_vendida_val
-        if qtd_sistema <= 0:
+        if qtd_sistema <= 0 and qtd_vendida_val <= 0:
             continue
 
         nota_raw = ""
@@ -806,6 +800,7 @@ def upload_parcial(uploaded_file) -> tuple:
                 ])
                 novos += 1
 
+        # CORREÇÃO: Detectar reposição para TODOS os produtos vendidos
         n_div = sum(1 for r in records if r["status"] != "ok")
         n_repo = detectar_reposicao_loja(records, conn, now)
         conn.execute("""
@@ -831,7 +826,34 @@ def upload_parcial(uploaded_file) -> tuple:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CORREÇÃO 2: Treemap — cards de danificado mostram qtd do sistema
+# CORREÇÃO 2: Ordenação de Categorias — Herbicidas, Fungicidas, Inseticidas primeiro
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Ordem de prioridade das categorias (as não listadas vão por ordem alfabética depois)
+CATEGORIA_PRIORITY = [
+    "HERBICIDAS",
+    "FUNGICIDAS",
+    "INSETICIDAS",
+    "NEMATICIDAS",
+    "ADUBOS FOLIARES",
+    "ADUBOS QUÍMICOS",
+    "ADUBOS CORRETIVOS",
+    "ADJUVANTES",
+    "ÓLEOS",
+    "SEMENTES",
+]
+
+
+def sort_categorias(cats: list) -> list:
+    """Ordena categorias com prioridade: Herbicidas > Fungicidas > Inseticidas > resto alfabético."""
+    priority_map = {cat: i for i, cat in enumerate(CATEGORIA_PRIORITY)}
+    max_priority = len(CATEGORIA_PRIORITY)
+
+    return sorted(cats, key=lambda c: (priority_map.get(c, max_priority), c))
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Treemap — cards de danificado mostram qtd do sistema
 # ══════════════════════════════════════════════════════════════════════════════
 
 def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
@@ -853,11 +875,9 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
             categories[cat] = []
         categories[cat].append(row)
 
-    sorted_cats = sorted(
-        categories.keys(),
-        key=lambda c: sum(int(r["qtd_sistema"]) for r in categories[c]),
-        reverse=True,
-    )
+    # CORREÇÃO: Usar ordem de prioridade em vez de ordenar por volume
+    sorted_cats = sort_categorias(list(categories.keys()))
+
     blocks_html = ""
 
     for cat in sorted_cats:
@@ -872,7 +892,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
             note = str(r.get("nota", "")) if pd.notnull(r.get("nota")) else ""
             cod = str(r.get("codigo", ""))
 
-            # ── CORREÇÃO: Danificado mostra qtd do sistema + info da avaria ──
+            # Danificado mostra qtd do sistema + info da avaria
             if stat == "danificado":
                 bg, txt = "#a55eea", "#fff"
                 nums = re.findall(r"\d+", note)
@@ -1104,7 +1124,9 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    cats = ["TODOS"] + sorted(df_view["categoria"].unique().tolist())
+    # CORREÇÃO: Categorias ordenadas com prioridade (Herbicidas > Fungicidas > Inseticidas > ...)
+    raw_cats = sorted(df_view["categoria"].unique().tolist())
+    cats = ["TODOS"] + sort_categorias(raw_cats)
     f_cat = st.radio("🏷️ Categoria", cats, horizontal=True, label_visibility="collapsed")
 
     t1, t2, t3, t4, t5 = st.tabs([
