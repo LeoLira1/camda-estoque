@@ -130,13 +130,14 @@ def _get_connection():
 
 
 def get_db():
-    """Retorna conexão e garante que as tabelas existem."""
+    """Retorna conexão e garante que as tabelas existem. Faz sync na primeira chamada."""
     conn = _get_connection()
 
-    # Sync antes de ler (pega alterações de outros colegas)
-    if _using_cloud:
+    # Sync apenas uma vez por sessão (controlado por session_state)
+    if _using_cloud and not st.session_state.get("_db_initialized"):
         try:
             conn.sync()
+            st.session_state["_db_initialized"] = True
         except Exception:
             pass  # Se falhar o sync, usa o cache local
 
@@ -201,11 +202,11 @@ def get_db():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CORREÇÃO 1: REPOSIÇÃO LOJA — agora pega TUDO que foi vendido (sem whitelist)
+# CORREÇÃO: REPOSIÇÃO LOJA — exclui categorias de campo + SEMENTES + MEDICAMENTOS
 # ══════════════════════════════════════════════════════════════════════════════
 
 # BLACKLIST: categorias que NÃO devem aparecer em "Repor na Loja"
-# (produtos de campo/granel que não ficam na loja)
+# (produtos de campo/granel que não ficam na loja + sementes + medicamentos)
 CATEGORIAS_EXCLUIDAS_REPOSICAO = {
     "HERBICIDAS",
     "FUNGICIDAS",
@@ -218,6 +219,10 @@ CATEGORIAS_EXCLUIDAS_REPOSICAO = {
     "ADJUVANTES",
     "ADJUVANTES/ESPALHANTES ADESIVO",
     "SUPLEMENTO MINERAL",
+    "SEMENTES",
+    "MEDICAMENTOS",
+    "MEDICAMENTOS VETERINÁRIOS",
+    "MEDICAMENTOS VETERINARIOS",
 }
 
 
@@ -227,6 +232,7 @@ def sync_db():
         try:
             conn = _get_connection()
             conn.sync()
+            st.session_state["_db_initialized"] = True
         except Exception as e:
             st.warning(f"⚠️ Sync falhou: {e}. Os dados foram salvos localmente e serão sincronizados depois.")
 
@@ -263,7 +269,7 @@ def get_reposicao_pendente() -> pd.DataFrame:
     """Retorna itens de reposição pendentes (não repostos E com menos de 7 dias).
     Usa qtd_vendida da reposicao_loja.
     Fallback para DF vazio se houver erro."""
-    cols = ["id", "codigo", "produto", "categoria", "qtd_repor", "criado_em"]
+    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "criado_em"]
     try:
         conn = get_db()
         cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
@@ -273,7 +279,7 @@ def get_reposicao_pendente() -> pd.DataFrame:
         rows = conn.execute(f"""
             SELECT
                 r.id, r.codigo, r.produto, r.categoria,
-                r.qtd_vendida AS qtd_repor,
+                r.qtd_vendida,
                 r.criado_em
             FROM reposicao_loja r
             WHERE r.reposto = 0 AND r.criado_em >= ? AND r.qtd_vendida > 0
@@ -332,32 +338,43 @@ def marcar_reposto(item_id: int):
 def detectar_reposicao_loja(records: list, conn, now: str):
     """
     Detecta produtos vendidos (qtd_vendida > 0) e adiciona à lista de reposição,
-    EXCLUINDO categorias que não ficam na loja (herbicidas, fungicidas, inseticidas, etc.).
+    EXCLUINDO categorias que não ficam na loja (herbicidas, fungicidas, inseticidas,
+    sementes, medicamentos, etc.).
     Só adiciona se o produto não estiver já pendente (não reposto) na tabela.
     """
+    # Buscar todos os códigos já pendentes de uma vez (1 query em vez de N)
+    pending_codes = set()
+    try:
+        rows = conn.execute(
+            "SELECT codigo FROM reposicao_loja WHERE reposto = 0"
+        ).fetchall()
+        for row in rows:
+            pending_codes.add(row[0])
+    except Exception:
+        pass
+
     count = 0
     for r in records:
         qtd_v = r.get("qtd_vendida", 0)
         if qtd_v <= 0:
-            continue  # Só repor o que realmente foi vendido
+            continue
 
         # Filtrar categorias que NÃO devem ir para reposição na loja
         cat = str(r.get("categoria", "")).strip().upper()
         if cat in CATEGORIAS_EXCLUIDAS_REPOSICAO:
             continue
 
-        try:
-            existing = conn.execute(
-                "SELECT id FROM reposicao_loja WHERE codigo = ? AND reposto = 0",
-                [r["codigo"]]
-            ).fetchone()
+        # Checar se já está pendente (sem query individual)
+        if r["codigo"] in pending_codes:
+            continue
 
-            if not existing:
-                conn.execute("""
-                    INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em)
-                    VALUES (?, ?, ?, ?, ?)
-                """, [r["codigo"], r["produto"], r["categoria"], qtd_v, now])
-                count += 1
+        try:
+            conn.execute("""
+                INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em)
+                VALUES (?, ?, ?, ?, ?)
+            """, [r["codigo"], r["produto"], r["categoria"], qtd_v, now])
+            pending_codes.add(r["codigo"])  # Evita duplicata no mesmo lote
+            count += 1
         except Exception:
             continue
 
@@ -379,6 +396,7 @@ def classify_product(name: str) -> str:
         ("ÓLEOS", ["OLEO", "ÓLEO"]),
         ("SEMENTES", ["SEMENTE"]),
         ("ADJUVANTES", ["ADJUVANTE", "ESPALHANTE"]),
+        ("MEDICAMENTOS", ["MEDICAMENTO", "VERMIFUGO", "VERMÍFUGO", "VACINA", "ANTIBIOTICO", "ANTIBIÓTICO"]),
     ]
     for cat, keywords in rules:
         if any(kw in n for kw in keywords):
@@ -399,6 +417,9 @@ def normalize_grupo(grupo: str) -> str:
         "OLEO MINERAL E VEGETAL": "ÓLEOS",
         "ADJUVANTES": "ADJUVANTES",
         "SEMENTES": "SEMENTES",
+        "MEDICAMENTOS": "MEDICAMENTOS",
+        "MEDICAMENTOS VETERINÁRIOS": "MEDICAMENTOS",
+        "MEDICAMENTOS VETERINARIOS": "MEDICAMENTOS",
     }
     return mapping.get(g, g)
 
@@ -408,6 +429,7 @@ def short_name(prod: str) -> str:
         "HERBICIDA ", "FUNGICIDA ", "INSETICIDA ", "NEMATICIDA ",
         "ADUBO FOLIAR ", "ADUBO Q.", "OLEO VEGETAL ", "OLEO MINERAL ",
         "ÓLEO VEGETAL ", "ÓLEO MINERAL ", "ADJUVANTE ", "SEMENTE ",
+        "MEDICAMENTO ",
     ]
     up = str(prod).upper()
     for p in prefixes:
@@ -783,12 +805,14 @@ def upload_parcial(uploaded_file) -> tuple:
         novos = 0
         atualizados = 0
 
-        for r in records:
-            existing = conn.execute(
-                "SELECT codigo FROM estoque_mestre WHERE codigo = ?", [r["codigo"]]
-            ).fetchone()
+        # Buscar todos os códigos existentes de uma vez (1 query em vez de N)
+        existing_codes = set()
+        rows_existing = conn.execute("SELECT codigo FROM estoque_mestre").fetchall()
+        for row in rows_existing:
+            existing_codes.add(row[0])
 
-            if existing:
+        for r in records:
+            if r["codigo"] in existing_codes:
                 conn.execute("""
                     UPDATE estoque_mestre SET
                         produto = ?, categoria = ?, qtd_sistema = ?, qtd_fisica = ?,
@@ -812,7 +836,7 @@ def upload_parcial(uploaded_file) -> tuple:
                 ])
                 novos += 1
 
-        # CORREÇÃO: Detectar reposição para TODOS os produtos vendidos
+        # Detectar reposição para produtos vendidos (excluindo categorias de campo)
         n_div = sum(1 for r in records if r["status"] != "ok")
         n_repo = detectar_reposicao_loja(records, conn, now)
         conn.execute("""
@@ -838,7 +862,7 @@ def upload_parcial(uploaded_file) -> tuple:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CORREÇÃO 2: Ordenação de Categorias — Herbicidas, Fungicidas, Inseticidas primeiro
+# Ordenação de Categorias — Herbicidas, Fungicidas, Inseticidas primeiro
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Ordem de prioridade das categorias (as não listadas vão por ordem alfabética depois)
@@ -853,6 +877,7 @@ CATEGORIA_PRIORITY = [
     "ADJUVANTES",
     "ÓLEOS",
     "SEMENTES",
+    "MEDICAMENTOS",
 ]
 
 
@@ -887,7 +912,6 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
             categories[cat] = []
         categories[cat].append(row)
 
-    # CORREÇÃO: Usar ordem de prioridade em vez de ordenar por volume
     sorted_cats = sort_categorias(list(categories.keys()))
 
     blocks_html = ""
@@ -1136,9 +1160,6 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    # CORREÇÃO: Removido filtro por categoria (radio buttons)
-    # Agora usa apenas o campo de pesquisa por nome/código
-
     t1, t2, t3, t4, t5 = st.tabs([
         "🗺️ Mapa Estoque",
         "⚠️ Divergências",
@@ -1191,7 +1212,7 @@ if has_mestre:
                 else:
                     tempo = f"{dias_atras}d atrás"
 
-                qtd_v = int(item["qtd_repor"]) if pd.notnull(item["qtd_repor"]) else 0
+                qtd_v = int(item["qtd_vendida"]) if pd.notnull(item["qtd_vendida"]) else 0
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
@@ -1205,7 +1226,7 @@ if has_mestre:
                         f'<div style="margin-top:4px; display:flex; gap:12px;">'
                         f'<span style="color:#64748b; font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
                         f'<span style="color:#64748b; font-size:0.65rem;">{item["categoria"]}</span>'
-                        f'<span style="color:#ffa502; font-size:0.65rem; font-weight:700;">Repor: {qtd_v}</span>'
+                        f'<span style="color:#ffa502; font-size:0.65rem; font-weight:700;">Vendido: {qtd_v} → Repor: {qtd_v}</span>'
                         f'</div>'
                         f'</div>',
                         unsafe_allow_html=True,
