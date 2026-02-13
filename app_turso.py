@@ -23,11 +23,9 @@ if "confirm_reset" not in st.session_state:
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;500;700;900&display=swap');
-
     .stApp { background: #0a0f1a; color: #e0e6ed; font-family: 'Outfit', sans-serif; }
     #MainMenu, footer, header { visibility: hidden; }
     .block-container { padding: 0.5rem 0.8rem !important; max-width: 100% !important; }
-
     .main-title {
         font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 1.6rem;
         background: linear-gradient(135deg, #00d68f, #00b887);
@@ -38,17 +36,10 @@ st.markdown("""
         font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
         color: #4a5568; text-align: center; margin-bottom: 0.5rem;
     }
-    .update-badge {
-        font-family: 'JetBrains Mono', monospace; font-size: 0.6rem;
-        color: #00d68f; text-align: center; margin-bottom: 0.5rem;
-        opacity: 0.7;
-    }
     .sync-badge {
         font-family: 'JetBrains Mono', monospace; font-size: 0.55rem;
-        color: #3b82f6; text-align: center; margin-bottom: 0.5rem;
-        opacity: 0.8;
+        color: #3b82f6; text-align: center; margin-bottom: 0.5rem; opacity: 0.8;
     }
-
     .stat-row { display: flex; gap: 6px; margin-bottom: 0.5rem; }
     .stat-card {
         flex: 1; background: linear-gradient(135deg, #111827, #1a2332);
@@ -67,34 +58,45 @@ st.markdown("""
         font-size: 0.6rem; color: #64748b;
         text-transform: uppercase; letter-spacing: 1px;
     }
-
-    .stPlotlyChart { border-radius: 12px; overflow: hidden; }
-
-    .mode-indicator {
-        display: inline-block; padding: 2px 10px; border-radius: 12px;
-        font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: 1px; margin-left: 6px;
-    }
-    .mode-mestre { background: #1e40af; color: #93c5fd; }
-    .mode-parcial { background: #065f46; color: #6ee7b7; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DATABASE — TURSO (libSQL na nuvem) com Embedded Replica local
+# REGEX PRÉ-COMPILADO (compila 1x no import, não 1x por produto)
+# ══════════════════════════════════════════════════════════════════════════════
+_RE_FALTA = re.compile(r"falt(?:a|ando|am|ou|aram|\.?)(?:\s+(?:de|do|da))?\s+(\d+)\s*(.*)")
+_RE_FALTA_SHORT = re.compile(r"^f\.?\s+(\d+)\s*(.*)")
+_RE_SOBRA = re.compile(r"(?:sobr(?:a|ando|am|ou|aram|\.?)|pass(?:a|ando|aram|ou|\.?))\s+(\d+)\s*(.*)")
+_RE_SOBRA_SHORT = re.compile(r"^s\.?\s+(\d+)\s*(.*)")
+_RE_FALTA_MID = re.compile(r"falt\w*\s+(?:de\s+)?(\d+)")
+_RE_SOBRA_MID = re.compile(r"(?:sobr|pass)\w*\s+(\d+)")
+_RE_ONLY_NUMBER = re.compile(r"^\d+([.,]\d+)?$")
+_RE_COD_PROD = re.compile(r"^(\d+)\s*-\s*(.+)$")
+_RE_SPACES = re.compile(r"\s+")
+_RE_DIGITS = re.compile(r"\d+")
+_RE_ALPHA = re.compile(r"[a-zA-Z]")
+_RE_NON_ALNUM = re.compile(r"[^A-Z0-9]")
+
+_KEYWORDS_DANIFICADO = frozenset([
+    "danificad", "avaria", "avariado", "quebrad", "defeito",
+    "vencid", "impropri", "vazand", "estraga", "molhad",
+    "rasgad", "furad", "amassd", "amassad", "contaminad",
+])
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# DATABASE — conexão + init de tabelas UMA VEZ SÓ
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Tenta carregar do .env se existir
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
 
-# Tenta pegar dos Streamlit Secrets (para deploy no Streamlit Cloud)
+
 def _get_secret(key: str) -> str:
-    """Busca em st.secrets primeiro, depois em os.environ."""
     try:
         return st.secrets[key]
     except (KeyError, FileNotFoundError, AttributeError):
@@ -103,44 +105,24 @@ def _get_secret(key: str) -> str:
 
 TURSO_DATABASE_URL = _get_secret("TURSO_DATABASE_URL")
 TURSO_AUTH_TOKEN = _get_secret("TURSO_AUTH_TOKEN")
-
 LOCAL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "camda_local.db")
-
-# Flag para saber se estamos conectados à nuvem
 _using_cloud = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN)
 
 
 @st.cache_resource
 def _get_connection():
-    """
-    Retorna uma conexão libSQL.
-    - Se tem credenciais Turso → Embedded Replica (local + sync com nuvem)
-    - Se não tem → SQLite local puro (fallback para desenvolvimento)
-    """
+    """Cria conexão UMA VEZ e já inicializa tabelas + migrações."""
     if _using_cloud:
         conn = libsql.connect(
             LOCAL_DB_PATH,
             sync_url=TURSO_DATABASE_URL,
             auth_token=TURSO_AUTH_TOKEN,
         )
-        conn.sync()  # Sincroniza na inicialização
+        conn.sync()
     else:
         conn = libsql.connect(LOCAL_DB_PATH)
-    return conn
 
-
-def get_db():
-    """Retorna conexão e garante que as tabelas existem. Faz sync na primeira chamada."""
-    conn = _get_connection()
-
-    # Sync apenas uma vez por sessão (controlado por session_state)
-    if _using_cloud and not st.session_state.get("_db_initialized"):
-        try:
-            conn.sync()
-            st.session_state["_db_initialized"] = True
-        except Exception:
-            pass  # Se falhar o sync, usa o cache local
-
+    # ── Criar tabelas (roda 1x, não a cada get_db()) ──
     conn.execute("""
         CREATE TABLE IF NOT EXISTS estoque_mestre (
             codigo TEXT PRIMARY KEY,
@@ -181,110 +163,119 @@ def get_db():
     """)
     conn.commit()
 
-    # ── Migrações: adiciona colunas que podem faltar em bancos antigos ──
+    # ── Migrações (roda 1x) ──
     try:
-        cols_reposicao = [
-            row[1] for row in conn.execute("PRAGMA table_info(reposicao_loja)").fetchall()
-        ]
-        if "qtd_vendida" not in cols_reposicao:
-            conn.execute("ALTER TABLE reposicao_loja ADD COLUMN qtd_vendida INTEGER NOT NULL DEFAULT 0")
-            conn.commit()
-        if "reposto" not in cols_reposicao:
-            conn.execute("ALTER TABLE reposicao_loja ADD COLUMN reposto INTEGER DEFAULT 0")
-            conn.commit()
-        if "reposto_em" not in cols_reposicao:
-            conn.execute("ALTER TABLE reposicao_loja ADD COLUMN reposto_em TEXT DEFAULT ''")
-            conn.commit()
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(reposicao_loja)").fetchall()}
+        for col, definition in [
+            ("qtd_vendida", "INTEGER NOT NULL DEFAULT 0"),
+            ("reposto", "INTEGER DEFAULT 0"),
+            ("reposto_em", "TEXT DEFAULT ''"),
+        ]:
+            if col not in cols:
+                conn.execute(f"ALTER TABLE reposicao_loja ADD COLUMN {col} {definition}")
+        conn.commit()
     except Exception:
-        pass  # Se PRAGMA não funcionar no libsql, ignora silenciosamente
+        pass
 
     return conn
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# CORREÇÃO: REPOSIÇÃO LOJA — exclui categorias de campo + SEMENTES + MEDICAMENTOS
-# ══════════════════════════════════════════════════════════════════════════════
-
-# BLACKLIST: categorias que NÃO devem aparecer em "Repor na Loja"
-# (produtos de campo/granel que não ficam na loja + sementes + medicamentos)
-CATEGORIAS_EXCLUIDAS_REPOSICAO = {
-    "HERBICIDAS",
-    "FUNGICIDAS",
-    "INSETICIDAS",
-    "NEMATICIDAS",
-    "ÓLEOS",
-    "ADUBOS FOLIARES",
-    "ADUBOS QUÍMICOS",
-    "ADUBOS CORRETIVOS",
-    "ADJUVANTES",
-    "ADJUVANTES/ESPALHANTES ADESIVO",
-    "SUPLEMENTO MINERAL",
-    "SEMENTES",
-    "MEDICAMENTOS",
-    "MEDICAMENTOS VETERINÁRIOS",
-    "MEDICAMENTOS VETERINARIOS",
-}
+def get_db():
+    """Retorna conexão pronta (tabelas já criadas no cache)."""
+    conn = _get_connection()
+    if _using_cloud and not st.session_state.get("_synced"):
+        try:
+            conn.sync()
+            st.session_state["_synced"] = True
+        except Exception:
+            pass
+    return conn
 
 
 def sync_db():
-    """Força sincronização com o Turso (chamar após escritas)."""
+    """Sync com Turso (chamar UMA VEZ após todas as escritas)."""
     if _using_cloud:
         try:
-            conn = _get_connection()
-            conn.sync()
-            st.session_state["_db_initialized"] = True
+            _get_connection().sync()
         except Exception as e:
-            st.warning(f"⚠️ Sync falhou: {e}. Os dados foram salvos localmente e serão sincronizados depois.")
+            st.warning(f"⚠️ Sync falhou: {e}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# LEITURAS DO BANCO — todas com try/except + fallback para DataFrame vazio
+# BLACKLIST DE REPOSIÇÃO
 # ══════════════════════════════════════════════════════════════════════════════
+CATEGORIAS_EXCLUIDAS_REPOSICAO = frozenset({
+    # Defensivos / campo
+    "HERBICIDAS", "FUNGICIDAS", "INSETICIDAS", "NEMATICIDAS", "ÓLEOS",
+    "ADUBOS FOLIARES", "ADUBOS QUÍMICOS", "ADUBOS CORRETIVOS",
+    "ADJUVANTES", "ADJUVANTES/ESPALHANTES ADESIVO", "SUPLEMENTO MINERAL",
+    # Sementes
+    "SEMENTES",
+    # Veterinários / medicamentos (todos os grupos do BI)
+    "MEDICAMENTOS", "MEDICAMENTOS VETERINÁRIOS", "MEDICAMENTOS VETERINARIOS",
+    "VACINA AFTOSA", "VACINAS DIVERSAS/SOROS",
+    "ANTIBIOTICOS/ANTI-INFLAMATORIO",
+    "ANESTESICO/ANALGESICO/DIURETIC",
+    "ANTITOXICOS",
+    "VERMIFUGOS",
+    "MOSQUICIDA/CARRAPATICIDA/BERNI",
+    "UNGUENTOS/POMADAS",
+    "HOMEOPATICO",
+    "HORMONIOS LEITEIROS",
+    "TONICO MINERAL/VITAMINAS",
+    "REPRODUCAO ANIMAL",
+    "REPRODUTORES",
+    "IDENTIFICACAO ANIMAL",
+    "INOCULANTES P/ SILAGEM",
+    "DIETA ANIMAL",
+    "RATICIDAS",
+})
+
+CATEGORIA_PRIORITY = [
+    "HERBICIDAS", "FUNGICIDAS", "INSETICIDAS", "NEMATICIDAS",
+    "ADUBOS FOLIARES", "ADUBOS QUÍMICOS", "ADUBOS CORRETIVOS",
+    "ADJUVANTES", "ÓLEOS", "SEMENTES", "MEDICAMENTOS",
+]
+_CAT_PRIORITY_MAP = {cat: i for i, cat in enumerate(CATEGORIA_PRIORITY)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LEITURAS DO BANCO — simples e diretas
+# ══════════════════════════════════════════════════════════════════════════════
+_STOCK_COLS = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
+               "diferenca", "nota", "status", "ultima_contagem", "criado_em"]
+
 
 def get_current_stock() -> pd.DataFrame:
-    """Retorna todo o estoque mestre. Fallback para DF vazio se houver erro."""
-    cols = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
-            "diferenca", "nota", "status", "ultima_contagem", "criado_em"]
     try:
-        conn = get_db()
-        rows = conn.execute("SELECT * FROM estoque_mestre ORDER BY categoria, produto").fetchall()
-        return pd.DataFrame(rows, columns=cols)
+        rows = get_db().execute("SELECT * FROM estoque_mestre ORDER BY categoria, produto").fetchall()
+        return pd.DataFrame(rows, columns=_STOCK_COLS)
     except Exception as e:
         st.warning(f"⚠️ Erro ao carregar estoque: {e}")
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=_STOCK_COLS)
 
 
 def get_stock_count() -> int:
-    """Retorna quantidade de produtos no estoque. Fallback para 0 se houver erro."""
     try:
-        conn = get_db()
-        row = conn.execute("SELECT COUNT(*) FROM estoque_mestre").fetchone()
+        row = get_db().execute("SELECT COUNT(*) FROM estoque_mestre").fetchone()
         return row[0] if row else 0
-    except Exception as e:
-        st.warning(f"⚠️ Erro ao contar estoque: {e}")
+    except Exception:
         return 0
 
 
 def get_reposicao_pendente() -> pd.DataFrame:
-    """Retorna itens de reposição pendentes (não repostos E com menos de 7 dias).
-    Usa qtd_vendida da reposicao_loja.
-    Fallback para DF vazio se houver erro."""
     cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "criado_em"]
     try:
         conn = get_db()
         cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
-        # Monta placeholders para excluir categorias
         excl = list(CATEGORIAS_EXCLUIDAS_REPOSICAO)
-        placeholders = ",".join(["?" for _ in excl])
+        ph = ",".join(["?" for _ in excl])
         rows = conn.execute(f"""
-            SELECT
-                r.id, r.codigo, r.produto, r.categoria,
-                r.qtd_vendida,
-                r.criado_em
-            FROM reposicao_loja r
-            WHERE r.reposto = 0 AND r.criado_em >= ? AND r.qtd_vendida > 0
-              AND UPPER(r.categoria) NOT IN ({placeholders})
-            ORDER BY r.criado_em DESC
+            SELECT id, codigo, produto, categoria, qtd_vendida, criado_em
+            FROM reposicao_loja
+            WHERE reposto = 0 AND criado_em >= ? AND qtd_vendida > 0
+              AND UPPER(categoria) NOT IN ({ph})
+            ORDER BY criado_em DESC
         """, [cutoff] + excl).fetchall()
         return pd.DataFrame(rows, columns=cols)
     except Exception as e:
@@ -293,22 +284,18 @@ def get_reposicao_pendente() -> pd.DataFrame:
 
 
 def get_historico_uploads() -> pd.DataFrame:
-    """Retorna histórico de uploads. Fallback para DF vazio se houver erro."""
     cols = ["data", "tipo", "arquivo", "total_produtos_lote", "novos", "atualizados", "divergentes"]
     try:
-        conn = get_db()
-        rows = conn.execute(
+        rows = get_db().execute(
             "SELECT data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes "
             "FROM historico_uploads ORDER BY id DESC LIMIT 20"
         ).fetchall()
         return pd.DataFrame(rows, columns=cols)
-    except Exception as e:
-        st.warning(f"⚠️ Erro ao carregar histórico: {e}")
+    except Exception:
         return pd.DataFrame(columns=cols)
 
 
 def reset_db():
-    """Limpa todas as tabelas. Com try/except para não quebrar o app."""
     try:
         conn = get_db()
         conn.execute("DELETE FROM estoque_mestre")
@@ -321,13 +308,11 @@ def reset_db():
 
 
 def marcar_reposto(item_id: int):
-    """Marca um item como reposto na loja."""
     try:
         conn = get_db()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             "UPDATE reposicao_loja SET reposto = 1, reposto_em = ? WHERE id = ?",
-            [now, item_id]
+            [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item_id]
         )
         conn.commit()
         sync_db()
@@ -335,205 +320,158 @@ def marcar_reposto(item_id: int):
         st.error(f"❌ Erro ao marcar reposto: {e}")
 
 
-def detectar_reposicao_loja(records: list, conn, now: str):
-    """
-    Detecta produtos vendidos (qtd_vendida > 0) e adiciona à lista de reposição,
-    EXCLUINDO categorias que não ficam na loja (herbicidas, fungicidas, inseticidas,
-    sementes, medicamentos, etc.).
-    Só adiciona se o produto não estiver já pendente (não reposto) na tabela.
-    """
-    # Buscar todos os códigos já pendentes de uma vez (1 query em vez de N)
-    pending_codes = set()
-    try:
-        rows = conn.execute(
-            "SELECT codigo FROM reposicao_loja WHERE reposto = 0"
-        ).fetchall()
-        for row in rows:
-            pending_codes.add(row[0])
-    except Exception:
-        pass
+# ══════════════════════════════════════════════════════════════════════════════
+# CLASSIFICAÇÃO E PARSING — otimizados
+# ══════════════════════════════════════════════════════════════════════════════
 
-    count = 0
-    for r in records:
-        qtd_v = r.get("qtd_vendida", 0)
-        if qtd_v <= 0:
-            continue
+_CLASSIFY_RULES = [
+    ("HERBICIDAS", ("HERBICIDA",)),
+    ("FUNGICIDAS", ("FUNGICIDA",)),
+    ("INSETICIDAS", ("INSETICIDA",)),
+    ("NEMATICIDAS", ("NEMATICIDA",)),
+    ("ADUBOS FOLIARES", ("ADUBO FOLIAR",)),
+    ("ADUBOS QUÍMICOS", ("ADUBO Q",)),
+    ("ADUBOS CORRETIVOS", ("ADUBO CORRETIVO", "CALCARIO", "CALCÁRIO")),
+    ("ÓLEOS", ("OLEO", "ÓLEO")),
+    ("SEMENTES", ("SEMENTE",)),
+    ("ADJUVANTES", ("ADJUVANTE", "ESPALHANTE")),
+    ("MEDICAMENTOS", ("MEDICAMENTO", "VERMIFUGO", "VERMÍFUGO", "VACINA", "ANTIBIOTICO", "ANTIBIÓTICO")),
+]
 
-        # Filtrar categorias que NÃO devem ir para reposição na loja
-        cat = str(r.get("categoria", "")).strip().upper()
-        if cat in CATEGORIAS_EXCLUIDAS_REPOSICAO:
-            continue
+_GRUPO_MAP = {
+    "ADUBOS FOLIARES": "ADUBOS FOLIARES",
+    "ADUBOS QUIMICOS": "ADUBOS QUÍMICOS",
+    "ADUBOS CORRETIVOS": "ADUBOS CORRETIVOS",
+    "HERBICIDAS": "HERBICIDAS", "FUNGICIDAS": "FUNGICIDAS",
+    "INSETICIDAS": "INSETICIDAS", "NEMATICIDAS": "NEMATICIDAS",
+    "OLEO MINERAL E VEGETAL": "ÓLEOS", "ADJUVANTES": "ADJUVANTES",
+    "SEMENTES": "SEMENTES",
+    # Veterinários — normaliza para o nome exato da blacklist
+    "MEDICAMENTOS": "MEDICAMENTOS",
+    "MEDICAMENTOS VETERINÁRIOS": "MEDICAMENTOS",
+    "MEDICAMENTOS VETERINARIOS": "MEDICAMENTOS",
+    "VACINA AFTOSA": "VACINA AFTOSA",
+    "VACINAS DIVERSAS/SOROS": "VACINAS DIVERSAS/SOROS",
+    "ANTIBIOTICOS/ANTI-INFLAMATORIO": "ANTIBIOTICOS/ANTI-INFLAMATORIO",
+    "ANESTESICO/ANALGESICO/DIURETIC": "ANESTESICO/ANALGESICO/DIURETIC",
+    "ANTITOXICOS": "ANTITOXICOS",
+    "VERMIFUGOS": "VERMIFUGOS",
+    "MOSQUICIDA/CARRAPATICIDA/BERNI": "MOSQUICIDA/CARRAPATICIDA/BERNI",
+    "UNGUENTOS/POMADAS": "UNGUENTOS/POMADAS",
+    "HOMEOPATICO": "HOMEOPATICO",
+    "HORMONIOS LEITEIROS": "HORMONIOS LEITEIROS",
+    "TONICO MINERAL/VITAMINAS": "TONICO MINERAL/VITAMINAS",
+    "REPRODUCAO ANIMAL": "REPRODUCAO ANIMAL",
+    "REPRODUTORES": "REPRODUTORES",
+    "IDENTIFICACAO ANIMAL": "IDENTIFICACAO ANIMAL",
+    "INOCULANTES P/ SILAGEM": "INOCULANTES P/ SILAGEM",
+    "DIETA ANIMAL": "DIETA ANIMAL",
+    "RATICIDAS": "RATICIDAS",
+}
 
-        # Checar se já está pendente (sem query individual)
-        if r["codigo"] in pending_codes:
-            continue
+_SHORT_PREFIXES = [
+    "HERBICIDA ", "FUNGICIDA ", "INSETICIDA ", "NEMATICIDA ",
+    "ADUBO FOLIAR ", "ADUBO Q.", "OLEO VEGETAL ", "OLEO MINERAL ",
+    "ÓLEO VEGETAL ", "ÓLEO MINERAL ", "ADJUVANTE ", "SEMENTE ",
+    "MEDICAMENTO ",
+]
 
-        try:
-            conn.execute("""
-                INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em)
-                VALUES (?, ?, ?, ?, ?)
-            """, [r["codigo"], r["produto"], r["categoria"], qtd_v, now])
-            pending_codes.add(r["codigo"])  # Evita duplicata no mesmo lote
-            count += 1
-        except Exception:
-            continue
-
-    return count
-
-
-# ── Classificação e Parsing ──────────────────────────────────────────────────
 
 def classify_product(name: str) -> str:
-    n = str(name).upper()
-    rules = [
-        ("HERBICIDAS", ["HERBICIDA"]),
-        ("FUNGICIDAS", ["FUNGICIDA"]),
-        ("INSETICIDAS", ["INSETICIDA"]),
-        ("NEMATICIDAS", ["NEMATICIDA"]),
-        ("ADUBOS FOLIARES", ["ADUBO FOLIAR"]),
-        ("ADUBOS QUÍMICOS", ["ADUBO Q"]),
-        ("ADUBOS CORRETIVOS", ["ADUBO CORRETIVO", "CALCARIO", "CALCÁRIO"]),
-        ("ÓLEOS", ["OLEO", "ÓLEO"]),
-        ("SEMENTES", ["SEMENTE"]),
-        ("ADJUVANTES", ["ADJUVANTE", "ESPALHANTE"]),
-        ("MEDICAMENTOS", ["MEDICAMENTO", "VERMIFUGO", "VERMÍFUGO", "VACINA", "ANTIBIOTICO", "ANTIBIÓTICO"]),
-    ]
-    for cat, keywords in rules:
-        if any(kw in n for kw in keywords):
-            return cat
+    n = name.upper()
+    for cat, keywords in _CLASSIFY_RULES:
+        for kw in keywords:
+            if kw in n:
+                return cat
     return "OUTROS"
 
 
 def normalize_grupo(grupo: str) -> str:
-    g = str(grupo).strip().upper()
-    mapping = {
-        "ADUBOS FOLIARES": "ADUBOS FOLIARES",
-        "ADUBOS QUIMICOS": "ADUBOS QUÍMICOS",
-        "ADUBOS CORRETIVOS": "ADUBOS CORRETIVOS",
-        "HERBICIDAS": "HERBICIDAS",
-        "FUNGICIDAS": "FUNGICIDAS",
-        "INSETICIDAS": "INSETICIDAS",
-        "NEMATICIDAS": "NEMATICIDAS",
-        "OLEO MINERAL E VEGETAL": "ÓLEOS",
-        "ADJUVANTES": "ADJUVANTES",
-        "SEMENTES": "SEMENTES",
-        "MEDICAMENTOS": "MEDICAMENTOS",
-        "MEDICAMENTOS VETERINÁRIOS": "MEDICAMENTOS",
-        "MEDICAMENTOS VETERINARIOS": "MEDICAMENTOS",
-    }
-    return mapping.get(g, g)
+    return _GRUPO_MAP.get(grupo.strip().upper(), grupo.strip().upper())
 
 
 def short_name(prod: str) -> str:
-    prefixes = [
-        "HERBICIDA ", "FUNGICIDA ", "INSETICIDA ", "NEMATICIDA ",
-        "ADUBO FOLIAR ", "ADUBO Q.", "OLEO VEGETAL ", "OLEO MINERAL ",
-        "ÓLEO VEGETAL ", "ÓLEO MINERAL ", "ADJUVANTE ", "SEMENTE ",
-        "MEDICAMENTO ",
-    ]
-    up = str(prod).upper()
-    for p in prefixes:
+    up = prod.upper()
+    for p in _SHORT_PREFIXES:
         if up.startswith(p):
-            return str(prod)[len(p):].strip()
-    return str(prod)
+            return prod[len(p):].strip()
+    return prod
 
-
-# ══════════════════════════════════════════════════════════════════════════════
-# parse_annotation com regex abrangente
-# ══════════════════════════════════════════════════════════════════════════════
 
 def parse_annotation(nota: str, qtd_sistema: int) -> tuple:
     """Retorna: (qtd_fisica, diferenca, observacao, status_type)"""
-    if not nota or str(nota).strip().lower() in ["", "nan", "none"]:
+    if not nota:
+        return (qtd_sistema, 0, "", "ok")
+    text = nota.strip()
+    if not text or text.lower() in ("nan", "none"):
         return (qtd_sistema, 0, "", "ok")
 
-    text = str(nota).strip()
-    text_lower = text.lower()
-    text_lower = re.sub(r"\s+", " ", text_lower).strip()
+    tl = _RE_SPACES.sub(" ", text.lower()).strip()
 
-    # ── FALTA ──
-    m = re.match(
-        r"falt(?:a|ando|am|ou|aram|\.?)(?:\s+(?:de|do|da))?\s+(\d+)\s*(.*)",
-        text_lower,
-    )
+    # FALTA
+    m = _RE_FALTA.match(tl)
     if m:
-        falta = int(m.group(1))
-        return (qtd_sistema - falta, -falta, m.group(2).strip(), "falta")
-
-    m = re.match(r"^f\.?\s+(\d+)\s*(.*)", text_lower)
+        f = int(m.group(1))
+        return (qtd_sistema - f, -f, m.group(2).strip(), "falta")
+    m = _RE_FALTA_SHORT.match(tl)
     if m:
-        falta = int(m.group(1))
-        return (qtd_sistema - falta, -falta, m.group(2).strip(), "falta")
+        f = int(m.group(1))
+        return (qtd_sistema - f, -f, m.group(2).strip(), "falta")
 
-    # ── SOBRA ──
-    m = re.match(
-        r"(?:sobr(?:a|ando|am|ou|aram|\.?)|pass(?:a|ando|aram|ou|\.?))\s+(\d+)\s*(.*)",
-        text_lower,
-    )
+    # SOBRA
+    m = _RE_SOBRA.match(tl)
     if m:
-        sobra = int(m.group(1))
-        return (qtd_sistema + sobra, +sobra, m.group(2).strip(), "sobra")
-
-    m = re.match(r"^s\.?\s+(\d+)\s*(.*)", text_lower)
+        s = int(m.group(1))
+        return (qtd_sistema + s, s, m.group(2).strip(), "sobra")
+    m = _RE_SOBRA_SHORT.match(tl)
     if m:
-        sobra = int(m.group(1))
-        return (qtd_sistema + sobra, +sobra, m.group(2).strip(), "sobra")
+        s = int(m.group(1))
+        return (qtd_sistema + s, s, m.group(2).strip(), "sobra")
 
-    # ── DANIFICADOS ──
-    keywords_danificado = [
-        "danificad", "avaria", "avariado", "quebrad", "defeito",
-        "vencid", "impropri", "vazand", "estraga", "molhad",
-        "rasgad", "furad", "amassd", "amassad", "contaminad",
-    ]
-    if any(k in text_lower for k in keywords_danificado):
-        return (qtd_sistema, 0, text.strip(), "danificado")
+    # DANIFICADOS
+    if any(k in tl for k in _KEYWORDS_DANIFICADO):
+        return (qtd_sistema, 0, text, "danificado")
 
-    # ── Fallback: busca no meio do texto ──
-    m = re.search(r"falt\w*\s+(?:de\s+)?(\d+)", text_lower)
+    # Fallback
+    m = _RE_FALTA_MID.search(tl)
     if m:
-        falta = int(m.group(1))
-        return (qtd_sistema - falta, -falta, text.strip(), "falta")
-
-    m = re.search(r"(?:sobr|pass)\w*\s+(\d+)", text_lower)
+        f = int(m.group(1))
+        return (qtd_sistema - f, -f, text, "falta")
+    m = _RE_SOBRA_MID.search(tl)
     if m:
-        sobra = int(m.group(1))
-        return (qtd_sistema + sobra, +sobra, text.strip(), "sobra")
+        s = int(m.group(1))
+        return (qtd_sistema + s, s, text, "sobra")
 
-    return (qtd_sistema, 0, text.strip(), "ok")
+    return (qtd_sistema, 0, text, "ok")
 
 
-# ── Detecção de Formato ─────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# DETECÇÃO E PARSING DE PLANILHAS
+# ══════════════════════════════════════════════════════════════════════════════
 
 def detect_format(df_raw: pd.DataFrame) -> str:
     for i in range(min(10, len(df_raw))):
         vals = [str(v).strip().upper() for v in df_raw.iloc[i].tolist()]
         row_text = " ".join(vals)
-
-        if any(x in row_text for x in ["QTDD - VENDIDA", "QTDD ESTOQUE", "GRUPO DE PRODUTO"]):
+        if any(x in row_text for x in ("QTDD - VENDIDA", "QTDD ESTOQUE", "GRUPO DE PRODUTO")):
             return "vendas"
-
-        has_produto = any("PRODUTO" == v for v in vals)
-        has_qtd = any("QUANTIDADE" in v or v == "QTD" for v in vals)
-        if has_produto and has_qtd:
+        if "PRODUTO" in vals and any("QUANTIDADE" in v or v == "QTD" for v in vals):
             return "estoque"
-
     return "desconhecido"
 
 
-# ── Parser: Formato Estoque (Mestre) ─────────────────────────────────────────
+def _find_header(df_raw, check_fn, max_rows=15):
+    for i in range(min(max_rows, len(df_raw))):
+        vals = [str(v).strip().upper() for v in df_raw.iloc[i].tolist()]
+        if check_fn(vals):
+            return i
+    return None
+
 
 def parse_estoque_format(df_raw: pd.DataFrame) -> tuple:
-    header_idx = None
-    for i in range(min(15, len(df_raw))):
-        vals = [str(v).strip().upper() for v in df_raw.iloc[i].tolist()]
-        has_produto = any("PRODUTO" == v for v in vals)
-        has_qtd = any("QUANTIDADE" in v or v == "QTD" for v in vals)
-        if has_produto and has_qtd:
-            header_idx = i
-            break
-
+    header_idx = _find_header(df_raw, lambda vals: "PRODUTO" in vals and any("QUANTIDADE" in v or v == "QTD" for v in vals))
     if header_idx is None:
-        return (False, "Cabeçalho não encontrado no formato estoque. Preciso de 'Produto' e 'Quantidade'.")
+        return (False, "Cabeçalho não encontrado. Preciso de 'Produto' e 'Quantidade'.")
 
     df = df_raw.iloc[header_idx + 1:].copy()
     raw_cols = df_raw.iloc[header_idx].tolist()
@@ -546,37 +484,37 @@ def parse_estoque_format(df_raw: pd.DataFrame) -> tuple:
             col_map["produto"] = c
         elif ("QUANTIDADE" in cu or cu == "QTD") and "qtd" not in col_map:
             col_map["qtd"] = c
-        elif ("CÓDIGO" in cu or "CODIGO" in cu or cu == "COD" or cu == "CÓDIGO") and "codigo" not in col_map:
+        elif cu in ("CÓDIGO", "CODIGO", "COD") and "codigo" not in col_map:
             col_map["codigo"] = c
-        elif cu == "LOCAL" and "local" not in col_map:
-            col_map["local"] = c
         elif ("OBS" in cu or "NOTA" in cu or "DIFEREN" in cu or "ANOTA" in cu) and "nota" not in col_map:
             col_map["nota"] = c
 
     if "produto" not in col_map or "qtd" not in col_map:
-        return (False, f"Colunas detectadas: {list(df.columns)} — falta 'Produto' ou 'Quantidade'.")
+        return (False, f"Colunas: {list(df.columns)} — falta 'Produto' ou 'Quantidade'.")
 
-    # Se não achou coluna de nota, procura em colunas restantes
+    # Procura coluna de nota em colunas restantes
     if "nota" not in col_map:
-        used_cols = set(col_map.values())
+        used = set(col_map.values())
         for c in df.columns:
-            if c not in used_cols:
+            if c not in used:
                 sample = df[c].dropna().astype(str).head(20)
-                has_text = sample.apply(
-                    lambda x: bool(re.search(r"[a-zA-Z]", str(x))) and str(x).upper() not in ["NAN", "NONE", ""]
-                ).any()
-                if has_text:
+                if sample.apply(lambda x: bool(_RE_ALPHA.search(x)) and x.upper() not in ("NAN", "NONE", "")).any():
                     col_map["nota"] = c
                     break
 
     records = []
+    col_prod = col_map["produto"]
+    col_qtd = col_map["qtd"]
+    col_cod = col_map.get("codigo")
+    col_nota = col_map.get("nota")
+
     for _, row in df.iterrows():
-        produto = str(row.get(col_map["produto"], "")).strip()
-        if produto.upper() in ["", "NAN", "NONE", "TOTAL", "PRODUTO", "ROLLUP"]:
+        produto = str(row.get(col_prod, "")).strip()
+        if not produto or produto.upper() in ("NAN", "NONE", "TOTAL", "PRODUTO", "ROLLUP"):
             continue
 
         try:
-            raw_val = row.get(col_map["qtd"])
+            raw_val = row.get(col_qtd)
             if pd.isna(raw_val):
                 continue
             qtd_sistema = int(float(raw_val))
@@ -586,46 +524,38 @@ def parse_estoque_format(df_raw: pd.DataFrame) -> tuple:
             continue
 
         codigo = ""
-        if "codigo" in col_map:
-            codigo = str(row.get(col_map["codigo"], "")).strip()
-            if codigo.upper() in ["NAN", "NONE", ""]:
+        if col_cod:
+            codigo = str(row.get(col_cod, "")).strip()
+            if codigo.upper() in ("NAN", "NONE", ""):
                 codigo = ""
         if not codigo:
-            codigo = "AUTO_" + re.sub(r"[^A-Z0-9]", "", produto.upper())[:20]
+            codigo = "AUTO_" + _RE_NON_ALNUM.sub("", produto.upper())[:20]
 
         nota_raw = ""
-        if "nota" in col_map:
-            nota_raw = str(row.get(col_map["nota"], "")).strip()
-            if nota_raw.upper() in ["NAN", "NONE"]:
+        if col_nota:
+            nota_raw = str(row.get(col_nota, "")).strip()
+            if nota_raw.upper() in ("NAN", "NONE"):
                 nota_raw = ""
-            if re.match(r"^\d+([.,]\d+)?$", nota_raw):
+            if _RE_ONLY_NUMBER.match(nota_raw):
                 nota_raw = ""
 
         categoria = classify_product(produto)
-        qtd_fisica, diferenca, observacao, status = parse_annotation(nota_raw, qtd_sistema)
+        qtd_fisica, diferenca, obs, status = parse_annotation(nota_raw, qtd_sistema)
 
         records.append({
             "codigo": codigo, "produto": produto, "categoria": categoria,
             "qtd_sistema": qtd_sistema, "qtd_fisica": qtd_fisica,
-            "diferenca": diferenca, "nota": observacao, "status": status,
+            "diferenca": diferenca, "nota": obs, "status": status,
         })
 
-    if not records:
-        return (False, "Nenhum dado válido encontrado na planilha de estoque.")
-    return (True, records)
+    return (True, records) if records else (False, "Nenhum dado válido na planilha de estoque.")
 
-
-# ── Parser: Formato Vendas (Parcial) ─────────────────────────────────────────
 
 def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
-    header_idx = None
-    for i in range(min(15, len(df_raw))):
-        vals = [str(v).strip().upper() for v in df_raw.iloc[i].tolist()]
-        row_text = " ".join(vals)
-        if "PRODUTO" in vals and ("QTDD" in row_text or "VENDIDA" in row_text):
-            header_idx = i
-            break
-
+    header_idx = _find_header(
+        df_raw,
+        lambda vals: "PRODUTO" in vals and ("QTDD" in " ".join(vals) or "VENDIDA" in " ".join(vals))
+    )
     if header_idx is None:
         return (False, "Cabeçalho não encontrado no formato vendas.")
 
@@ -637,27 +567,26 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
 
     for c in df.columns:
         cu = c.upper().strip()
-        if "GRUPO" in cu and col_grupo is None:
+        if "GRUPO" in cu and not col_grupo:
             col_grupo = c
-        elif cu == "PRODUTO" and col_produto is None:
+        elif cu == "PRODUTO" and not col_produto:
             col_produto = c
-        elif "VENDIDA" in cu and col_qtd_vendida is None:
+        elif "VENDIDA" in cu and not col_qtd_vendida:
             col_qtd_vendida = c
-        elif "ESTOQUE" in cu and col_qtd_estoque is None:
+        elif "ESTOQUE" in cu and not col_qtd_estoque:
             col_qtd_estoque = c
-        elif ("OBS" in cu or "NOTA" in cu or "ANOTA" in cu) and col_nota is None:
+        elif ("OBS" in cu or "NOTA" in cu or "ANOTA" in cu) and not col_nota:
             col_nota = c
 
-    if col_nota is None:
+    if not col_nota:
         for c in df.columns:
-            cu = c.upper().strip()
-            if "CUSTO" in cu:
+            if "CUSTO" in c.upper().strip():
                 col_nota = c
                 break
 
-    if col_produto is None:
+    if not col_produto:
         return (False, f"Coluna 'PRODUTO' não encontrada. Colunas: {list(df.columns)}")
-    if col_qtd_estoque is None and col_qtd_vendida is None:
+    if not col_qtd_estoque and not col_qtd_vendida:
         return (False, "Nenhuma coluna de quantidade encontrada.")
 
     records = []
@@ -666,23 +595,21 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
     for _, row in df.iterrows():
         if col_grupo:
             g = str(row.get(col_grupo, "")).strip()
-            if g and g.upper() not in ["NAN", "NONE", ""]:
+            if g and g.upper() not in ("NAN", "NONE", ""):
                 current_grupo = g
 
         raw_prod = str(row.get(col_produto, "")).strip()
-        if raw_prod.upper() in ["", "NAN", "NONE", "ROLLUP"]:
+        if not raw_prod or raw_prod.upper() in ("NAN", "NONE", "ROLLUP"):
             continue
 
-        m = re.match(r"^(\d+)\s*-\s*(.+)$", raw_prod)
+        m = _RE_COD_PROD.match(raw_prod)
         if m:
-            codigo = m.group(1).strip()
-            produto = m.group(2).strip()
+            codigo, produto = m.group(1).strip(), m.group(2).strip()
         else:
-            codigo = "AUTO_" + re.sub(r"[^A-Z0-9]", "", raw_prod.upper())[:20]
+            codigo = "AUTO_" + _RE_NON_ALNUM.sub("", raw_prod.upper())[:20]
             produto = raw_prod
 
-        qtd_sistema = 0
-        qtd_vendida_val = 0
+        qtd_sistema = qtd_vendida_val = 0
         if col_qtd_estoque:
             try:
                 val = row.get(col_qtd_estoque)
@@ -697,6 +624,7 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
                     qtd_vendida_val = int(float(val))
             except (ValueError, TypeError):
                 pass
+
         if qtd_sistema <= 0 and qtd_vendida_val > 0:
             qtd_sistema = qtd_vendida_val
         if qtd_sistema <= 0 and qtd_vendida_val <= 0:
@@ -704,30 +632,25 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
 
         nota_raw = ""
         if col_nota:
-            nota_val = str(row.get(col_nota, "")).strip()
-            if nota_val.upper() not in ["NAN", "NONE", ""]:
-                if not re.match(r"^\d+([.,]\d+)?$", nota_val):
-                    nota_raw = nota_val
+            nv = str(row.get(col_nota, "")).strip()
+            if nv.upper() not in ("NAN", "NONE", "") and not _RE_ONLY_NUMBER.match(nv):
+                nota_raw = nv
 
         categoria = normalize_grupo(current_grupo)
-        if categoria in ["OUTROS", ""]:
+        if categoria in ("OUTROS", ""):
             categoria = classify_product(produto)
 
-        qtd_fisica, diferenca, observacao, status = parse_annotation(nota_raw, qtd_sistema)
+        qtd_fisica, diferenca, obs, status = parse_annotation(nota_raw, qtd_sistema)
 
         records.append({
             "codigo": codigo, "produto": produto, "categoria": categoria,
             "qtd_sistema": qtd_sistema, "qtd_fisica": qtd_fisica,
-            "diferenca": diferenca, "nota": observacao, "status": status,
+            "diferenca": diferenca, "nota": obs, "status": status,
             "qtd_vendida": qtd_vendida_val,
         })
 
-    if not records:
-        return (False, "Nenhum dado válido encontrado na planilha de vendas.")
-    return (True, records)
+    return (True, records) if records else (False, "Nenhum dado válido na planilha de vendas.")
 
-
-# ── Leitura Unificada ────────────────────────────────────────────────────────
 
 def read_excel_to_records(uploaded_file) -> tuple:
     try:
@@ -736,7 +659,6 @@ def read_excel_to_records(uploaded_file) -> tuple:
         return (False, f"Erro ao ler arquivo: {e}")
 
     fmt = detect_format(df_raw)
-
     if fmt == "vendas":
         return parse_vendas_format(df_raw)
     elif fmt == "estoque":
@@ -748,177 +670,165 @@ def read_excel_to_records(uploaded_file) -> tuple:
         ok2, result2 = parse_vendas_format(df_raw)
         if ok2:
             return (ok2, result2)
-        return (False, "Formato não reconhecido. Colunas esperadas:\n"
-                       "• Estoque: 'Produto' + 'Quantidade'\n"
-                       "• Vendas: 'PRODUTO' + 'QTDD ESTOQUE' ou 'QTDD - VENDIDA'")
+        return (False, "Formato não reconhecido.")
 
 
-# ── Upload Mestre ────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# UPLOADS — batch inserts + sync único no final
+# ══════════════════════════════════════════════════════════════════════════════
 
-def upload_mestre(uploaded_file) -> tuple:
-    ok, result = read_excel_to_records(uploaded_file)
-    if not ok:
-        return (False, result)
-
-    records = result
+def upload_mestre(records: list) -> tuple:
+    """Recebe records já parseados (sem re-parsear o arquivo)."""
     try:
         conn = get_db()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         conn.execute("DELETE FROM estoque_mestre")
 
-        for r in records:
-            conn.execute("""
-                INSERT INTO estoque_mestre
-                    (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, [
-                r["codigo"], r["produto"], r["categoria"],
-                r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
-                r["nota"], r["status"], now, now,
-            ])
+        # BATCH INSERT via executemany
+        conn.executemany("""
+            INSERT INTO estoque_mestre
+                (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [
+            (r["codigo"], r["produto"], r["categoria"],
+             r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+             r["nota"], r["status"], now, now)
+            for r in records
+        ])
 
         n_div = sum(1 for r in records if r["status"] != "ok")
         conn.execute("""
             INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, [now, "MESTRE", uploaded_file.name, len(records), len(records), 0, n_div])
+        """, [now, "MESTRE", "", len(records), len(records), 0, n_div])
 
         conn.commit()
-        sync_db()
-        return (True, f"✅ Mestre carregado: {len(records)} produtos ({n_div} divergências)")
+        sync_db()  # Sync UMA VEZ no final
+        return (True, f"✅ Mestre: {len(records)} produtos ({n_div} divergências)")
     except Exception as e:
-        return (False, f"❌ Erro ao salvar mestre: {e}")
+        return (False, f"❌ Erro: {e}")
 
 
-# ── Upload Parcial ───────────────────────────────────────────────────────────
-
-def upload_parcial(uploaded_file) -> tuple:
-    ok, result = read_excel_to_records(uploaded_file)
-    if not ok:
-        return (False, result)
-
-    records = result
+def upload_parcial(records: list) -> tuple:
+    """Recebe records já parseados."""
     try:
         conn = get_db()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        novos = 0
-        atualizados = 0
 
-        # Buscar todos os códigos existentes de uma vez (1 query em vez de N)
-        existing_codes = set()
-        rows_existing = conn.execute("SELECT codigo FROM estoque_mestre").fetchall()
-        for row in rows_existing:
-            existing_codes.add(row[0])
+        # Buscar códigos existentes (1 query)
+        existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
 
+        novos_data, update_data = [], []
         for r in records:
-            if r["codigo"] in existing_codes:
-                conn.execute("""
-                    UPDATE estoque_mestre SET
-                        produto = ?, categoria = ?, qtd_sistema = ?, qtd_fisica = ?,
-                        diferenca = ?, nota = ?, status = ?, ultima_contagem = ?
-                    WHERE codigo = ?
-                """, [
-                    r["produto"], r["categoria"],
-                    r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
-                    r["nota"], r["status"], now, r["codigo"],
-                ])
-                atualizados += 1
+            row_data = (
+                r["produto"], r["categoria"], r["qtd_sistema"], r["qtd_fisica"],
+                r["diferenca"], r["nota"], r["status"], now, r["codigo"]
+            )
+            if r["codigo"] in existing:
+                update_data.append(row_data)
             else:
-                conn.execute("""
-                    INSERT INTO estoque_mestre
-                        (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, [
+                novos_data.append((
                     r["codigo"], r["produto"], r["categoria"],
                     r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
-                    r["nota"], r["status"], now, now,
-                ])
-                novos += 1
+                    r["nota"], r["status"], now, now
+                ))
 
-        # Detectar reposição para produtos vendidos (excluindo categorias de campo)
+        # BATCH updates e inserts
+        if update_data:
+            conn.executemany("""
+                UPDATE estoque_mestre SET
+                    produto=?, categoria=?, qtd_sistema=?, qtd_fisica=?,
+                    diferenca=?, nota=?, status=?, ultima_contagem=?
+                WHERE codigo=?
+            """, update_data)
+
+        if novos_data:
+            conn.executemany("""
+                INSERT INTO estoque_mestre
+                    (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, novos_data)
+
+        # Reposição loja
+        n_repo = _detectar_reposicao_batch(records, conn, now)
+
         n_div = sum(1 for r in records if r["status"] != "ok")
-        n_repo = detectar_reposicao_loja(records, conn, now)
         conn.execute("""
             INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, [now, "PARCIAL", uploaded_file.name, len(records), novos, atualizados, n_div])
+        """, [now, "PARCIAL", "", len(records), len(novos_data), len(update_data), n_div])
 
         conn.commit()
-        sync_db()
+        sync_db()  # Sync UMA VEZ no final
 
-        msg = f"✅ Parcial processada: {len(records)} produtos"
-        if atualizados:
-            msg += f" · {atualizados} atualizados"
-        if novos:
-            msg += f" · {novos} novos"
+        parts = [f"✅ Parcial: {len(records)} produtos"]
+        if update_data:
+            parts.append(f"{len(update_data)} atualizados")
+        if novos_data:
+            parts.append(f"{len(novos_data)} novos")
         if n_div:
-            msg += f" · {n_div} divergências"
+            parts.append(f"{n_div} divergências")
         if n_repo:
-            msg += f" · 🏪 {n_repo} para repor na loja"
-        return (True, msg)
+            parts.append(f"🏪 {n_repo} para repor na loja")
+        return (True, " · ".join(parts))
     except Exception as e:
-        return (False, f"❌ Erro ao salvar parcial: {e}")
+        return (False, f"❌ Erro: {e}")
+
+
+def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
+    """Detecta reposição em batch."""
+    pending = {row[0] for row in conn.execute("SELECT codigo FROM reposicao_loja WHERE reposto = 0").fetchall()}
+    to_insert = []
+
+    for r in records:
+        qtd_v = r.get("qtd_vendida", 0)
+        if qtd_v <= 0:
+            continue
+        cat = str(r.get("categoria", "")).strip().upper()
+        if cat in CATEGORIAS_EXCLUIDAS_REPOSICAO:
+            continue
+        if r["codigo"] in pending:
+            continue
+        to_insert.append((r["codigo"], r["produto"], r["categoria"], qtd_v, now))
+        pending.add(r["codigo"])
+
+    if to_insert:
+        conn.executemany("""
+            INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em)
+            VALUES (?, ?, ?, ?, ?)
+        """, to_insert)
+
+    return len(to_insert)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Ordenação de Categorias — Herbicidas, Fungicidas, Inseticidas primeiro
+# TREEMAP — otimizado com list join em vez de concatenação
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Ordem de prioridade das categorias (as não listadas vão por ordem alfabética depois)
-CATEGORIA_PRIORITY = [
-    "HERBICIDAS",
-    "FUNGICIDAS",
-    "INSETICIDAS",
-    "NEMATICIDAS",
-    "ADUBOS FOLIARES",
-    "ADUBOS QUÍMICOS",
-    "ADUBOS CORRETIVOS",
-    "ADJUVANTES",
-    "ÓLEOS",
-    "SEMENTES",
-    "MEDICAMENTOS",
-]
+def sort_categorias(cats):
+    mx = len(CATEGORIA_PRIORITY)
+    return sorted(cats, key=lambda c: (_CAT_PRIORITY_MAP.get(c, mx), c))
 
-
-def sort_categorias(cats: list) -> list:
-    """Ordena categorias com prioridade: Herbicidas > Fungicidas > Inseticidas > resto alfabético."""
-    priority_map = {cat: i for i, cat in enumerate(CATEGORIA_PRIORITY)}
-    max_priority = len(CATEGORIA_PRIORITY)
-
-    return sorted(cats, key=lambda c: (priority_map.get(c, max_priority), c))
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# Treemap — cards de danificado mostram qtd do sistema
-# ══════════════════════════════════════════════════════════════════════════════
 
 def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
     if df.empty:
-        return '<div style="color:#64748b; text-align:center; padding:40px;">Nenhum produto para exibir</div>'
+        return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
     if filter_cat != "TODOS":
         df = df[df["categoria"] == filter_cat]
     if df.empty:
-        return '<div style="color:#64748b; text-align:center; padding:40px;">Nenhum produto nesta categoria</div>'
+        return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto nesta categoria</div>'
 
-    df = df.copy()
-    df["qtd_sistema"] = pd.to_numeric(df["qtd_sistema"], errors="coerce").fillna(0)
-
+    # Agrupar por categoria
     categories = {}
     for _, row in df.iterrows():
-        cat = row["categoria"]
-        if cat not in categories:
-            categories[cat] = []
-        categories[cat].append(row)
+        categories.setdefault(row["categoria"], []).append(row)
 
-    sorted_cats = sort_categorias(list(categories.keys()))
-
-    blocks_html = ""
-
-    for cat in sorted_cats:
+    parts = []
+    for cat in sort_categorias(list(categories.keys())):
         rows = categories[cat]
-        products_html = ""
+        prods = []
 
         for r in sorted(rows, key=lambda x: str(x["produto"])):
             qs = int(r["qtd_sistema"])
@@ -926,20 +836,14 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
             diff = int(r["diferenca"]) if pd.notnull(r.get("diferenca")) else 0
             stat = str(r.get("status", "ok"))
             note = str(r.get("nota", "")) if pd.notnull(r.get("nota")) else ""
-            cod = str(r.get("codigo", ""))
 
-            # Danificado mostra qtd do sistema + info da avaria
             if stat == "danificado":
                 bg, txt = "#a55eea", "#fff"
-                nums = re.findall(r"\d+", note)
-                qtd_bad = nums[0] if nums else ""
-                if qtd_bad:
-                    info = f"{qs} · AV:{qtd_bad}"
-                else:
-                    info = f"{qs} · AVARIA"
+                nums = _RE_DIGITS.findall(note)
+                info = f"{qs} · AV:{nums[0]}" if nums else f"{qs} · AVARIA"
             elif diff == 0:
                 bg, txt = "#00d68f", "#0a2e1a"
-                info = f"{qs}"
+                info = str(qs)
             elif diff < 0:
                 bg, txt = "#ff4757", "#fff"
                 info = f"{qf} (F {abs(diff)})"
@@ -948,60 +852,42 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
                 info = f"{qf} (S {diff})"
 
             contagem = str(r.get("ultima_contagem", ""))
-            border_extra = ""
-            if not contagem or contagem in ["", "nan", "None"]:
-                border_extra = "border: 2px dashed #64748b !important; opacity: 0.6;"
+            border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
 
-            tooltip = f"{r['produto']} | Cod: {cod} | Sist: {qs} | Fis: {qf}"
-            if note:
-                tooltip += f" | Obs: {note}"
+            prods.append(
+                f'<div style="width:110px;height:60px;background:{bg};color:{txt};'
+                f'border-radius:4px;padding:4px;margin:2px;display:flex;flex-direction:column;'
+                f'justify-content:center;align-items:center;overflow:hidden;'
+                f'border:1px solid rgba(0,0,0,0.1);{border}">'
+                f'<div style="font-size:0.55rem;font-weight:700;text-align:center;width:100%;'
+                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{short_name(r["produto"])}</div>'
+                f'<div style="font-size:0.65rem;opacity:0.9;font-family:monospace;font-weight:bold;margin-top:2px;">{info}</div>'
+                f'</div>'
+            )
 
-            products_html += f"""
-            <div style="width: 110px; height: 60px; background: {bg}; color: {txt};
-                 border-radius: 4px; padding: 4px; margin: 2px;
-                 display: flex; flex-direction: column; justify-content: center; align-items: center;
-                 overflow: hidden; border: 1px solid rgba(0,0,0,0.1); {border_extra}"
-                 title="{tooltip}">
-                <div style="font-size: 0.55rem; font-weight: 700; text-align: center; width: 100%;
-                     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                    {short_name(r['produto'])}
-                </div>
-                <div style="font-size: 0.65rem; opacity: 0.9; font-family: monospace;
-                     font-weight: bold; margin-top: 2px;">
-                    {info}
-                </div>
-            </div>"""
+        parts.append(
+            f'<div style="width:100%;background:#111827;border-radius:8px;padding:8px;'
+            f'margin-bottom:8px;border:1px solid #1e293b;">'
+            f'<div style="font-size:0.75rem;color:#64748b;font-weight:700;text-transform:uppercase;'
+            f'margin-bottom:6px;border-bottom:1px solid #1e293b;padding-bottom:4px;">'
+            f'{cat} <span style="font-size:0.6rem;color:#4a5568;font-weight:400;">({len(rows)})</span></div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:2px;">{"".join(prods)}</div></div>'
+        )
 
-        blocks_html += f"""
-        <div style="width: 100%; background: #111827; border-radius: 8px; padding: 8px;
-             margin-bottom: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column;">
-            <div style="font-size: 0.75rem; color: #64748b; font-weight: 700;
-                 text-transform: uppercase; margin-bottom: 6px;
-                 border-bottom: 1px solid #1e293b; padding-bottom: 4px;">
-                {cat} <span style="font-size:0.6rem; color:#4a5568; font-weight:400;">({len(rows)})</span>
-            </div>
-            <div style="display: flex; flex-wrap: wrap; gap: 2px;">{products_html}</div>
-        </div>"""
-
-    return f'<div style="display: flex; flex-direction: column; min-height: 450px;">{blocks_html}</div>'
+    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>'
 
 
-# ── MAIN APP ─────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# MAIN APP
+# ══════════════════════════════════════════════════════════════════════════════
 
 st.markdown('<div class="main-title">CAMDA ESTOQUE</div>', unsafe_allow_html=True)
 st.markdown('<div class="sub-title">ESTOQUE MESTRE · QUIRINÓPOLIS</div>', unsafe_allow_html=True)
 
-# Indicador de conexão
 if _using_cloud:
-    st.markdown(
-        '<div class="sync-badge">☁️ CONECTADO AO TURSO · BANCO COMPARTILHADO</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="sync-badge">☁️ CONECTADO AO TURSO · BANCO COMPARTILHADO</div>', unsafe_allow_html=True)
 else:
-    st.markdown(
-        '<div class="sync-badge">⚠️ MODO LOCAL · Configure TURSO_DATABASE_URL e TURSO_AUTH_TOKEN para compartilhar</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="sync-badge">⚠️ MODO LOCAL · Configure TURSO_DATABASE_URL e TURSO_AUTH_TOKEN para compartilhar</div>', unsafe_allow_html=True)
 
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
@@ -1024,62 +910,64 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
     is_mestre_upload = "MESTRE" in upload_mode
 
     if is_mestre_upload:
-        st.caption("O upload mestre substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
+        st.caption("Substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
     else:
-        st.caption("O upload parcial atualiza apenas os produtos presentes na planilha. Os demais permanecem inalterados.")
+        st.caption("Atualiza apenas os produtos da planilha. Os demais permanecem inalterados.")
 
-    uploaded = st.file_uploader(
-        "Planilha XLSX",
-        type=["xlsx", "xls"],
-        label_visibility="collapsed",
-        key="upload_main",
-    )
+    uploaded = st.file_uploader("Planilha XLSX", type=["xlsx", "xls"], label_visibility="collapsed", key="upload_main")
 
     if uploaded:
-        with st.expander("👁️ Preview do arquivo", expanded=False):
-            try:
-                ok_preview, result_preview = read_excel_to_records(uploaded)
-                uploaded.seek(0)
-                if ok_preview:
-                    df_preview = pd.DataFrame(result_preview)
-                    st.caption(f"Formato detectado · {len(result_preview)} produtos encontrados")
-                    n_div_preview = sum(1 for r in result_preview if r["status"] != "ok")
-                    if n_div_preview:
-                        st.warning(f"⚠️ {n_div_preview} divergência(s) detectada(s)")
-                    st.dataframe(
-                        df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
-                        hide_index=True, use_container_width=True, height=250,
-                    )
+        # Parseia UMA VEZ e guarda no session_state
+        file_id = f"{uploaded.name}_{uploaded.size}"
+        if st.session_state.processed_file != file_id:
+            ok, result = read_excel_to_records(uploaded)
+            st.session_state["_parsed_ok"] = ok
+            st.session_state["_parsed_result"] = result
+            st.session_state.processed_file = file_id
+
+        ok = st.session_state.get("_parsed_ok", False)
+        result = st.session_state.get("_parsed_result")
+
+        if ok:
+            records = result
+            with st.expander("👁️ Preview", expanded=False):
+                df_preview = pd.DataFrame(records)
+                n_div = sum(1 for r in records if r["status"] != "ok")
+                st.caption(f"{len(records)} produtos encontrados")
+                if n_div:
+                    st.warning(f"⚠️ {n_div} divergência(s)")
+                st.dataframe(
+                    df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
+                    hide_index=True, use_container_width=True, height=250,
+                )
+
+            if st.button("🚀 Processar", type="primary"):
+                with st.spinner("Processando..."):
+                    if is_mestre_upload:
+                        ok_up, msg = upload_mestre(records)
+                    else:
+                        ok_up, msg = upload_parcial(records)
+
+                if ok_up:
+                    st.success(msg)
+                    if _using_cloud:
+                        st.info("☁️ Sincronizado.")
+                    st.session_state.processed_file = None
+                    st.rerun()
                 else:
-                    st.error(result_preview)
-            except Exception as e:
-                st.error(f"Erro no preview: {e}")
+                    st.error(msg)
+        else:
+            st.error(result)
 
-        if st.button("🚀 Processar", type="primary"):
-            with st.spinner("Processando e sincronizando..."):
-                if is_mestre_upload:
-                    ok, msg = upload_mestre(uploaded)
-                else:
-                    ok, msg = upload_parcial(uploaded)
-
-            if ok:
-                st.success(msg)
-                if _using_cloud:
-                    st.info("☁️ Dados sincronizados — seu colega verá as alterações ao recarregar a página.")
-                st.rerun()
-            else:
-                st.error(msg)
-
-    # Área de administração
+    # Admin
     if has_mestre:
         st.markdown("---")
-        col_adm1, col_adm2, col_adm3 = st.columns([2, 1, 1])
-        with col_adm2:
-            if _using_cloud:
-                if st.button("🔄 Sincronizar"):
-                    sync_db()
-                    st.rerun()
-        with col_adm3:
+        _, col_sync, col_reset = st.columns([2, 1, 1])
+        with col_sync:
+            if _using_cloud and st.button("🔄 Sincronizar"):
+                sync_db()
+                st.rerun()
+        with col_reset:
             if st.session_state.confirm_reset:
                 st.warning("Tem certeza?")
                 c1, c2 = st.columns(2)
@@ -1102,79 +990,44 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 if has_mestre:
     df_mestre = get_current_stock()
 
-    search_term = st.text_input(
-        "🔍 Buscar no Mestre",
-        placeholder="Nome ou Código...",
-        label_visibility="collapsed",
-    )
+    search_term = st.text_input("🔍 Buscar no Mestre", placeholder="Nome ou Código...", label_visibility="collapsed")
 
-    df_view = df_mestre.copy()
+    df_view = df_mestre
     if search_term:
         mask = (
-            df_view["produto"].astype(str).str.contains(search_term, case=False, na=False)
-            | df_view["codigo"].astype(str).str.contains(search_term, case=False, na=False)
+            df_view["produto"].str.contains(search_term, case=False, na=False)
+            | df_view["codigo"].str.contains(search_term, case=False, na=False)
         )
         df_view = df_view[mask]
 
-    n_ok = len(df_view[df_view["status"] == "ok"])
-    n_falta = len(df_view[df_view["status"] == "falta"])
-    n_sobra = len(df_view[df_view["status"] == "sobra"])
-    n_danificado = len(df_view[df_view["status"] == "danificado"])
-
-    n_sem_contagem = len(
-        df_view[
-            (df_view["ultima_contagem"].isna())
-            | (df_view["ultima_contagem"].astype(str).isin(["", "nan", "None"]))
-        ]
-    )
+    n_ok = (df_view["status"] == "ok").sum()
+    n_falta = (df_view["status"] == "falta").sum()
+    n_sobra = (df_view["status"] == "sobra").sum()
+    n_danificado = (df_view["status"] == "danificado").sum()
 
     df_reposicao = get_reposicao_pendente()
     n_repor = len(df_reposicao)
 
     st.markdown(f"""
     <div class="stat-row">
-        <div class="stat-card">
-            <div class="stat-value">{len(df_view)}</div>
-            <div class="stat-label">Total</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value">{n_ok}</div>
-            <div class="stat-label">OK</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value red">{n_falta}</div>
-            <div class="stat-label">Faltas</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value amber">{n_sobra}</div>
-            <div class="stat-label">Sobras</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value purple">{n_danificado}</div>
-            <div class="stat-label">Danificados</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-value blue">{n_repor}</div>
-            <div class="stat-label">Repor Loja</div>
-        </div>
+        <div class="stat-card"><div class="stat-value">{len(df_view)}</div><div class="stat-label">Total</div></div>
+        <div class="stat-card"><div class="stat-value">{n_ok}</div><div class="stat-label">OK</div></div>
+        <div class="stat-card"><div class="stat-value red">{n_falta}</div><div class="stat-label">Faltas</div></div>
+        <div class="stat-card"><div class="stat-value amber">{n_sobra}</div><div class="stat-label">Sobras</div></div>
+        <div class="stat-card"><div class="stat-value purple">{n_danificado}</div><div class="stat-label">Danificados</div></div>
+        <div class="stat-card"><div class="stat-value blue">{n_repor}</div><div class="stat-label">Repor Loja</div></div>
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5 = st.tabs([
-        "🗺️ Mapa Estoque",
-        "⚠️ Divergências",
-        "💔 Danificados",
-        "🏪 Repor na Loja",
-        "📝 Log de Uploads",
-    ])
+    t1, t2, t3, t4, t5 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📝 Log"])
 
     with t1:
         st.markdown(build_css_treemap(df_view, "TODOS"), unsafe_allow_html=True)
 
     with t2:
-        df_div = df_view[(df_view["status"] == "falta") | (df_view["status"] == "sobra")]
+        df_div = df_view[df_view["status"].isin(("falta", "sobra"))]
         if df_div.empty:
-            st.info("Nenhuma divergência encontrada.")
+            st.info("Nenhuma divergência.")
         else:
             st.dataframe(
                 df_div[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "ultima_contagem"]],
@@ -1186,49 +1039,33 @@ if has_mestre:
         if df_dan.empty:
             st.info("Nenhum produto danificado.")
         else:
-            st.dataframe(
-                df_dan[["codigo", "produto", "qtd_sistema", "nota", "ultima_contagem"]],
-                hide_index=True, use_container_width=True,
-            )
+            st.dataframe(df_dan[["codigo", "produto", "qtd_sistema", "nota", "ultima_contagem"]], hide_index=True, use_container_width=True)
 
     with t4:
         if df_reposicao.empty:
-            st.success("Nenhum produto pendente de reposição na loja! 🎉")
+            st.success("Nenhum produto pendente de reposição! 🎉")
         else:
-            st.caption(
-                f"{n_repor} produto(s) para levar/repor na loja. "
-                "Itens somem após 7 dias ou quando marcados como repostos."
-            )
+            st.caption(f"{n_repor} produto(s) para repor. Itens somem após 7 dias ou quando marcados.")
             for _, item in df_reposicao.iterrows():
                 try:
-                    dias_atras = (datetime.now() - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
+                    dias = (datetime.now() - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
                 except (ValueError, TypeError):
-                    dias_atras = 0
-
-                if dias_atras == 0:
-                    tempo = "hoje"
-                elif dias_atras == 1:
-                    tempo = "ontem"
-                else:
-                    tempo = f"{dias_atras}d atrás"
-
+                    dias = 0
+                tempo = "hoje" if dias == 0 else ("ontem" if dias == 1 else f"{dias}d atrás")
                 qtd_v = int(item["qtd_vendida"]) if pd.notnull(item["qtd_vendida"]) else 0
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
                     st.markdown(
-                        f'<div style="background:#111827; border:1px solid #1e293b; border-radius:8px; '
-                        f'padding:10px 14px; margin-bottom:4px;">'
-                        f'<div style="display:flex; justify-content:space-between; align-items:center;">'
-                        f'<span style="color:#e0e6ed; font-weight:700; font-size:0.85rem;">{item["produto"]}</span>'
-                        f'<span style="color:#3b82f6; font-size:0.6rem; font-family:monospace;">{tempo}</span>'
-                        f'</div>'
-                        f'<div style="margin-top:4px; display:flex; gap:12px;">'
-                        f'<span style="color:#64748b; font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
-                        f'<span style="color:#64748b; font-size:0.65rem;">{item["categoria"]}</span>'
-                        f'<span style="color:#ffa502; font-size:0.65rem; font-weight:700;">Vendido: {qtd_v} → Repor: {qtd_v}</span>'
-                        f'</div>'
-                        f'</div>',
+                        f'<div style="background:#111827;border:1px solid #1e293b;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
+                        f'<span style="color:#3b82f6;font-size:0.6rem;font-family:monospace;">{tempo}</span></div>'
+                        f'<div style="margin-top:4px;display:flex;gap:12px;">'
+                        f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
+                        f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
+                        f'<span style="color:#ffa502;font-size:0.65rem;font-weight:700;">Vendido: {qtd_v} → Repor: {qtd_v}</span>'
+                        f'</div></div>',
                         unsafe_allow_html=True,
                     )
                 with col_btn:
@@ -1245,8 +1082,7 @@ if has_mestre:
 
 else:
     st.markdown(
-        '<div style="text-align:center; color:#64748b; padding:60px 20px; font-size:1rem;">'
-        "Faça o upload da planilha mestre acima para começar ☝️"
-        "</div>",
+        '<div style="text-align:center;color:#64748b;padding:60px 20px;font-size:1rem;">'
+        "Faça o upload da planilha mestre acima para começar ☝️</div>",
         unsafe_allow_html=True,
     )
