@@ -201,7 +201,7 @@ def get_db():
             codigo TEXT NOT NULL,
             produto TEXT NOT NULL,
             categoria TEXT NOT NULL,
-            qtd INTEGER NOT NULL DEFAULT 0,
+            qtd_vendida INTEGER NOT NULL DEFAULT 0,
             criado_em TEXT NOT NULL,
             reposto INTEGER DEFAULT 0,
             reposto_em TEXT DEFAULT ''
@@ -212,11 +212,11 @@ def get_db():
     return conn
 
 
-# Categorias que são de DEPÓSITO (não vão para reposição na loja)
-CATEGORIAS_DEPOSITO = {
-    "HERBICIDAS", "INSETICIDAS", "FUNGICIDAS", "NEMATICIDAS",
-    "ADUBOS FOLIARES", "ADUBOS QUÍMICOS", "ADUBOS CORRETIVOS",
-    "ADJUVANTES", "ÓLEOS", "SEMENTES", "RAÇÃO MINERAL",
+# Categorias que VÃO para reposição na loja (whitelist)
+CATEGORIAS_REPOSICAO_LOJA = {
+    "LUBRIFICANTES",
+    "EPI",
+    "ACESSORIOS DE FAZENDA",
 }
 
 
@@ -255,12 +255,15 @@ def reset_db():
 
 def detectar_reposicao_loja(records: list, conn, now: str):
     """
-    Detecta produtos fora das categorias de depósito e adiciona à lista de reposição.
+    Detecta produtos de categorias de loja (whitelist) e adiciona à lista de reposição.
+    Usa qtd_vendida se disponível, senão usa qtd_sistema.
     Só adiciona se o produto não estiver já pendente (não reposto) na tabela.
     """
     count = 0
     for r in records:
-        if r["categoria"] in CATEGORIAS_DEPOSITO:
+        # Normaliza a categoria para comparação
+        cat_upper = r["categoria"].upper().strip()
+        if cat_upper not in CATEGORIAS_REPOSICAO_LOJA:
             continue
 
         # Verifica se já existe pendente (não reposto) para esse código
@@ -270,10 +273,12 @@ def detectar_reposicao_loja(records: list, conn, now: str):
         ).fetchone()
 
         if not existing:
+            # Usa qtd_vendida se existir, senão qtd_sistema
+            qtd_v = r.get("qtd_vendida", r["qtd_sistema"])
             conn.execute("""
-                INSERT INTO reposicao_loja (codigo, produto, categoria, qtd, criado_em)
+                INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em)
                 VALUES (?, ?, ?, ?, ?)
-            """, (r["codigo"], r["produto"], r["categoria"], r["qtd_sistema"], now))
+            """, (r["codigo"], r["produto"], r["categoria"], qtd_v, now))
             count += 1
 
     return count
@@ -284,12 +289,12 @@ def get_reposicao_pendente() -> pd.DataFrame:
     conn = get_db()
     cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
     rows = conn.execute("""
-        SELECT id, codigo, produto, categoria, qtd, criado_em
+        SELECT id, codigo, produto, categoria, qtd_vendida, criado_em
         FROM reposicao_loja
         WHERE reposto = 0 AND criado_em >= ?
         ORDER BY criado_em DESC
     """, (cutoff,)).fetchall()
-    cols = ["id", "codigo", "produto", "categoria", "qtd", "criado_em"]
+    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "criado_em"]
     return pd.DataFrame(rows, columns=cols)
 
 
@@ -601,6 +606,7 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
             produto = raw_prod
 
         qtd_sistema = 0
+        qtd_vendida_val = 0
         if col_qtd_estoque:
             try:
                 val = row.get(col_qtd_estoque)
@@ -608,13 +614,15 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
                     qtd_sistema = int(float(val))
             except (ValueError, TypeError):
                 pass
-        if qtd_sistema <= 0 and col_qtd_vendida:
+        if col_qtd_vendida:
             try:
                 val = row.get(col_qtd_vendida)
                 if pd.notna(val):
-                    qtd_sistema = int(float(val))
+                    qtd_vendida_val = int(float(val))
             except (ValueError, TypeError):
                 pass
+        if qtd_sistema <= 0 and qtd_vendida_val > 0:
+            qtd_sistema = qtd_vendida_val
         if qtd_sistema <= 0:
             continue
 
@@ -635,6 +643,7 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
             "codigo": codigo, "produto": produto, "categoria": categoria,
             "qtd_sistema": qtd_sistema, "qtd_fisica": qtd_fisica,
             "diferenca": diferenca, "nota": observacao, "status": status,
+            "qtd_vendida": qtd_vendida_val,
         })
 
     if not records:
@@ -1042,7 +1051,9 @@ if has_mestre:
     """, unsafe_allow_html=True)
 
     cats = ["TODOS"] + sorted(df_view["categoria"].unique().tolist())
-    f_cat = st.radio("Filtro", cats, horizontal=True, label_visibility="collapsed")
+    with st.sidebar:
+        st.markdown("### 🏷️ Filtro por Categoria")
+        f_cat = st.radio("Categoria", cats, label_visibility="collapsed")
 
     t1, t2, t3, t4, t5 = st.tabs([
         "🗺️ Mapa Estoque",
@@ -1081,7 +1092,7 @@ if has_mestre:
         else:
             st.caption(
                 f"{n_repor} produto(s) para levar/repor na loja. "
-                "Itens somem automaticamente após 7 dias ou quando marcados como repostos."
+                "Itens somem após 7 dias ou quando marcados como repostos."
             )
             for _, item in df_reposicao.iterrows():
                 dias_atras = (datetime.now() - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
@@ -1090,18 +1101,24 @@ if has_mestre:
                 elif dias_atras == 1:
                     tempo = "ontem"
                 else:
-                    tempo = f"{dias_atras} dias atrás"
+                    tempo = f"{dias_atras}d atrás"
+
+                qtd_v = int(item["qtd_vendida"]) if pd.notnull(item["qtd_vendida"]) else 0
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
                     st.markdown(
                         f'<div style="background:#111827; border:1px solid #1e293b; border-radius:8px; '
-                        f'padding:8px 12px; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">'
-                        f'<div>'
+                        f'padding:10px 14px; margin-bottom:4px;">'
+                        f'<div style="display:flex; justify-content:space-between; align-items:center;">'
                         f'<span style="color:#e0e6ed; font-weight:700; font-size:0.85rem;">{item["produto"]}</span>'
-                        f'<span style="color:#64748b; font-size:0.65rem; margin-left:8px;">{item["categoria"]} · Qtd: {item["qtd"]}</span>'
-                        f'</div>'
                         f'<span style="color:#3b82f6; font-size:0.6rem; font-family:monospace;">{tempo}</span>'
+                        f'</div>'
+                        f'<div style="margin-top:4px; display:flex; gap:12px;">'
+                        f'<span style="color:#64748b; font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
+                        f'<span style="color:#64748b; font-size:0.65rem;">{item["categoria"]}</span>'
+                        f'<span style="color:#ffa502; font-size:0.65rem; font-weight:700;">Repor: {qtd_v}</span>'
+                        f'</div>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
