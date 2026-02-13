@@ -258,16 +258,25 @@ def get_stock_count() -> int:
 
 def get_reposicao_pendente() -> pd.DataFrame:
     """Retorna itens de reposição pendentes (não repostos E com menos de 7 dias).
+    Usa qtd_sistema do estoque_mestre como fallback quando qtd_vendida = 0.
     Fallback para DF vazio se houver erro."""
-    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "criado_em"]
+    cols = ["id", "codigo", "produto", "categoria", "qtd_repor", "criado_em"]
     try:
         conn = get_db()
         cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         rows = conn.execute("""
-            SELECT id, codigo, produto, categoria, qtd_vendida, criado_em
-            FROM reposicao_loja
-            WHERE reposto = 0 AND criado_em >= ?
-            ORDER BY criado_em DESC
+            SELECT
+                r.id, r.codigo, r.produto, r.categoria,
+                CASE
+                    WHEN r.qtd_vendida > 0 THEN r.qtd_vendida
+                    WHEN e.qtd_sistema IS NOT NULL THEN e.qtd_sistema
+                    ELSE 0
+                END AS qtd_repor,
+                r.criado_em
+            FROM reposicao_loja r
+            LEFT JOIN estoque_mestre e ON r.codigo = e.codigo
+            WHERE r.reposto = 0 AND r.criado_em >= ?
+            ORDER BY r.criado_em DESC
         """, [cutoff]).fetchall()
         return pd.DataFrame(rows, columns=cols)
     except Exception as e:
@@ -1096,9 +1105,7 @@ if has_mestre:
     """, unsafe_allow_html=True)
 
     cats = ["TODOS"] + sorted(df_view["categoria"].unique().tolist())
-    with st.sidebar:
-        st.markdown("### 🏷️ Filtro por Categoria")
-        f_cat = st.radio("Categoria", cats, label_visibility="collapsed")
+    f_cat = st.radio("🏷️ Categoria", cats, horizontal=True, label_visibility="collapsed")
 
     t1, t2, t3, t4, t5 = st.tabs([
         "🗺️ Mapa Estoque",
@@ -1152,7 +1159,7 @@ if has_mestre:
                 else:
                     tempo = f"{dias_atras}d atrás"
 
-                qtd_v = int(item["qtd_vendida"]) if pd.notnull(item["qtd_vendida"]) else 0
+                qtd_v = int(item["qtd_repor"]) if pd.notnull(item["qtd_repor"]) else 0
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
