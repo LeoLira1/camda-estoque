@@ -190,6 +190,23 @@ def get_db():
     """)
     conn.commit()
 
+    # ── Migrações: adiciona colunas que podem faltar em bancos antigos ──
+    try:
+        cols_reposicao = [
+            row[1] for row in conn.execute("PRAGMA table_info(reposicao_loja)").fetchall()
+        ]
+        if "qtd_vendida" not in cols_reposicao:
+            conn.execute("ALTER TABLE reposicao_loja ADD COLUMN qtd_vendida INTEGER NOT NULL DEFAULT 0")
+            conn.commit()
+        if "reposto" not in cols_reposicao:
+            conn.execute("ALTER TABLE reposicao_loja ADD COLUMN reposto INTEGER DEFAULT 0")
+            conn.commit()
+        if "reposto_em" not in cols_reposicao:
+            conn.execute("ALTER TABLE reposicao_loja ADD COLUMN reposto_em TEXT DEFAULT ''")
+            conn.commit()
+    except Exception:
+        pass  # Se PRAGMA não funcionar no libsql, ignora silenciosamente
+
     return conn
 
 
