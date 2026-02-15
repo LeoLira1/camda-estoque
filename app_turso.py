@@ -590,6 +590,7 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
         return (False, "Nenhuma coluna de quantidade encontrada.")
 
     records = []
+    zerados = []
     current_grupo = "OUTROS"
 
     for _, row in df.iterrows():
@@ -625,9 +626,9 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
             except (ValueError, TypeError):
                 pass
 
-        if qtd_sistema <= 0 and qtd_vendida_val > 0:
-            qtd_sistema = qtd_vendida_val
-        if qtd_sistema <= 0 and qtd_vendida_val <= 0:
+        if qtd_sistema <= 0:
+            if qtd_vendida_val > 0:
+                zerados.append(codigo)
             continue
 
         nota_raw = ""
@@ -649,28 +650,29 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
             "qtd_vendida": qtd_vendida_val,
         })
 
-    return (True, records) if records else (False, "Nenhum dado válido na planilha de vendas.")
+    return (True, records, zerados) if records else (False, "Nenhum dado válido na planilha de vendas.", [])
 
 
 def read_excel_to_records(uploaded_file) -> tuple:
     try:
         df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
     except Exception as e:
-        return (False, f"Erro ao ler arquivo: {e}")
+        return (False, f"Erro ao ler arquivo: {e}", [])
 
     fmt = detect_format(df_raw)
     if fmt == "vendas":
         return parse_vendas_format(df_raw)
     elif fmt == "estoque":
-        return parse_estoque_format(df_raw)
+        ok, result = parse_estoque_format(df_raw)
+        return (ok, result, [])
     else:
         ok, result = parse_estoque_format(df_raw)
         if ok:
-            return (ok, result)
-        ok2, result2 = parse_vendas_format(df_raw)
+            return (ok, result, [])
+        ok2, result2, zerados2 = parse_vendas_format(df_raw)
         if ok2:
-            return (ok2, result2)
-        return (False, "Formato não reconhecido.")
+            return (ok2, result2, zerados2)
+        return (False, "Formato não reconhecido.", [])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -710,14 +712,21 @@ def upload_mestre(records: list) -> tuple:
         return (False, f"❌ Erro: {e}")
 
 
-def upload_parcial(records: list) -> tuple:
-    """Recebe records já parseados."""
+def upload_parcial(records: list, zerados: list = None) -> tuple:
+    """Recebe records já parseados e lista opcional de códigos com estoque zerado."""
     try:
         conn = get_db()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Buscar códigos existentes (1 query)
         existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
+
+        # Remover produtos que zeraram o estoque
+        if zerados:
+            codigos_remover = [c for c in zerados if c in existing]
+            if codigos_remover:
+                ph = ",".join(["?" for _ in codigos_remover])
+                conn.execute(f"DELETE FROM estoque_mestre WHERE codigo IN ({ph})", codigos_remover)
 
         novos_data, update_data = [], []
         for r in records:
@@ -920,13 +929,15 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         # Parseia UMA VEZ e guarda no session_state
         file_id = f"{uploaded.name}_{uploaded.size}"
         if st.session_state.processed_file != file_id:
-            ok, result = read_excel_to_records(uploaded)
+            ok, result, zerados = read_excel_to_records(uploaded)
             st.session_state["_parsed_ok"] = ok
             st.session_state["_parsed_result"] = result
+            st.session_state["_parsed_zerados"] = zerados
             st.session_state.processed_file = file_id
 
         ok = st.session_state.get("_parsed_ok", False)
         result = st.session_state.get("_parsed_result")
+        zerados = st.session_state.get("_parsed_zerados", [])
 
         if ok:
             records = result
@@ -936,6 +947,8 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                 st.caption(f"{len(records)} produtos encontrados")
                 if n_div:
                     st.warning(f"⚠️ {n_div} divergência(s)")
+                if zerados:
+                    st.info(f"🗑️ {len(zerados)} produto(s) com estoque zerado serão removidos do mestre")
                 st.dataframe(
                     df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
                     hide_index=True, use_container_width=True, height=250,
@@ -946,7 +959,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     if is_mestre_upload:
                         ok_up, msg = upload_mestre(records)
                     else:
-                        ok_up, msg = upload_parcial(records)
+                        ok_up, msg = upload_parcial(records, zerados)
 
                 if ok_up:
                     st.success(msg)
