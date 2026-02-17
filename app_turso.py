@@ -1032,10 +1032,11 @@ _PLOTLY_LAYOUT = dict(
     plot_bgcolor="rgba(0,0,0,0)",
     font=dict(family="Outfit, sans-serif", color="#e0e6ed", size=11),
     margin=dict(l=10, r=10, t=40, b=10),
-    legend=dict(
-        bgcolor="rgba(17,24,39,0.8)", bordercolor="#1e293b", borderwidth=1,
-        font=dict(size=10, color="#94a3b8"),
-    ),
+)
+
+_DEFAULT_LEGEND = dict(
+    bgcolor="rgba(17,24,39,0.8)", bordercolor="#1e293b", borderwidth=1,
+    font=dict(size=10, color="#94a3b8"),
 )
 
 _GROUP_COLORS = {
