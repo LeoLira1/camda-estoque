@@ -1226,12 +1226,20 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False})
 
             # Tabela detalhada
-            with st.expander("📋 Tabela Detalhada", expanded=False):
+            with st.expander("📋 Tabela Detalhada — Críticos", expanded=False):
                 df_show = df_alerta[["codigo", "produto", "grupo", "qtd_vendida", "qtd_estoque", "nivel"]].copy()
                 df_show.columns = ["Código", "Produto", "Grupo", "Vendido", "Estoque", "Nível"]
                 st.dataframe(df_show, hide_index=True, use_container_width=True)
         else:
             st.success("Nenhum produto em situação crítica! 🎉")
+
+        # Lista completa de zerados
+        if not df_zero.empty:
+            with st.expander(f"💀 Lista Completa — Estoque Zerado ({len(df_zero)} produtos)", expanded=False):
+                df_zero_show = df_zero[["codigo", "produto", "grupo", "qtd_vendida"]].copy()
+                df_zero_show.columns = ["Código", "Produto", "Grupo", "Vendido"]
+                df_zero_show = df_zero_show.reset_index(drop=True)
+                st.dataframe(df_zero_show, hide_index=True, use_container_width=True, height=400)
 
     # ══════════════════════════════════════════════════════════════════════
     # TAB 3 — TAXA DE GIRO (BURN RATE)
