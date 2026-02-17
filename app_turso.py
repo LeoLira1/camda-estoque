@@ -3,6 +3,8 @@ import pandas as pd
 import libsql
 import re
 import os
+import plotly.graph_objects as go
+import plotly.express as px
 from datetime import datetime, timedelta
 
 # ── Page Config ──────────────────────────────────────────────────────────────
@@ -166,6 +168,17 @@ def _get_connection():
             criado_em TEXT NOT NULL,
             reposto INTEGER DEFAULT 0,
             reposto_em TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS vendas_historico (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            grupo TEXT NOT NULL,
+            qtd_vendida INTEGER NOT NULL DEFAULT 0,
+            qtd_estoque INTEGER NOT NULL DEFAULT 0,
+            data_upload TEXT NOT NULL
         )
     """)
     conn.commit()
@@ -970,6 +983,369 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# VENDAS — salvar/carregar dados de vendas para gráficos
+# ══════════════════════════════════════════════════════════════════════════════
+
+def save_vendas_historico(records: list, grupo_map: dict):
+    """Salva dados de vendas no histórico para gráficos."""
+    try:
+        conn = get_db()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # Limpar anterior do mesmo dia
+        hoje = datetime.now().strftime("%Y-%m-%d")
+        conn.execute("DELETE FROM vendas_historico WHERE data_upload LIKE ?", [f"{hoje}%"])
+        rows = []
+        for r in records:
+            qtd_v = r.get("qtd_vendida", 0)
+            qtd_e = r.get("qtd_sistema", 0)
+            grupo = r.get("categoria", "OUTROS")
+            rows.append((r["codigo"], r["produto"], grupo, qtd_v, qtd_e, now))
+        if rows:
+            conn.executemany("""
+                INSERT INTO vendas_historico (codigo, produto, grupo, qtd_vendida, qtd_estoque, data_upload)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, rows)
+            conn.commit()
+            sync_db()
+    except Exception:
+        pass
+
+
+def get_vendas_historico() -> pd.DataFrame:
+    try:
+        rows = get_db().execute(
+            "SELECT codigo, produto, grupo, qtd_vendida, qtd_estoque, data_upload FROM vendas_historico ORDER BY qtd_vendida DESC"
+        ).fetchall()
+        if rows:
+            return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "qtd_vendida", "qtd_estoque", "data_upload"])
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PLOTLY — tema dark consistente com o dashboard
+# ══════════════════════════════════════════════════════════════════════════════
+
+_PLOTLY_LAYOUT = dict(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font=dict(family="Outfit, sans-serif", color="#e0e6ed", size=11),
+    margin=dict(l=10, r=10, t=40, b=10),
+    legend=dict(
+        bgcolor="rgba(17,24,39,0.8)", bordercolor="#1e293b", borderwidth=1,
+        font=dict(size=10, color="#94a3b8"),
+    ),
+    xaxis=dict(gridcolor="#1e293b", zerolinecolor="#1e293b"),
+    yaxis=dict(gridcolor="#1e293b", zerolinecolor="#1e293b"),
+)
+
+_GROUP_COLORS = {
+    "HERBICIDAS": "#3b82f6", "INSETICIDAS": "#00d68f",
+    "ADUBOS FOLIARES": "#a55eea", "ADUBOS QUÍMICOS": "#8b5cf6",
+    "FUNGICIDAS": "#ffa502", "MATURADORES": "#06b6d4",
+    "BIOLOGICOS E INOCULANTES": "#10b981", "SEMENTES DE MILHO": "#f59e0b",
+    "SUPLEMENTO MINERAL": "#ec4899", "LONAS": "#6366f1",
+    "ANTIBIOTICOS/ANTI-INFLAMATORIO": "#f472b6",
+    "ACESSORIOS DE CERCA ELETRICA": "#818cf8",
+    "ADJUVANTES/ESPALHANTES ADESIVO": "#2dd4bf",
+}
+
+
+def _get_color(grupo: str) -> str:
+    return _GROUP_COLORS.get(grupo, "#64748b")
+
+
+def build_vendas_tab(df_vendas: pd.DataFrame):
+    """Renderiza a aba completa de gráficos de vendas."""
+    if df_vendas.empty:
+        st.info("📊 Nenhum dado de vendas carregado ainda. Faça upload de uma planilha de vendas para ativar os gráficos.")
+        return
+
+    # ── Dados agregados por grupo ────────────────────────────────────────
+    df_grupo = df_vendas.groupby("grupo", as_index=False).agg(
+        qtd_vendida=("qtd_vendida", "sum"),
+        qtd_estoque=("qtd_estoque", "sum"),
+        produtos=("codigo", "nunique"),
+    ).sort_values("qtd_vendida", ascending=False)
+
+    total_vendido = int(df_grupo["qtd_vendida"].sum())
+    total_estoque = int(df_grupo["qtd_estoque"].sum())
+    total_skus = int(df_vendas["codigo"].nunique())
+    n_zerados = int((df_vendas["qtd_estoque"] <= 0).sum())
+    pct_ruptura = round((n_zerados / max(total_skus, 1)) * 100)
+
+    # ── KPIs ─────────────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div class="stat-row">
+        <div class="stat-card"><div class="stat-value">{total_vendido:,}</div><div class="stat-label">Vendidos</div></div>
+        <div class="stat-card"><div class="stat-value blue">{total_skus}</div><div class="stat-label">SKUs</div></div>
+        <div class="stat-card"><div class="stat-value red">{n_zerados}</div><div class="stat-label">Zerados</div></div>
+        <div class="stat-card"><div class="stat-value amber">{pct_ruptura}%</div><div class="stat-label">Ruptura</div></div>
+    </div>
+    """.replace(",", "."), unsafe_allow_html=True)
+
+    # ── Sub-tabs de gráficos ─────────────────────────────────────────────
+    vt1, vt2, vt3, vt4 = st.tabs(["📊 Por Grupo", "🚨 Estoque Crítico", "🔥 Taxa de Giro", "🏆 Top Produtos"])
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TAB 1 — VENDAS POR GRUPO
+    # ══════════════════════════════════════════════════════════════════════
+    with vt1:
+        top_n = min(14, len(df_grupo))
+        df_top = df_grupo.head(top_n)
+
+        # Bar chart horizontal — vendas por grupo
+        fig_bar = go.Figure()
+        fig_bar.add_trace(go.Bar(
+            y=df_top["grupo"], x=df_top["qtd_vendida"],
+            orientation="h",
+            marker=dict(
+                color=[_get_color(g) for g in df_top["grupo"]],
+                line=dict(width=0),
+                cornerradius=4,
+            ),
+            text=df_top["qtd_vendida"].apply(lambda v: f"{v:,.0f}".replace(",", ".")),
+            textposition="outside", textfont=dict(size=10, color="#94a3b8"),
+            hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<extra></extra>",
+        ))
+        fig_bar.update_layout(
+            **_PLOTLY_LAYOUT,
+            title=dict(text="Quantidade Vendida por Grupo", font=dict(size=14, color="#e0e6ed")),
+            height=max(350, top_n * 32),
+            yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
+            xaxis=dict(gridcolor="#1e293b", title=None),
+            showlegend=False,
+        )
+        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+
+        # Dois gráficos lado a lado
+        c1, c2 = st.columns(2)
+
+        with c1:
+            # Donut — distribuição %
+            fig_pie = go.Figure(go.Pie(
+                labels=df_top["grupo"].head(8),
+                values=df_top["qtd_vendida"].head(8),
+                hole=0.55,
+                marker=dict(colors=[_get_color(g) for g in df_top["grupo"].head(8)]),
+                textinfo="percent",
+                textfont=dict(size=10, color="#e0e6ed"),
+                hovertemplate="<b>%{label}</b><br>%{value:,.0f} un<br>%{percent}<extra></extra>",
+            ))
+            fig_pie.update_layout(
+                **_PLOTLY_LAYOUT,
+                title=dict(text="Distribuição % Vendas", font=dict(size=13, color="#94a3b8")),
+                height=320, showlegend=True,
+                legend=dict(font=dict(size=9), orientation="h", y=-0.15),
+            )
+            st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
+
+        with c2:
+            # Grouped bar — vendido vs estoque
+            fig_vs = go.Figure()
+            df8 = df_top.head(8)
+            fig_vs.add_trace(go.Bar(
+                name="Vendido", x=df8["grupo"], y=df8["qtd_vendida"],
+                marker=dict(color="#00d68f", cornerradius=3, opacity=0.85),
+            ))
+            fig_vs.add_trace(go.Bar(
+                name="Estoque", x=df8["grupo"], y=df8["qtd_estoque"],
+                marker=dict(color="#3b82f6", cornerradius=3, opacity=0.5),
+            ))
+            fig_vs.update_layout(
+                **_PLOTLY_LAYOUT, barmode="group",
+                title=dict(text="Vendido vs Estoque", font=dict(size=13, color="#94a3b8")),
+                height=320,
+                xaxis=dict(tickangle=-35, tickfont=dict(size=8), gridcolor="rgba(0,0,0,0)"),
+                legend=dict(orientation="h", y=1.12, font=dict(size=10)),
+            )
+            st.plotly_chart(fig_vs, use_container_width=True, config={"displayModeBar": False})
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TAB 2 — ESTOQUE CRÍTICO
+    # ══════════════════════════════════════════════════════════════════════
+    with vt2:
+        # Produtos com estoque zerado que venderam
+        df_zero = df_vendas[(df_vendas["qtd_estoque"] <= 0) & (df_vendas["qtd_vendida"] > 0)].sort_values("qtd_vendida", ascending=False)
+        # Produtos com estoque < 50% do vendido
+        df_crit = df_vendas[
+            (df_vendas["qtd_estoque"] > 0) &
+            (df_vendas["qtd_estoque"] < df_vendas["qtd_vendida"] * 0.5) &
+            (df_vendas["qtd_vendida"] > 10)
+        ].sort_values("qtd_vendida", ascending=False)
+
+        kc1, kc2, kc3 = st.columns(3)
+        with kc1:
+            st.markdown(f"""<div class="stat-card"><div class="stat-value red">{len(df_zero)}</div>
+            <div class="stat-label">💀 Zerados c/ vendas</div></div>""", unsafe_allow_html=True)
+        with kc2:
+            st.markdown(f"""<div class="stat-card"><div class="stat-value amber">{len(df_crit)}</div>
+            <div class="stat-label">🔥 Crítico &lt;50%</div></div>""", unsafe_allow_html=True)
+        with kc3:
+            total_alert = len(df_zero) + len(df_crit)
+            st.markdown(f"""<div class="stat-card"><div class="stat-value purple">{total_alert}</div>
+            <div class="stat-label">⚡ Total Alertas</div></div>""", unsafe_allow_html=True)
+
+        # Combinar e mostrar top 20
+        df_alerta = pd.concat([
+            df_zero.head(15).assign(nivel="ZERADO"),
+            df_crit.head(10).assign(nivel="CRÍTICO"),
+        ]).sort_values("qtd_vendida", ascending=False).head(20)
+
+        if not df_alerta.empty:
+            # Bar chart horizontal com cores de severidade
+            colors = ["#ff4757" if n == "ZERADO" else "#ffa502" for n in df_alerta["nivel"]]
+            nomes = df_alerta["produto"].apply(lambda p: p[:35] + "…" if len(p) > 35 else p)
+
+            fig_alert = go.Figure()
+            fig_alert.add_trace(go.Bar(
+                y=nomes, x=df_alerta["qtd_vendida"], orientation="h",
+                marker=dict(color=colors, cornerradius=3),
+                text=df_alerta.apply(lambda r: f"Est: {int(r['qtd_estoque'])}", axis=1),
+                textposition="outside", textfont=dict(size=9, color="#94a3b8"),
+                hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br>%{text}<extra></extra>",
+            ))
+            fig_alert.update_layout(
+                **_PLOTLY_LAYOUT,
+                title=dict(text="🚨 Produtos com Estoque Crítico vs Vendas", font=dict(size=13)),
+                height=max(400, len(df_alerta) * 28),
+                yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
+                xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False})
+
+            # Tabela detalhada
+            with st.expander("📋 Tabela Detalhada", expanded=False):
+                df_show = df_alerta[["codigo", "produto", "grupo", "qtd_vendida", "qtd_estoque", "nivel"]].copy()
+                df_show.columns = ["Código", "Produto", "Grupo", "Vendido", "Estoque", "Nível"]
+                st.dataframe(df_show, hide_index=True, use_container_width=True)
+        else:
+            st.success("Nenhum produto em situação crítica! 🎉")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TAB 3 — TAXA DE GIRO (BURN RATE)
+    # ══════════════════════════════════════════════════════════════════════
+    with vt3:
+        st.caption("Estimativa de dias até zerar estoque no ritmo atual (baseado nos últimos 47 dias de vendas)")
+
+        df_burn = df_grupo[df_grupo["qtd_vendida"] > 0].copy()
+        df_burn["dias_estoque"] = (df_burn["qtd_estoque"] / df_burn["qtd_vendida"] * 47).round(0).astype(int)
+        df_burn = df_burn.sort_values("dias_estoque").head(12)
+
+        if not df_burn.empty:
+            colors_burn = [
+                "#ff4757" if d < 15 else "#ffa502" if d < 30 else "#00d68f"
+                for d in df_burn["dias_estoque"]
+            ]
+
+            fig_burn = go.Figure()
+            fig_burn.add_trace(go.Bar(
+                y=df_burn["grupo"], x=df_burn["dias_estoque"], orientation="h",
+                marker=dict(color=colors_burn, cornerradius=4),
+                text=df_burn["dias_estoque"].apply(lambda d: f"{d}d"),
+                textposition="outside", textfont=dict(size=10, color="#94a3b8"),
+                hovertemplate="<b>%{y}</b><br>Dias restantes: %{x}<br><extra></extra>",
+            ))
+            # Linhas de referência
+            fig_burn.add_vline(x=15, line_dash="dash", line_color="#ff475755", line_width=1,
+                             annotation_text="Urgente", annotation_font=dict(size=9, color="#ff4757"))
+            fig_burn.add_vline(x=30, line_dash="dash", line_color="#ffa50255", line_width=1,
+                             annotation_text="Atenção", annotation_font=dict(size=9, color="#ffa502"))
+            fig_burn.update_layout(
+                **_PLOTLY_LAYOUT,
+                title=dict(text="🔥 Dias de Estoque Restante por Grupo", font=dict(size=14)),
+                height=max(350, len(df_burn) * 35),
+                yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
+                xaxis=dict(title="Dias", gridcolor="#1e293b"),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_burn, use_container_width=True, config={"displayModeBar": False})
+
+            # Info box
+            urgentes = df_burn[df_burn["dias_estoque"] < 15]["grupo"].tolist()
+            if urgentes:
+                st.error(f"⚡ **Reposição urgente** (<15 dias): {', '.join(urgentes)}")
+
+            atencao = df_burn[(df_burn["dias_estoque"] >= 15) & (df_burn["dias_estoque"] < 30)]["grupo"].tolist()
+            if atencao:
+                st.warning(f"⚠️ **Atenção** (15-30 dias): {', '.join(atencao)}")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TAB 4 — TOP PRODUTOS
+    # ══════════════════════════════════════════════════════════════════════
+    with vt4:
+        col_filter, _ = st.columns([1, 2])
+        with col_filter:
+            grupos_disp = ["TODOS"] + sorted(df_vendas["grupo"].unique().tolist())
+            grupo_sel = st.selectbox("Filtrar por grupo:", grupos_disp, key="vendas_filtro_grupo")
+
+        df_prod = df_vendas.copy()
+        if grupo_sel != "TODOS":
+            df_prod = df_prod[df_prod["grupo"] == grupo_sel]
+
+        df_top_prod = df_prod.nlargest(15, "qtd_vendida")
+
+        if not df_top_prod.empty:
+            nomes = df_top_prod["produto"].apply(lambda p: p[:40] + "…" if len(p) > 40 else p)
+            fig_top = go.Figure()
+            fig_top.add_trace(go.Bar(
+                y=nomes, x=df_top_prod["qtd_vendida"], orientation="h",
+                marker=dict(
+                    color=[_get_color(g) for g in df_top_prod["grupo"]],
+                    cornerradius=4,
+                ),
+                text=df_top_prod["qtd_vendida"].apply(lambda v: f"{v:,.0f}".replace(",", ".")),
+                textposition="outside", textfont=dict(size=9, color="#94a3b8"),
+                hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br><extra></extra>",
+            ))
+            fig_top.update_layout(
+                **_PLOTLY_LAYOUT,
+                title=dict(text=f"🏆 Top 15 Produtos — {grupo_sel}", font=dict(size=14)),
+                height=max(380, len(df_top_prod) * 30),
+                yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
+                xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False})
+
+            # Scatter vendido vs estoque
+            st.markdown("---")
+            fig_scatter = go.Figure()
+            for g in df_prod["grupo"].unique():
+                dg = df_prod[df_prod["grupo"] == g]
+                fig_scatter.add_trace(go.Scatter(
+                    x=dg["qtd_vendida"], y=dg["qtd_estoque"],
+                    mode="markers", name=g[:15],
+                    marker=dict(
+                        color=_get_color(g), size=8, opacity=0.7,
+                        line=dict(width=1, color="#0a0f1a"),
+                    ),
+                    hovertemplate="<b>%{text}</b><br>Vendido: %{x}<br>Estoque: %{y}<extra></extra>",
+                    text=df_prod.loc[dg.index, "produto"].apply(lambda p: p[:30]),
+                ))
+            # Linha de equilíbrio
+            max_val = max(df_prod["qtd_vendida"].max(), df_prod["qtd_estoque"].max(), 100)
+            fig_scatter.add_trace(go.Scatter(
+                x=[0, max_val], y=[0, max_val],
+                mode="lines", line=dict(dash="dash", color="#64748b", width=1),
+                name="Equilíbrio", showlegend=True,
+            ))
+            fig_scatter.update_layout(
+                **_PLOTLY_LAYOUT,
+                title=dict(text="Vendido × Estoque (abaixo da linha = estoque menor que vendas)", font=dict(size=12, color="#94a3b8")),
+                height=380,
+                xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
+                yaxis=dict(title="Qtd Estoque", gridcolor="#1e293b"),
+                legend=dict(font=dict(size=8), orientation="h", y=-0.2),
+            )
+            st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.info("Nenhum produto encontrado para o filtro selecionado.")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -1046,6 +1422,8 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 
                 if ok_up:
                     st.success(msg)
+                    # Salvar dados de vendas para gráficos
+                    save_vendas_historico(records, _GRUPO_MAP)
                     if _using_cloud:
                         st.info("☁️ Sincronizado.")
                     st.session_state.processed_file = None
@@ -1166,7 +1544,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📝 Log"])
+    t1, t2, t3, t4, t5, t6 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📈 Vendas", "📝 Log"])
 
     with t1:
         st.markdown(build_css_treemap(df_view, "TODOS"), unsafe_allow_html=True)
@@ -1221,6 +1599,10 @@ if has_mestre:
                         st.rerun()
 
     with t5:
+        df_vendas = get_vendas_historico()
+        build_vendas_tab(df_vendas)
+
+    with t6:
         df_hist = get_historico_uploads()
         if df_hist.empty:
             st.info("Nenhum upload registrado.")
