@@ -724,7 +724,11 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
 
         if qtd_sistema <= 0:
             if qtd_vendida_val > 0:
-                zerados.append(codigo)
+                zerados.append({
+                    "codigo": codigo, "produto": produto,
+                    "grupo": normalize_grupo(current_grupo),
+                    "qtd_vendida": qtd_vendida_val, "qtd_estoque": 0,
+                })
             continue
 
         nota_raw = ""
@@ -819,7 +823,8 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
 
         # Remover produtos que zeraram o estoque
         if zerados:
-            codigos_remover = [c for c in zerados if c in existing]
+            codigos_zerados = [z["codigo"] if isinstance(z, dict) else z for z in zerados]
+            codigos_remover = [c for c in codigos_zerados if c in existing]
             if codigos_remover:
                 ph = ",".join(["?" for _ in codigos_remover])
                 conn.execute(f"DELETE FROM estoque_mestre WHERE codigo IN ({ph})", codigos_remover)
@@ -986,8 +991,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
 # VENDAS — salvar/carregar dados de vendas para gráficos
 # ══════════════════════════════════════════════════════════════════════════════
 
-def save_vendas_historico(records: list, grupo_map: dict):
-    """Salva dados de vendas no histórico para gráficos."""
+def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None):
+    """Salva dados de vendas no histórico para gráficos (inclui zerados)."""
     try:
         conn = get_db()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1000,6 +1005,11 @@ def save_vendas_historico(records: list, grupo_map: dict):
             qtd_e = r.get("qtd_sistema", 0)
             grupo = r.get("categoria", "OUTROS")
             rows.append((r["codigo"], r["produto"], grupo, qtd_v, qtd_e, now))
+        # Incluir zerados
+        if zerados:
+            for z in zerados:
+                if isinstance(z, dict):
+                    rows.append((z["codigo"], z["produto"], z.get("grupo", "OUTROS"), z.get("qtd_vendida", 0), 0, now))
         if rows:
             conn.executemany("""
                 INSERT INTO vendas_historico (codigo, produto, grupo, qtd_vendida, qtd_estoque, data_upload)
@@ -1078,7 +1088,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
     st.markdown(f"""
     <div class="stat-row">
         <div class="stat-card"><div class="stat-value">{total_vendido:,}</div><div class="stat-label">Vendidos</div></div>
-        <div class="stat-card"><div class="stat-value blue">{total_skus}</div><div class="stat-label">SKUs</div></div>
+        <div class="stat-card"><div class="stat-value blue">{total_skus}</div><div class="stat-label">Produtos</div></div>
         <div class="stat-card"><div class="stat-value red">{n_zerados}</div><div class="stat-label">Zerados</div></div>
         <div class="stat-card"><div class="stat-value amber">{pct_ruptura}%</div><div class="stat-label">Ruptura</div></div>
     </div>
@@ -1430,7 +1440,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                 if ok_up:
                     st.success(msg)
                     # Salvar dados de vendas para gráficos
-                    save_vendas_historico(records, _GRUPO_MAP)
+                    save_vendas_historico(records, _GRUPO_MAP, zerados)
                     if _using_cloud:
                         st.info("☁️ Sincronizado.")
                     st.session_state.processed_file = None
