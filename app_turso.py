@@ -991,14 +991,32 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
 # VENDAS — salvar/carregar dados de vendas para gráficos
 # ══════════════════════════════════════════════════════════════════════════════
 
-def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None):
-    """Salva dados de vendas no histórico para gráficos (inclui zerados)."""
+def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, is_mestre: bool = False):
+    """Salva dados de vendas no histórico para gráficos.
+    - MESTRE: substitui tudo (carga completa do ano)
+    - PARCIAL: atualiza apenas os produtos que vieram, mantém o resto
+    """
     try:
         conn = get_db()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        # Limpar anterior do mesmo dia
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        conn.execute("DELETE FROM vendas_historico WHERE data_upload LIKE ?", [f"{hoje}%"])
+
+        if is_mestre:
+            # Carga completa — substitui tudo
+            conn.execute("DELETE FROM vendas_historico")
+        else:
+            # Parcial — remove só os que vieram pra atualizar
+            codigos_update = [r["codigo"] for r in records]
+            if zerados:
+                for z in zerados:
+                    if isinstance(z, dict):
+                        codigos_update.append(z["codigo"])
+            if codigos_update:
+                # Deletar em batches de 500 pra não estourar limite de params
+                for i in range(0, len(codigos_update), 500):
+                    batch = codigos_update[i:i+500]
+                    ph = ",".join(["?" for _ in batch])
+                    conn.execute(f"DELETE FROM vendas_historico WHERE codigo IN ({ph})", batch)
+
         rows = []
         for r in records:
             qtd_v = r.get("qtd_vendida", 0)
@@ -1448,7 +1466,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                 if ok_up:
                     st.success(msg)
                     # Salvar dados de vendas para gráficos
-                    save_vendas_historico(records, _GRUPO_MAP, zerados)
+                    save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload)
                     if _using_cloud:
                         st.info("☁️ Sincronizado.")
                     st.session_state.processed_file = None
