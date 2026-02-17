@@ -1248,10 +1248,18 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 hovertemplate="<b>%{y}</b><br>Dias restantes: %{x}<br><extra></extra>",
             ))
             # Linhas de referência
-            fig_burn.add_vline(x=15, line_dash="dash", line_color="#ff475755", line_width=1,
-                             annotation_text="Urgente", annotation_font=dict(size=9, color="#ff4757"))
-            fig_burn.add_vline(x=30, line_dash="dash", line_color="#ffa50255", line_width=1,
-                             annotation_text="Atenção", annotation_font=dict(size=9, color="#ffa502"))
+            fig_burn.add_shape(
+                type="line", x0=15, x1=15, y0=-0.5, y1=len(df_burn)-0.5,
+                line=dict(dash="dash", color="#ff4757", width=1), yref="y",
+            )
+            fig_burn.add_annotation(x=15, y=-0.5, text="Urgente", showarrow=False,
+                font=dict(size=9, color="#ff4757"), yshift=-12)
+            fig_burn.add_shape(
+                type="line", x0=30, x1=30, y0=-0.5, y1=len(df_burn)-0.5,
+                line=dict(dash="dash", color="#ffa502", width=1), yref="y",
+            )
+            fig_burn.add_annotation(x=30, y=-0.5, text="Atenção", showarrow=False,
+                font=dict(size=9, color="#ffa502"), yshift=-12)
             fig_burn.update_layout(
                 **_PLOTLY_LAYOUT,
                 title=dict(text="🔥 Dias de Estoque Restante por Grupo", font=dict(size=14)),
