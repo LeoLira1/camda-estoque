@@ -1036,8 +1036,6 @@ _PLOTLY_LAYOUT = dict(
         bgcolor="rgba(17,24,39,0.8)", bordercolor="#1e293b", borderwidth=1,
         font=dict(size=10, color="#94a3b8"),
     ),
-    xaxis=dict(gridcolor="#1e293b", zerolinecolor="#1e293b"),
-    yaxis=dict(gridcolor="#1e293b", zerolinecolor="#1e293b"),
 )
 
 _GROUP_COLORS = {
