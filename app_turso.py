@@ -150,6 +150,13 @@ def _get_connection():
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS principios_ativos (
+            produto TEXT NOT NULL,
+            principio_ativo TEXT NOT NULL,
+            categoria TEXT DEFAULT ''
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS reposicao_loja (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             codigo TEXT NOT NULL,
@@ -293,6 +300,82 @@ def get_historico_uploads() -> pd.DataFrame:
         return pd.DataFrame(rows, columns=cols)
     except Exception:
         return pd.DataFrame(columns=cols)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PRINCÍPIOS ATIVOS — mapeamento produto ↔ princípio ativo
+# ══════════════════════════════════════════════════════════════════════════════
+
+_PA_COLS = ["produto", "principio_ativo", "categoria"]
+
+
+def load_principios_ativos_from_excel(filepath: str) -> list:
+    """Lê o Excel de princípios ativos e retorna lista de dicts."""
+    try:
+        df = pd.read_excel(filepath, header=0)
+        col_prod = col_pa = col_cat = None
+        for c in df.columns:
+            cu = str(c).strip().upper()
+            if cu == "PRODUTO":
+                col_prod = c
+            elif "PRINC" in cu or "ATIVO" in cu:
+                col_pa = c
+            elif "CATEG" in cu:
+                col_cat = c
+        if not col_prod or not col_pa:
+            return []
+        records = []
+        for _, row in df.iterrows():
+            prod = str(row.get(col_prod, "")).strip()
+            pa = str(row.get(col_pa, "")).strip()
+            cat = str(row.get(col_cat, "")).strip() if col_cat else ""
+            if prod and pa and prod.upper() not in ("NAN", "NONE") and pa.upper() not in ("NAN", "NONE"):
+                records.append({"produto": prod, "principio_ativo": pa, "categoria": cat})
+        return records
+    except Exception:
+        return []
+
+
+def sync_principios_ativos(records: list):
+    """Sincroniza tabela de princípios ativos no banco."""
+    if not records:
+        return
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM principios_ativos")
+        conn.executemany(
+            "INSERT INTO principios_ativos (produto, principio_ativo, categoria) VALUES (?, ?, ?)",
+            [(r["produto"], r["principio_ativo"], r["categoria"]) for r in records]
+        )
+        conn.commit()
+        sync_db()
+    except Exception:
+        pass
+
+
+def get_principios_ativos() -> pd.DataFrame:
+    """Retorna DataFrame com mapeamento produto ↔ princípio ativo."""
+    try:
+        rows = get_db().execute("SELECT produto, principio_ativo, categoria FROM principios_ativos").fetchall()
+        return pd.DataFrame(rows, columns=_PA_COLS)
+    except Exception:
+        return pd.DataFrame(columns=_PA_COLS)
+
+
+def get_pa_count() -> int:
+    try:
+        row = get_db().execute("SELECT COUNT(*) FROM principios_ativos").fetchone()
+        return row[0] if row else 0
+    except Exception:
+        return 0
+
+
+def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
+    """Retorna set de nomes de produtos que contêm o princípio ativo buscado."""
+    if df_pa.empty:
+        return set()
+    mask = df_pa["principio_ativo"].str.contains(search_term, case=False, na=False)
+    return set(df_pa.loc[mask, "produto"].str.upper())
 
 
 def reset_db():
@@ -975,6 +1058,30 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
     # Admin
     if has_mestre:
         st.markdown("---")
+
+        # Upload de Princípios Ativos
+        st.markdown("##### 🧬 Base de Princípios Ativos")
+        pa_count = get_pa_count()
+        if pa_count > 0:
+            st.caption(f"✅ {pa_count} registros de princípios ativos carregados. A busca por princípio ativo está ativa.")
+        else:
+            st.caption("Carregue a planilha de princípios ativos para habilitar a busca por P.A.")
+
+        uploaded_pa = st.file_uploader(
+            "Planilha de Princípios Ativos", type=["xlsx", "xls"],
+            label_visibility="collapsed", key="upload_pa"
+        )
+        if uploaded_pa:
+            pa_records = load_principios_ativos_from_excel(uploaded_pa)
+            if pa_records:
+                if st.button("🧬 Carregar Princípios Ativos", type="primary"):
+                    sync_principios_ativos(pa_records)
+                    st.success(f"✅ {len(pa_records)} registros de princípios ativos carregados!")
+                    st.rerun()
+            else:
+                st.error("Não foi possível ler a planilha. Verifique se tem colunas 'Produto' e 'Princípio Ativo'.")
+
+        st.markdown("---")
         _, col_sync, col_reset = st.columns([2, 1, 1])
         with col_sync:
             if _using_cloud and st.button("🔄 Sincronizar"):
@@ -1002,16 +1109,43 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 # ── Dashboard ────────────────────────────────────────────────────────────────
 if has_mestre:
     df_mestre = get_current_stock()
+    df_pa = get_principios_ativos()
+    has_pa = not df_pa.empty
 
-    search_term = st.text_input("🔍 Buscar no Mestre", placeholder="Nome ou Código...", label_visibility="collapsed")
+    search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
+    search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed")
 
     df_view = df_mestre
+    pa_match_info = ""
     if search_term:
-        mask = (
+        # Busca padrão por nome/código
+        mask_nome_cod = (
             df_view["produto"].str.contains(search_term, case=False, na=False)
             | df_view["codigo"].str.contains(search_term, case=False, na=False)
         )
+
+        # Busca por princípio ativo
+        if has_pa:
+            pa_produtos = search_by_principio_ativo(search_term, df_pa)
+            if pa_produtos:
+                mask_pa = df_view["produto"].str.upper().isin(pa_produtos)
+                mask = mask_nome_cod | mask_pa
+                n_pa = mask_pa.sum()
+                if n_pa > 0 and not mask_nome_cod.any():
+                    # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
+                    pa_found = df_pa[df_pa["principio_ativo"].str.contains(search_term, case=False, na=False)]["principio_ativo"].unique()
+                    pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
+                elif n_pa > 0:
+                    pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
+            else:
+                mask = mask_nome_cod
+        else:
+            mask = mask_nome_cod
+
         df_view = df_view[mask]
+
+        if pa_match_info:
+            st.caption(pa_match_info)
 
     n_ok = (df_view["status"] == "ok").sum()
     n_falta = (df_view["status"] == "falta").sum()
