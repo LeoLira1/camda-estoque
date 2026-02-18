@@ -200,6 +200,17 @@ def _get_connection():
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS avarias_persistentes (
+            codigo TEXT PRIMARY KEY,
+            produto TEXT NOT NULL,
+            categoria TEXT DEFAULT '',
+            qtd_danificada INTEGER NOT NULL DEFAULT 0,
+            nota TEXT DEFAULT '',
+            criado_em TEXT NOT NULL,
+            atualizado_em TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS vendas_historico (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             codigo TEXT NOT NULL,
@@ -310,6 +321,52 @@ def get_stock_count() -> int:
         return row[0] if row else 0
     except Exception:
         return 0
+
+
+# ── Avarias Persistentes (post-it) ──
+
+def get_avarias_persistentes() -> pd.DataFrame:
+    try:
+        rows = get_db().execute("SELECT * FROM avarias_persistentes ORDER BY produto").fetchall()
+        if not rows:
+            return pd.DataFrame(columns=["codigo", "produto", "categoria", "qtd_danificada", "nota", "criado_em", "atualizado_em"])
+        cols = ["codigo", "produto", "categoria", "qtd_danificada", "nota", "criado_em", "atualizado_em"]
+        return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return pd.DataFrame(columns=["codigo", "produto", "categoria", "qtd_danificada", "nota", "criado_em", "atualizado_em"])
+
+
+def salvar_avaria_persistente(codigo: str, produto: str, categoria: str, qtd: int, nota: str = ""):
+    try:
+        conn = get_db()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        existing = conn.execute("SELECT codigo FROM avarias_persistentes WHERE codigo = ?", [codigo]).fetchone()
+        if existing:
+            conn.execute("""
+                UPDATE avarias_persistentes SET qtd_danificada = ?, nota = ?, atualizado_em = ?
+                WHERE codigo = ?
+            """, [qtd, nota, now, codigo])
+        else:
+            conn.execute("""
+                INSERT INTO avarias_persistentes (codigo, produto, categoria, qtd_danificada, nota, criado_em, atualizado_em)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, [codigo, produto, categoria, qtd, nota, now, now])
+        conn.commit()
+        sync_db()
+        return True
+    except Exception:
+        return False
+
+
+def remover_avaria_persistente(codigo: str):
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM avarias_persistentes WHERE codigo = ?", [codigo])
+        conn.commit()
+        sync_db()
+        return True
+    except Exception:
+        return False
 
 
 def get_reposicao_pendente() -> pd.DataFrame:
@@ -430,6 +487,16 @@ def reset_db():
         sync_db()
     except Exception as e:
         st.error(f"❌ Erro ao limpar banco: {e}")
+
+
+def reset_avarias():
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM avarias_persistentes")
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao limpar avarias: {e}")
 
 
 def marcar_reposto(item_id: int):
@@ -950,9 +1017,12 @@ def sort_categorias(cats):
     return sorted(cats, key=lambda c: (_CAT_PRIORITY_MAP.get(c, mx), c))
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_dict: dict = None) -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
+
+    if avarias_dict is None:
+        avarias_dict = {}
 
     if filter_cat != "TODOS":
         df = df[df["categoria"] == filter_cat]
@@ -975,6 +1045,10 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
             diff = int(r["diferenca"]) if pd.notnull(r.get("diferenca")) else 0
             stat = str(r.get("status", "ok"))
             note = str(r.get("nota", "")) if pd.notnull(r.get("nota")) else ""
+            codigo = str(r.get("codigo", ""))
+
+            # Checar avaria persistente (post-it)
+            avaria_persist = avarias_dict.get(codigo)
 
             if stat == "danificado":
                 bg, txt = "#a55eea", "#fff"
@@ -990,17 +1064,36 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
                 bg, txt = "#ffa502", "#fff"
                 info = f"{qf} (S {diff})"
 
+            # Se tem avaria persistente, adicionar indicador no info
+            avaria_badge = ""
+            if avaria_persist and stat != "danificado":
+                qtd_av = avaria_persist["qtd_danificada"]
+                avaria_badge = (
+                    f'<div style="font-size:0.5rem;color:#f87171;font-weight:700;margin-top:1px;">'
+                    f'📌 AV:{qtd_av}</div>'
+                )
+            elif avaria_persist and stat == "danificado":
+                # Já está marcado como danificado na contagem E tem post-it
+                qtd_av = avaria_persist["qtd_danificada"]
+                avaria_badge = (
+                    f'<div style="font-size:0.5rem;color:#fbbf24;font-weight:700;margin-top:1px;">'
+                    f'📌 {qtd_av}</div>'
+                )
+
             contagem = str(r.get("ultima_contagem", ""))
             border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
+            card_h = "72px" if avaria_badge else "60px"
+            av_border = "border:2px solid #7c3aed!important;" if avaria_persist else ""
 
             prods.append(
-                f'<div style="width:110px;height:60px;background:{bg};color:{txt};'
+                f'<div style="width:110px;height:{card_h};background:{bg};color:{txt};'
                 f'border-radius:4px;padding:4px;margin:2px;display:flex;flex-direction:column;'
                 f'justify-content:center;align-items:center;overflow:hidden;'
-                f'border:1px solid rgba(0,0,0,0.1);{border}">'
+                f'border:1px solid rgba(0,0,0,0.1);{border}{av_border}">'
                 f'<div style="font-size:0.55rem;font-weight:700;text-align:center;width:100%;'
                 f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{short_name(r["produto"])}</div>'
                 f'<div style="font-size:0.65rem;opacity:0.9;font-family:monospace;font-weight:bold;margin-top:2px;">{info}</div>'
+                f'{avaria_badge}'
                 f'</div>'
             )
 
@@ -1624,6 +1717,11 @@ if has_mestre:
     df_reposicao = get_reposicao_pendente()
     n_repor = len(df_reposicao)
 
+    # Carregar avarias persistentes para o mapa
+    df_avarias_p = get_avarias_persistentes()
+    avarias_dict = {str(row["codigo"]): {"qtd_danificada": int(row["qtd_danificada"]), "nota": row["nota"]} for _, row in df_avarias_p.iterrows()} if not df_avarias_p.empty else {}
+    n_avarias_p = len(avarias_dict)
+
     st.markdown(f"""
     <div class="stat-row">
         <div class="stat-card"><div class="stat-value">{len(df_view)}</div><div class="stat-label">Total</div></div>
@@ -1632,13 +1730,14 @@ if has_mestre:
         <div class="stat-card"><div class="stat-value amber">{n_sobra}</div><div class="stat-label">Sobras</div></div>
         <div class="stat-card"><div class="stat-value purple">{n_danificado}</div><div class="stat-label">Danificados</div></div>
         <div class="stat-card"><div class="stat-value blue">{n_repor}</div><div class="stat-label">Repor Loja</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:#a78bfa;">{n_avarias_p}</div><div class="stat-label">📌 Avarias</div></div>
     </div>
     """, unsafe_allow_html=True)
 
     t1, t2, t3, t4, t5, t6 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📈 Vendas", "📝 Log"])
 
     with t1:
-        st.markdown(build_css_treemap(df_view, "TODOS"), unsafe_allow_html=True)
+        st.markdown(build_css_treemap(df_view, "TODOS", avarias_dict=avarias_dict), unsafe_allow_html=True)
 
     with t2:
         df_div = df_view[df_view["status"].isin(("falta", "sobra"))]
@@ -1651,10 +1750,77 @@ if has_mestre:
             )
 
     with t3:
-        df_dan = df_view[df_view["status"] == "danificado"]
-        if df_dan.empty:
-            st.info("Nenhum produto danificado.")
+        df_avarias = get_avarias_persistentes()
+        n_avarias = len(df_avarias)
+
+        st.markdown("##### 📌 Avarias Persistentes (Post-its)")
+        st.caption("Estes avisos sobrevivem a novas planilhas. Remova manualmente quando resolvido.")
+
+        # ── Formulário para marcar novo produto como danificado ──
+        with st.expander("➕ Marcar produto como danificado", expanded=False):
+            produtos_disponiveis = df_view[["codigo", "produto", "categoria", "qtd_sistema"]].copy()
+            if not produtos_disponiveis.empty:
+                opcoes = {f"{row['produto']} ({row['codigo']}) — Estoque: {int(row['qtd_sistema'])}": row for _, row in produtos_disponiveis.iterrows()}
+                sel = st.selectbox("Produto", options=list(opcoes.keys()), key="sel_avaria_prod")
+                col_q, col_n = st.columns([1, 2])
+                with col_q:
+                    qtd_dan = st.number_input("Qtd danificada", min_value=1, value=1, key="qtd_avaria_input")
+                with col_n:
+                    nota_dan = st.text_input("Observação (opcional)", key="nota_avaria_input", placeholder="Ex: embalagem furada")
+                if st.button("📌 Marcar como danificado", key="btn_salvar_avaria"):
+                    row_sel = opcoes[sel]
+                    ok = salvar_avaria_persistente(
+                        str(row_sel["codigo"]), row_sel["produto"],
+                        row_sel["categoria"], int(qtd_dan), nota_dan
+                    )
+                    if ok:
+                        st.success(f"✅ Post-it salvo: {row_sel['produto']} — {qtd_dan} danificado(s)")
+                        st.rerun()
+                    else:
+                        st.error("Erro ao salvar avaria.")
+            else:
+                st.warning("Nenhum produto no estoque para marcar.")
+
+        # ── Lista de avarias persistentes ──
+        if df_avarias.empty:
+            st.info("Nenhuma avaria persistente registrada.")
         else:
+            for _, av in df_avarias.iterrows():
+                try:
+                    dias = (datetime.now() - datetime.strptime(av["criado_em"], "%Y-%m-%d %H:%M:%S")).days
+                except (ValueError, TypeError):
+                    dias = 0
+                tempo = "hoje" if dias == 0 else ("ontem" if dias == 1 else f"{dias}d atrás")
+
+                # Buscar estoque atual do produto
+                match = df_view[df_view["codigo"] == av["codigo"]]
+                est_atual = int(match.iloc[0]["qtd_sistema"]) if not match.empty else "?"
+
+                col_info, col_btn = st.columns([5, 1])
+                with col_info:
+                    nota_txt = f' · <span style="color:#94a3b8;font-size:0.7rem;">{av["nota"]}</span>' if av["nota"] else ""
+                    st.markdown(
+                        f'<div style="background:#1a0a2e;border:1px solid #7c3aed;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">📌 {av["produto"]}</span>'
+                        f'<span style="color:#a78bfa;font-size:0.6rem;font-family:monospace;">marcado {tempo}</span></div>'
+                        f'<div style="margin-top:4px;display:flex;gap:12px;">'
+                        f'<span style="color:#f87171;font-size:0.75rem;">🔴 {int(av["qtd_danificada"])} danificado(s)</span>'
+                        f'<span style="color:#60a5fa;font-size:0.75rem;">📦 Estoque: {est_atual}</span>'
+                        f'{nota_txt}</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                with col_btn:
+                    if st.button("🗑️", key=f"rm_avaria_{av['codigo']}", help="Remover post-it de avaria"):
+                        remover_avaria_persistente(av["codigo"])
+                        st.rerun()
+
+        # ── Danificados da contagem atual (não persistentes) ──
+        df_dan = df_view[df_view["status"] == "danificado"]
+        if not df_dan.empty:
+            st.markdown("---")
+            st.markdown("##### 📋 Danificados da contagem atual")
+            st.caption("Estes vieram da planilha/contagem e serão substituídos no próximo upload.")
             st.dataframe(df_dan[["codigo", "produto", "qtd_sistema", "nota", "ultima_contagem"]], hide_index=True, use_container_width=True)
 
     with t4:
