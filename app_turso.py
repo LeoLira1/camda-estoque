@@ -1054,6 +1054,11 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_dict:
                 bg, txt = "#a55eea", "#fff"
                 nums = _RE_DIGITS.findall(note)
                 info = f"{qs} · AV:{nums[0]}" if nums else f"{qs} · AVARIA"
+            elif avaria_persist:
+                # Post-it persistente: card roxo igual danificado
+                bg, txt = "#a55eea", "#fff"
+                qtd_av = avaria_persist["qtd_danificada"]
+                info = f"{qs} · AV:{qtd_av}"
             elif diff == 0:
                 bg, txt = "#00d68f", "#0a2e1a"
                 info = str(qs)
@@ -1064,36 +1069,19 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_dict:
                 bg, txt = "#ffa502", "#fff"
                 info = f"{qf} (S {diff})"
 
-            # Se tem avaria persistente, adicionar indicador no info
             avaria_badge = ""
-            if avaria_persist and stat != "danificado":
-                qtd_av = avaria_persist["qtd_danificada"]
-                avaria_badge = (
-                    f'<div style="font-size:0.5rem;color:#f87171;font-weight:700;margin-top:1px;">'
-                    f'📌 AV:{qtd_av}</div>'
-                )
-            elif avaria_persist and stat == "danificado":
-                # Já está marcado como danificado na contagem E tem post-it
-                qtd_av = avaria_persist["qtd_danificada"]
-                avaria_badge = (
-                    f'<div style="font-size:0.5rem;color:#fbbf24;font-weight:700;margin-top:1px;">'
-                    f'📌 {qtd_av}</div>'
-                )
 
             contagem = str(r.get("ultima_contagem", ""))
             border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
-            card_h = "72px" if avaria_badge else "60px"
-            av_border = "border:2px solid #7c3aed!important;" if avaria_persist else ""
 
             prods.append(
-                f'<div style="width:110px;height:{card_h};background:{bg};color:{txt};'
+                f'<div style="width:110px;height:60px;background:{bg};color:{txt};'
                 f'border-radius:4px;padding:4px;margin:2px;display:flex;flex-direction:column;'
                 f'justify-content:center;align-items:center;overflow:hidden;'
-                f'border:1px solid rgba(0,0,0,0.1);{border}{av_border}">'
+                f'border:1px solid rgba(0,0,0,0.1);{border}">'
                 f'<div style="font-size:0.55rem;font-weight:700;text-align:center;width:100%;'
                 f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{short_name(r["produto"])}</div>'
                 f'<div style="font-size:0.65rem;opacity:0.9;font-family:monospace;font-weight:bold;margin-top:2px;">{info}</div>'
-                f'{avaria_badge}'
                 f'</div>'
             )
 
