@@ -1870,5 +1870,4 @@ if not has_mestre:
         "Faça o upload da planilha mestre acima para começar ☝️</div>",
         unsafe_allow_html=True,
     )
-
 render_weather_animation(weather_code=_wcode, width=400, height=180)
