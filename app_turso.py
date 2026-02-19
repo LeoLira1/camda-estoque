@@ -3,9 +3,12 @@ import pandas as pd
 import libsql
 import re
 import os
+import base64
+import io
 import plotly.graph_objects as go
 import plotly.express as px
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+from PIL import Image
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -200,17 +203,6 @@ def _get_connection():
         )
     """)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS avarias_persistentes (
-            codigo TEXT PRIMARY KEY,
-            produto TEXT NOT NULL,
-            categoria TEXT DEFAULT '',
-            qtd_danificada INTEGER NOT NULL DEFAULT 0,
-            nota TEXT DEFAULT '',
-            criado_em TEXT NOT NULL,
-            atualizado_em TEXT NOT NULL
-        )
-    """)
-    conn.execute("""
         CREATE TABLE IF NOT EXISTS vendas_historico (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             codigo TEXT NOT NULL,
@@ -219,6 +211,13 @@ def _get_connection():
             qtd_vendida INTEGER NOT NULL DEFAULT 0,
             qtd_estoque INTEGER NOT NULL DEFAULT 0,
             data_upload TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS pendencias_entrega (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            foto_base64 TEXT NOT NULL,
+            data_registro TEXT NOT NULL
         )
     """)
     conn.commit()
@@ -259,6 +258,49 @@ def sync_db():
             _get_connection().sync()
         except Exception as e:
             st.warning(f"⚠️ Sync falhou: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# PENDÊNCIAS DE ENTREGA — funções CRUD
+# ══════════════════════════════════════════════════════════════════════════════
+
+def inserir_pendencia(foto_bytes: bytes):
+    img = Image.open(io.BytesIO(foto_bytes)).convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=70, optimize=True)
+    foto_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+    data_hoje = date.today().isoformat()
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO pendencias_entrega (foto_base64, data_registro) VALUES (?, ?)",
+        (foto_b64, data_hoje)
+    )
+    conn.commit()
+    sync_db()
+
+
+def listar_pendencias() -> list:
+    try:
+        rows = get_db().execute(
+            "SELECT id, foto_base64, data_registro FROM pendencias_entrega ORDER BY data_registro ASC"
+        ).fetchall()
+        return rows
+    except Exception:
+        return []
+
+
+def deletar_pendencia(pid: int):
+    conn = get_db()
+    conn.execute("DELETE FROM pendencias_entrega WHERE id = ?", (pid,))
+    conn.commit()
+    sync_db()
+
+
+def _dias_desde(data_str: str) -> int:
+    try:
+        return (date.today() - date.fromisoformat(data_str)).days
+    except Exception:
+        return 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -321,52 +363,6 @@ def get_stock_count() -> int:
         return row[0] if row else 0
     except Exception:
         return 0
-
-
-# ── Avarias Persistentes (post-it) ──
-
-def get_avarias_persistentes() -> pd.DataFrame:
-    try:
-        rows = get_db().execute("SELECT * FROM avarias_persistentes ORDER BY produto").fetchall()
-        if not rows:
-            return pd.DataFrame(columns=["codigo", "produto", "categoria", "qtd_danificada", "nota", "criado_em", "atualizado_em"])
-        cols = ["codigo", "produto", "categoria", "qtd_danificada", "nota", "criado_em", "atualizado_em"]
-        return pd.DataFrame(rows, columns=cols)
-    except Exception:
-        return pd.DataFrame(columns=["codigo", "produto", "categoria", "qtd_danificada", "nota", "criado_em", "atualizado_em"])
-
-
-def salvar_avaria_persistente(codigo: str, produto: str, categoria: str, qtd: int, nota: str = ""):
-    try:
-        conn = get_db()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        existing = conn.execute("SELECT codigo FROM avarias_persistentes WHERE codigo = ?", [codigo]).fetchone()
-        if existing:
-            conn.execute("""
-                UPDATE avarias_persistentes SET qtd_danificada = ?, nota = ?, atualizado_em = ?
-                WHERE codigo = ?
-            """, [qtd, nota, now, codigo])
-        else:
-            conn.execute("""
-                INSERT INTO avarias_persistentes (codigo, produto, categoria, qtd_danificada, nota, criado_em, atualizado_em)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, [codigo, produto, categoria, qtd, nota, now, now])
-        conn.commit()
-        sync_db()
-        return True
-    except Exception:
-        return False
-
-
-def remover_avaria_persistente(codigo: str):
-    try:
-        conn = get_db()
-        conn.execute("DELETE FROM avarias_persistentes WHERE codigo = ?", [codigo])
-        conn.commit()
-        sync_db()
-        return True
-    except Exception:
-        return False
 
 
 def get_reposicao_pendente() -> pd.DataFrame:
@@ -487,16 +483,6 @@ def reset_db():
         sync_db()
     except Exception as e:
         st.error(f"❌ Erro ao limpar banco: {e}")
-
-
-def reset_avarias():
-    try:
-        conn = get_db()
-        conn.execute("DELETE FROM avarias_persistentes")
-        conn.commit()
-        sync_db()
-    except Exception as e:
-        st.error(f"❌ Erro ao limpar avarias: {e}")
 
 
 def marcar_reposto(item_id: int):
@@ -1017,12 +1003,9 @@ def sort_categorias(cats):
     return sorted(cats, key=lambda c: (_CAT_PRIORITY_MAP.get(c, mx), c))
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_dict: dict = None) -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
-
-    if avarias_dict is None:
-        avarias_dict = {}
 
     if filter_cat != "TODOS":
         df = df[df["categoria"] == filter_cat]
@@ -1045,20 +1028,11 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_dict:
             diff = int(r["diferenca"]) if pd.notnull(r.get("diferenca")) else 0
             stat = str(r.get("status", "ok"))
             note = str(r.get("nota", "")) if pd.notnull(r.get("nota")) else ""
-            codigo = str(r.get("codigo", ""))
-
-            # Checar avaria persistente (post-it)
-            avaria_persist = avarias_dict.get(codigo)
 
             if stat == "danificado":
                 bg, txt = "#a55eea", "#fff"
                 nums = _RE_DIGITS.findall(note)
                 info = f"{qs} · AV:{nums[0]}" if nums else f"{qs} · AVARIA"
-            elif avaria_persist:
-                # Post-it persistente: card roxo igual danificado
-                bg, txt = "#a55eea", "#fff"
-                qtd_av = avaria_persist["qtd_danificada"]
-                info = f"{qs} · AV:{qtd_av}"
             elif diff == 0:
                 bg, txt = "#00d68f", "#0a2e1a"
                 info = str(qs)
@@ -1068,8 +1042,6 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_dict:
             else:
                 bg, txt = "#ffa502", "#fff"
                 info = f"{qf} (S {diff})"
-
-            avaria_badge = ""
 
             contagem = str(r.get("ultima_contagem", ""))
             border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
@@ -1705,11 +1677,6 @@ if has_mestre:
     df_reposicao = get_reposicao_pendente()
     n_repor = len(df_reposicao)
 
-    # Carregar avarias persistentes para o mapa
-    df_avarias_p = get_avarias_persistentes()
-    avarias_dict = {str(row["codigo"]): {"qtd_danificada": int(row["qtd_danificada"]), "nota": row["nota"]} for _, row in df_avarias_p.iterrows()} if not df_avarias_p.empty else {}
-    n_avarias_p = len(avarias_dict)
-
     st.markdown(f"""
     <div class="stat-row">
         <div class="stat-card"><div class="stat-value">{len(df_view)}</div><div class="stat-label">Total</div></div>
@@ -1718,14 +1685,13 @@ if has_mestre:
         <div class="stat-card"><div class="stat-value amber">{n_sobra}</div><div class="stat-label">Sobras</div></div>
         <div class="stat-card"><div class="stat-value purple">{n_danificado}</div><div class="stat-label">Danificados</div></div>
         <div class="stat-card"><div class="stat-value blue">{n_repor}</div><div class="stat-label">Repor Loja</div></div>
-        <div class="stat-card"><div class="stat-value" style="color:#a78bfa;">{n_avarias_p}</div><div class="stat-label">📌 Avarias</div></div>
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📈 Vendas", "📝 Log"])
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências"])
 
     with t1:
-        st.markdown(build_css_treemap(df_view, "TODOS", avarias_dict=avarias_dict), unsafe_allow_html=True)
+        st.markdown(build_css_treemap(df_view, "TODOS"), unsafe_allow_html=True)
 
     with t2:
         df_div = df_view[df_view["status"].isin(("falta", "sobra"))]
@@ -1738,77 +1704,10 @@ if has_mestre:
             )
 
     with t3:
-        df_avarias = get_avarias_persistentes()
-        n_avarias = len(df_avarias)
-
-        st.markdown("##### 📌 Avarias Persistentes (Post-its)")
-        st.caption("Estes avisos sobrevivem a novas planilhas. Remova manualmente quando resolvido.")
-
-        # ── Formulário para marcar novo produto como danificado ──
-        with st.expander("➕ Marcar produto como danificado", expanded=False):
-            produtos_disponiveis = df_view[["codigo", "produto", "categoria", "qtd_sistema"]].copy()
-            if not produtos_disponiveis.empty:
-                opcoes = {f"{row['produto']} ({row['codigo']}) — Estoque: {int(row['qtd_sistema'])}": row for _, row in produtos_disponiveis.iterrows()}
-                sel = st.selectbox("Produto", options=list(opcoes.keys()), key="sel_avaria_prod")
-                col_q, col_n = st.columns([1, 2])
-                with col_q:
-                    qtd_dan = st.number_input("Qtd danificada", min_value=1, value=1, key="qtd_avaria_input")
-                with col_n:
-                    nota_dan = st.text_input("Observação (opcional)", key="nota_avaria_input", placeholder="Ex: embalagem furada")
-                if st.button("📌 Marcar como danificado", key="btn_salvar_avaria"):
-                    row_sel = opcoes[sel]
-                    ok = salvar_avaria_persistente(
-                        str(row_sel["codigo"]), row_sel["produto"],
-                        row_sel["categoria"], int(qtd_dan), nota_dan
-                    )
-                    if ok:
-                        st.success(f"✅ Post-it salvo: {row_sel['produto']} — {qtd_dan} danificado(s)")
-                        st.rerun()
-                    else:
-                        st.error("Erro ao salvar avaria.")
-            else:
-                st.warning("Nenhum produto no estoque para marcar.")
-
-        # ── Lista de avarias persistentes ──
-        if df_avarias.empty:
-            st.info("Nenhuma avaria persistente registrada.")
-        else:
-            for _, av in df_avarias.iterrows():
-                try:
-                    dias = (datetime.now() - datetime.strptime(av["criado_em"], "%Y-%m-%d %H:%M:%S")).days
-                except (ValueError, TypeError):
-                    dias = 0
-                tempo = "hoje" if dias == 0 else ("ontem" if dias == 1 else f"{dias}d atrás")
-
-                # Buscar estoque atual do produto
-                match = df_view[df_view["codigo"] == av["codigo"]]
-                est_atual = int(match.iloc[0]["qtd_sistema"]) if not match.empty else "?"
-
-                col_info, col_btn = st.columns([5, 1])
-                with col_info:
-                    nota_txt = f' · <span style="color:#94a3b8;font-size:0.7rem;">{av["nota"]}</span>' if av["nota"] else ""
-                    st.markdown(
-                        f'<div style="background:#1a0a2e;border:1px solid #7c3aed;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
-                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">📌 {av["produto"]}</span>'
-                        f'<span style="color:#a78bfa;font-size:0.6rem;font-family:monospace;">marcado {tempo}</span></div>'
-                        f'<div style="margin-top:4px;display:flex;gap:12px;">'
-                        f'<span style="color:#f87171;font-size:0.75rem;">🔴 {int(av["qtd_danificada"])} danificado(s)</span>'
-                        f'<span style="color:#60a5fa;font-size:0.75rem;">📦 Estoque: {est_atual}</span>'
-                        f'{nota_txt}</div></div>',
-                        unsafe_allow_html=True,
-                    )
-                with col_btn:
-                    if st.button("🗑️", key=f"rm_avaria_{av['codigo']}", help="Remover post-it de avaria"):
-                        remover_avaria_persistente(av["codigo"])
-                        st.rerun()
-
-        # ── Danificados da contagem atual (não persistentes) ──
         df_dan = df_view[df_view["status"] == "danificado"]
-        if not df_dan.empty:
-            st.markdown("---")
-            st.markdown("##### 📋 Danificados da contagem atual")
-            st.caption("Estes vieram da planilha/contagem e serão substituídos no próximo upload.")
+        if df_dan.empty:
+            st.info("Nenhum produto danificado.")
+        else:
             st.dataframe(df_dan[["codigo", "produto", "qtd_sistema", "nota", "ultima_contagem"]], hide_index=True, use_container_width=True)
 
     with t4:
@@ -1853,6 +1752,89 @@ if has_mestre:
             st.info("Nenhum upload registrado.")
         else:
             st.dataframe(df_hist, hide_index=True, use_container_width=True)
+
+    with t7:
+        # ── CSS da aba ──
+        st.markdown("""
+        <style>
+        .pend-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:16px;margin-bottom:16px;}
+        .pend-card.alerta-amarelo{border-color:rgba(255,193,7,0.5);background:rgba(255,193,7,0.06);}
+        .pend-card.alerta-vermelho{border-color:rgba(255,71,87,0.6);background:rgba(255,71,87,0.08);animation:pulse-red 2s infinite;}
+        @keyframes pulse-red{0%{box-shadow:0 0 0 0 rgba(255,71,87,0.3)}70%{box-shadow:0 0 0 8px rgba(255,71,87,0)}100%{box-shadow:0 0 0 0 rgba(255,71,87,0)}}
+        .badge-dias{display:inline-block;padding:4px 14px;border-radius:20px;font-size:0.8rem;font-weight:700;letter-spacing:.5px;margin-bottom:10px;}
+        .badge-verde{background:rgba(0,214,143,0.15);color:#00d68f;border:1px solid #00d68f44;}
+        .badge-amarelo{background:rgba(255,193,7,0.15);color:#ffc107;border:1px solid #ffc10744;}
+        .badge-vermelho{background:rgba(255,71,87,0.15);color:#ff4757;border:1px solid #ff475744;}
+        .pend-data{font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:'JetBrains Mono',monospace;margin-bottom:8px;}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### 📦 Retiradas Parciais")
+        st.caption("Produtos que aguardam segunda entrega · Prazo máximo: **3 dias**")
+
+        # ── Registrar nova pendência ──
+        with st.expander("➕  Registrar nova pendência", expanded=False):
+            st.markdown("**Fotografe a via cega do pedido:**")
+            foto = st.camera_input("📷", label_visibility="collapsed")
+            if foto is not None:
+                st.image(foto, caption="Prévia — confirme antes de salvar", use_container_width=True)
+                col_ok, col_cancel = st.columns(2)
+                with col_ok:
+                    if st.button("✅ Salvar pendência", use_container_width=True, type="primary", key="pend_salvar"):
+                        inserir_pendencia(foto.getvalue())
+                        st.success("Pendência registrada! ✔")
+                        st.rerun()
+                with col_cancel:
+                    if st.button("✖ Cancelar", use_container_width=True, key="pend_cancelar"):
+                        st.rerun()
+
+        st.divider()
+
+        # ── Listar pendências ──
+        pendencias = listar_pendencias()
+
+        if not pendencias:
+            st.markdown("""
+            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.3);">
+                <div style="font-size:2.5rem;">✅</div>
+                <div>Nenhuma pendência no momento</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            total_p = len(pendencias)
+            vencidas_p = sum(1 for _, _, d in pendencias if _dias_desde(d) >= 3)
+            c1, c2 = st.columns(2)
+            c1.metric("Total pendente", total_p)
+            c2.metric("⚠️ Vencidas (3d+)", vencidas_p)
+            st.markdown("---")
+
+            for pid, foto_b64, data_reg in pendencias:
+                dias = _dias_desde(data_reg)
+                if dias <= 1:
+                    card_class, badge_class = "pend-card", "badge-verde"
+                    badge_txt = "Hoje" if dias == 0 else "1 dia"
+                elif dias == 2:
+                    card_class, badge_class = "pend-card alerta-amarelo", "badge-amarelo"
+                    badge_txt = "⚠️ 2 dias — entregar hoje!"
+                else:
+                    card_class, badge_class = "pend-card alerta-vermelho", "badge-vermelho"
+                    badge_txt = f"🚨 {dias} dias — VENCIDO!"
+
+                st.markdown(f'<div class="{card_class}">', unsafe_allow_html=True)
+                st.markdown(
+                    f'<span class="badge-dias {badge_class}">{badge_txt}</span>'
+                    f'<div class="pend-data">Registrado em: {data_reg}</div>',
+                    unsafe_allow_html=True
+                )
+                try:
+                    st.image(base64.b64decode(foto_b64), use_container_width=True)
+                except Exception:
+                    st.warning("Erro ao carregar imagem.")
+                if st.button(f"✅ Entregue — remover", key=f"pend_del_{pid}", use_container_width=True):
+                    deletar_pendencia(pid)
+                    st.success("Pendência removida.")
+                    st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
