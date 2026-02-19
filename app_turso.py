@@ -6,6 +6,7 @@ import os
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta
+from weather_animation import render_weather_animation
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -40,9 +41,9 @@ def get_weather_quirinopolis():
         elif code in (80,81,82):   emoji, desc = "🌧️", "Pancadas"
         elif code in (95,96,99):   emoji, desc = "⛈️", "Tempestade"
         else:                      emoji, desc = "🌡️", ""
-        return temp, emoji, desc
+        return temp, emoji, desc, code
     except Exception:
-        return None, "🌡️", ""
+        return None, "🌡️", "", 0
 
 # ── Session State ────────────────────────────────────────────────────────────
 if "processed_file" not in st.session_state:
@@ -1503,7 +1504,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Header banner + clima ──────────────────────────────────────────────────
-_wtemp, _wemoji, _wdesc = get_weather_quirinopolis()
+_wtemp, _wemoji, _wdesc, _wcode = get_weather_quirinopolis()
 _whtml = f'<div class="weather-overlay">{_wemoji} <b>{_wtemp}°C</b> {_wdesc}</div>' if _wtemp else ""
 
 st.markdown(f'''
@@ -1869,3 +1870,5 @@ if not has_mestre:
         "Faça o upload da planilha mestre acima para começar ☝️</div>",
         unsafe_allow_html=True,
     )
+
+render_weather_animation(weather_code=_wcode, width=400, height=180)
