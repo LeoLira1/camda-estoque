@@ -280,8 +280,5 @@ def render_weather_animation(weather_code: int, container=None, width: int = 400
     anim_type = get_animation_type(weather_code)
     html = build_animation_html(anim_type, width=width, height=height)
 
-    if container is not None:
-        with container:
-            components.html(html, height=height + 10)
-    else:
-        components.html(html, height=height + 10)
+    target = container if container is not None else st
+    target.markdown(html, unsafe_allow_html=True)
