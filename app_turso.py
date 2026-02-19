@@ -220,6 +220,19 @@ def _get_connection():
             data_registro TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS avarias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            categoria TEXT NOT NULL DEFAULT '',
+            qtd_avariada INTEGER NOT NULL DEFAULT 1,
+            motivo TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'aberto',
+            registrado_em TEXT NOT NULL,
+            resolvido_em TEXT DEFAULT ''
+        )
+    """)
     conn.commit()
 
     # ── Migrações (roda 1x) ──
@@ -299,6 +312,72 @@ def deletar_pendencia(pid: int):
 def _dias_desde(data_str: str) -> int:
     try:
         return (date.today() - date.fromisoformat(data_str)).days
+    except Exception:
+        return 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# AVARIAS — funções CRUD
+# ══════════════════════════════════════════════════════════════════════════════
+
+def registrar_avaria(codigo: str, produto: str, categoria: str, qtd: int, motivo: str):
+    try:
+        conn = get_db()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            """INSERT INTO avarias (codigo, produto, categoria, qtd_avariada, motivo, status, registrado_em)
+               VALUES (?, ?, ?, ?, ?, 'aberto', ?)""",
+            (codigo, produto, categoria, qtd, motivo, now)
+        )
+        conn.commit()
+        sync_db()
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao registrar avaria: {e}")
+        return False
+
+
+def listar_avarias(apenas_abertas: bool = False) -> pd.DataFrame:
+    cols = ["id", "codigo", "produto", "categoria", "qtd_avariada", "motivo", "status", "registrado_em", "resolvido_em"]
+    try:
+        query = "SELECT id, codigo, produto, categoria, qtd_avariada, motivo, status, registrado_em, resolvido_em FROM avarias"
+        if apenas_abertas:
+            query += " WHERE status = 'aberto'"
+        query += " ORDER BY registrado_em DESC"
+        rows = get_db().execute(query).fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
+
+def resolver_avaria(avaria_id: int):
+    try:
+        conn = get_db()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "UPDATE avarias SET status = 'resolvido', resolvido_em = ? WHERE id = ?",
+            (now, avaria_id)
+        )
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao resolver avaria: {e}")
+
+
+def deletar_avaria(avaria_id: int):
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM avarias WHERE id = ?", (avaria_id,))
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao deletar avaria: {e}")
+
+
+def get_avarias_count_abertas() -> int:
+    try:
+        row = get_db().execute("SELECT COUNT(*) FROM avarias WHERE status = 'aberto'").fetchone()
+        return row[0] if row else 0
     except Exception:
         return 0
 
@@ -1676,6 +1755,7 @@ if has_mestre:
 
     df_reposicao = get_reposicao_pendente()
     n_repor = len(df_reposicao)
+    n_avarias = get_avarias_count_abertas()
 
     st.markdown(f"""
     <div class="stat-row">
@@ -1685,10 +1765,11 @@ if has_mestre:
         <div class="stat-card"><div class="stat-value amber">{n_sobra}</div><div class="stat-label">Sobras</div></div>
         <div class="stat-card"><div class="stat-value purple">{n_danificado}</div><div class="stat-label">Danificados</div></div>
         <div class="stat-card"><div class="stat-value blue">{n_repor}</div><div class="stat-label">Repor Loja</div></div>
+        <div class="stat-card"><div class="stat-value red">{n_avarias}</div><div class="stat-label">Avarias</div></div>
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências"])
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias"])
 
     with t1:
         st.markdown(build_css_treemap(df_view, "TODOS"), unsafe_allow_html=True)
@@ -1834,6 +1915,151 @@ if has_mestre:
                     deletar_pendencia(pid)
                     st.success("Pendência removida.")
                     st.rerun()
+                st.markdown("</div>", unsafe_allow_html=True)
+
+    with t8:
+        st.markdown("""
+        <style>
+        .av-card{background:rgba(165,94,234,0.06);border:1px solid rgba(165,94,234,0.25);border-radius:14px;padding:14px 16px;margin-bottom:10px;}
+        .av-card.resolvido{background:rgba(0,214,143,0.04);border-color:rgba(0,214,143,0.2);opacity:0.6;}
+        .av-badge{display:inline-block;padding:3px 12px;border-radius:20px;font-size:0.7rem;font-weight:700;letter-spacing:.5px;margin-bottom:8px;}
+        .av-aberto{background:rgba(255,71,87,0.15);color:#ff4757;border:1px solid #ff475744;}
+        .av-resolvido{background:rgba(0,214,143,0.15);color:#00d68f;border:1px solid #00d68f44;}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### 🔴 Avarias")
+        st.caption("Registro manual de produtos avariados · Persiste entre uploads de planilha")
+
+        # ── Registrar nova avaria ──
+        with st.expander("➕ Registrar nova avaria", expanded=False):
+            df_estoque_av = get_current_stock()
+            if df_estoque_av.empty:
+                st.info("Nenhum produto no estoque para selecionar.")
+            else:
+                # Busca de produto
+                busca_av = st.text_input("🔍 Buscar produto", placeholder="Nome ou código...", key="av_busca")
+                df_filtrado_av = df_estoque_av
+                if busca_av:
+                    df_filtrado_av = df_estoque_av[
+                        df_estoque_av["produto"].str.contains(busca_av, case=False, na=False)
+                        | df_estoque_av["codigo"].str.contains(busca_av, case=False, na=False)
+                    ]
+
+                if df_filtrado_av.empty:
+                    st.warning("Nenhum produto encontrado.")
+                else:
+                    opcoes = [f"{r['codigo']} — {r['produto']}" for _, r in df_filtrado_av.iterrows()]
+                    sel = st.selectbox("Produto avariado", opcoes, key="av_produto_sel")
+
+                    # Recupera linha selecionada
+                    idx_sel = opcoes.index(sel)
+                    row_sel = df_filtrado_av.iloc[idx_sel]
+
+                    col_qtd, col_cat = st.columns([1, 2])
+                    with col_qtd:
+                        qtd_av = st.number_input(
+                            "Qtd avariada", min_value=1,
+                            max_value=int(row_sel["qtd_sistema"]) if int(row_sel["qtd_sistema"]) > 0 else 9999,
+                            value=1, step=1, key="av_qtd"
+                        )
+                    with col_cat:
+                        st.text_input("Categoria", value=row_sel["categoria"], disabled=True, key="av_cat_display")
+
+                    motivo_av = st.text_area(
+                        "Motivo / descrição", placeholder="Ex: embalagem rasgada, produto vencido, vazamento...",
+                        key="av_motivo", height=80
+                    )
+
+                    if st.button("🔴 Registrar Avaria", type="primary", key="av_registrar"):
+                        if not motivo_av.strip():
+                            st.error("Descreva o motivo da avaria.")
+                        else:
+                            ok_av = registrar_avaria(
+                                row_sel["codigo"], row_sel["produto"],
+                                row_sel["categoria"], int(qtd_av), motivo_av.strip()
+                            )
+                            if ok_av:
+                                st.success(f"✅ Avaria registrada: {row_sel['produto']} ({int(qtd_av)} un)")
+                                st.rerun()
+
+        st.divider()
+
+        # ── Filtro de visualização ──
+        col_f1, col_f2 = st.columns([2, 1])
+        with col_f2:
+            mostrar_resolvidas = st.toggle("Mostrar resolvidas", value=False, key="av_mostrar_resolvidas")
+
+        df_av = listar_avarias(apenas_abertas=not mostrar_resolvidas)
+
+        if df_av.empty:
+            st.markdown("""
+            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.3);">
+                <div style="font-size:2.5rem;">✅</div>
+                <div>Nenhuma avaria registrada</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            n_abertas = (df_av["status"] == "aberto").sum()
+            n_resolvidas = (df_av["status"] == "resolvido").sum()
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total", len(df_av))
+            m2.metric("🔴 Abertas", n_abertas)
+            m3.metric("✅ Resolvidas", n_resolvidas)
+            st.markdown("---")
+
+            for _, av in df_av.iterrows():
+                is_aberta = av["status"] == "aberto"
+                card_cls = "av-card" if is_aberta else "av-card resolvido"
+                badge_cls = "av-aberto" if is_aberta else "av-resolvido"
+                badge_txt = "🔴 ABERTA" if is_aberta else "✅ RESOLVIDA"
+
+                # Data formatada
+                try:
+                    dt_reg = datetime.strptime(av["registrado_em"], "%Y-%m-%d %H:%M:%S")
+                    dias_av = (datetime.now() - dt_reg).days
+                    tempo_av = "hoje" if dias_av == 0 else ("ontem" if dias_av == 1 else f"{dias_av}d atrás")
+                except Exception:
+                    tempo_av = av["registrado_em"]
+
+                st.markdown(f'<div class="{card_cls}">', unsafe_allow_html=True)
+                st.markdown(
+                    f'<span class="av-badge {badge_cls}">{badge_txt}</span>',
+                    unsafe_allow_html=True
+                )
+
+                col_info_av, col_btns_av = st.columns([5, 1])
+                with col_info_av:
+                    st.markdown(
+                        f'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
+                        f'<div>'
+                        f'<div style="color:#e0e6ed;font-weight:700;font-size:0.9rem;">{av["produto"]}</div>'
+                        f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
+                        f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{av["codigo"]}</b></span>'
+                        f'<span style="color:#64748b;font-size:0.65rem;">{av["categoria"]}</span>'
+                        f'<span style="color:#ff4757;font-size:0.7rem;font-weight:700;">Qtd: {int(av["qtd_avariada"])} un</span>'
+                        f'</div>'
+                        f'<div style="margin-top:6px;color:#94a3b8;font-size:0.75rem;">📋 {av["motivo"]}</div>'
+                        f'</div>'
+                        f'<span style="color:#3b82f6;font-size:0.6rem;font-family:monospace;white-space:nowrap;">{tempo_av}</span>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                    if not is_aberta and av["resolvido_em"]:
+                        st.markdown(
+                            f'<div style="margin-top:4px;color:#00d68f;font-size:0.65rem;">✅ Resolvido em: {av["resolvido_em"]}</div>',
+                            unsafe_allow_html=True
+                        )
+
+                with col_btns_av:
+                    if is_aberta:
+                        if st.button("✅", key=f"av_res_{av['id']}", help="Marcar como resolvida"):
+                            resolver_avaria(int(av["id"]))
+                            st.rerun()
+                    if st.button("🗑️", key=f"av_del_{av['id']}", help="Excluir registro"):
+                        deletar_avaria(int(av["id"]))
+                        st.rerun()
+
                 st.markdown("</div>", unsafe_allow_html=True)
 
 
