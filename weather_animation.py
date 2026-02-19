@@ -10,6 +10,7 @@ Requer: streamlit, time (stdlib)
 """
 
 import streamlit as st
+import streamlit.components.v1 as components
 import time
 import math
 import random
@@ -279,5 +280,8 @@ def render_weather_animation(weather_code: int, container=None, width: int = 400
     anim_type = get_animation_type(weather_code)
     html = build_animation_html(anim_type, width=width, height=height)
 
-    target = container if container is not None else st
-    target.components.v1.html(html, height=height + 10)
+    if container is not None:
+        with container:
+            components.html(html, height=height + 10)
+    else:
+        components.html(html, height=height + 10)
