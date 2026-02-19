@@ -1843,14 +1843,21 @@ if has_mestre:
 
         # ── Registrar nova pendência ──
         with st.expander("➕  Registrar nova pendência", expanded=False):
-            st.markdown("**Fotografe a via cega do pedido:**")
-            foto = st.camera_input("📷", label_visibility="collapsed")
+            st.markdown("**📸 Fotografe ou selecione a via cega do pedido:**")
+            st.caption("No celular: toque em 'Browse files' → escolha **Câmera** para tirar foto agora")
+            foto = st.file_uploader(
+                "Foto da via cega",
+                type=["jpg", "jpeg", "png", "webp"],
+                label_visibility="collapsed",
+                key="pend_foto_upload",
+            )
             if foto is not None:
-                st.image(foto, caption="Prévia — confirme antes de salvar", use_container_width=True)
+                img_bytes = foto.read()
+                st.image(img_bytes, caption="Prévia — confirme antes de salvar", use_container_width=True)
                 col_ok, col_cancel = st.columns(2)
                 with col_ok:
                     if st.button("✅ Salvar pendência", use_container_width=True, type="primary", key="pend_salvar"):
-                        inserir_pendencia(foto.getvalue())
+                        inserir_pendencia(img_bytes)
                         st.success("Pendência registrada! ✔")
                         st.rerun()
                 with col_cancel:
