@@ -1071,7 +1071,7 @@ def sort_categorias(cats):
     return sorted(cats, key=lambda c: (_CAT_PRIORITY_MAP.get(c, mx), c))
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None) -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
@@ -1079,6 +1079,9 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
         df = df[df["categoria"] == filter_cat]
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto nesta categoria</div>'
+
+    if avarias_map is None:
+        avarias_map = {}
 
     # Agrupar por categoria
     categories = {}
@@ -1108,14 +1111,24 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
             contagem = str(r.get("ultima_contagem", ""))
             border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
 
+            # Aviso de avarias abertas
+            qtd_av = avarias_map.get(str(r["codigo"]), 0)
+            av_html = (
+                f'<div style="font-size:0.5rem;color:#ff4757;font-weight:700;margin-top:2px;">⚠ {qtd_av} av.</div>'
+                if qtd_av > 0 else ""
+            )
+
+            card_height = "70px" if qtd_av > 0 else "60px"
+
             prods.append(
-                f'<div style="width:110px;height:60px;background:{bg};color:{txt};'
+                f'<div style="width:110px;height:{card_height};background:{bg};color:{txt};'
                 f'border-radius:4px;padding:4px;margin:2px;display:flex;flex-direction:column;'
                 f'justify-content:center;align-items:center;overflow:hidden;'
                 f'border:1px solid rgba(0,0,0,0.1);{border}">'
                 f'<div style="font-size:0.55rem;font-weight:700;text-align:center;width:100%;'
                 f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{short_name(r["produto"])}</div>'
                 f'<div style="font-size:0.65rem;opacity:0.9;font-family:monospace;font-weight:bold;margin-top:2px;">{info}</div>'
+                f'{av_html}'
                 f'</div>'
             )
 
@@ -1753,7 +1766,10 @@ if has_mestre:
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias"])
 
     with t1:
-        st.markdown(build_css_treemap(df_view, "TODOS"), unsafe_allow_html=True)
+        # Monta dict codigo -> qtd_avariada (avarias abertas)
+        df_av_mapa = listar_avarias(apenas_abertas=True)
+        av_map = df_av_mapa.groupby("codigo")["qtd_avariada"].sum().to_dict() if not df_av_mapa.empty else {}
+        st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map), unsafe_allow_html=True)
 
     with t2:
         df_div = df_view[df_view["status"].isin(("falta", "sobra"))]
