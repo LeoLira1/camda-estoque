@@ -218,7 +218,6 @@ def _get_connection():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             codigo TEXT NOT NULL,
             produto TEXT NOT NULL,
-            categoria TEXT NOT NULL DEFAULT '',
             qtd_avariada INTEGER NOT NULL DEFAULT 1,
             motivo TEXT NOT NULL DEFAULT '',
             status TEXT NOT NULL DEFAULT 'aberto',
@@ -313,14 +312,14 @@ def _dias_desde(data_str: str) -> int:
 # AVARIAS — funções CRUD
 # ══════════════════════════════════════════════════════════════════════════════
 
-def registrar_avaria(codigo: str, produto: str, categoria: str, qtd: int, motivo: str):
+def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str):
     try:
         conn = get_db()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
-            """INSERT INTO avarias (codigo, produto, categoria, qtd_avariada, motivo, status, registrado_em)
-               VALUES (?, ?, ?, ?, ?, 'aberto', ?)""",
-            (codigo, produto, categoria, qtd, motivo, now)
+            """INSERT INTO avarias (codigo, produto, qtd_avariada, motivo, status, registrado_em)
+               VALUES (?, ?, ?, ?, 'aberto', ?)""",
+            (codigo, produto, qtd, motivo, now)
         )
         conn.commit()
         sync_db()
@@ -331,9 +330,9 @@ def registrar_avaria(codigo: str, produto: str, categoria: str, qtd: int, motivo
 
 
 def listar_avarias(apenas_abertas: bool = False) -> pd.DataFrame:
-    cols = ["id", "codigo", "produto", "categoria", "qtd_avariada", "motivo", "status", "registrado_em", "resolvido_em"]
+    cols = ["id", "codigo", "produto", "qtd_avariada", "motivo", "status", "registrado_em", "resolvido_em"]
     try:
-        query = "SELECT id, codigo, produto, categoria, qtd_avariada, motivo, status, registrado_em, resolvido_em FROM avarias"
+        query = "SELECT id, codigo, produto, qtd_avariada, motivo, status, registrado_em, resolvido_em FROM avarias"
         if apenas_abertas:
             query += " WHERE status = 'aberto'"
         query += " ORDER BY registrado_em DESC"
@@ -1113,15 +1112,14 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
             # Aviso de avarias abertas
             qtd_av = avarias_map.get(str(r["codigo"]), 0)
-            av_html = (
-                f'<div style="font-size:0.5rem;color:#ff4757;font-weight:700;margin-top:2px;">⚠ {qtd_av} av.</div>'
-                if qtd_av > 0 else ""
-            )
-
-            card_height = "70px" if qtd_av > 0 else "60px"
+            if qtd_av > 0:
+                bg, txt = "#a55eea", "#fff"
+                av_html = f'<div style="font-size:0.5rem;color:#fff;font-weight:700;margin-top:2px;">⚠ {qtd_av} av.</div>'
+            else:
+                av_html = ""
 
             prods.append(
-                f'<div style="width:110px;height:{card_height};background:{bg};color:{txt};'
+                f'<div style="width:110px;height:60px;background:{bg};color:{txt};'
                 f'border-radius:4px;padding:4px;margin:2px;display:flex;flex-direction:column;'
                 f'justify-content:center;align-items:center;overflow:hidden;'
                 f'border:1px solid rgba(0,0,0,0.1);{border}">'
@@ -1946,15 +1944,11 @@ if has_mestre:
                     idx_sel = opcoes.index(sel)
                     row_sel = df_filtrado_av.iloc[idx_sel]
 
-                    col_qtd, col_cat = st.columns([1, 2])
-                    with col_qtd:
-                        qtd_av = st.number_input(
+                    qtd_av = st.number_input(
                             "Qtd avariada", min_value=1,
                             max_value=int(row_sel["qtd_sistema"]) if int(row_sel["qtd_sistema"]) > 0 else 9999,
                             value=1, step=1, key="av_qtd"
                         )
-                    with col_cat:
-                        st.text_input("Categoria", value=row_sel["categoria"], disabled=True, key="av_cat_display")
 
                     motivo_av = st.text_area(
                         "Motivo / descrição", placeholder="Ex: embalagem rasgada, produto vencido, vazamento...",
@@ -1967,7 +1961,7 @@ if has_mestre:
                         else:
                             ok_av = registrar_avaria(
                                 row_sel["codigo"], row_sel["produto"],
-                                row_sel["categoria"], int(qtd_av), motivo_av.strip()
+                                int(qtd_av), motivo_av.strip()
                             )
                             if ok_av:
                                 st.success(f"✅ Avaria registrada: {row_sel['produto']} ({int(qtd_av)} un)")
@@ -2026,8 +2020,7 @@ if has_mestre:
                         f'<div style="color:#e0e6ed;font-weight:700;font-size:0.9rem;">{av["produto"]}</div>'
                         f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
                         f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{av["codigo"]}</b></span>'
-                        f'<span style="color:#64748b;font-size:0.65rem;">{av["categoria"]}</span>'
-                        f'<span style="color:#ff4757;font-size:0.7rem;font-weight:700;">Qtd: {int(av["qtd_avariada"])} un</span>'
+                        f'<span style="color:#ff4757;font-size:0.7rem;font-weight:700;">Qtd: {int(av["qtd_avariada"])}</span>'
                         f'</div>'
                         f'<div style="margin-top:6px;color:#94a3b8;font-size:0.75rem;">📋 {av["motivo"]}</div>'
                         f'</div>'
