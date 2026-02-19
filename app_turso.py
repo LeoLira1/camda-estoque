@@ -112,13 +112,6 @@ _RE_DIGITS = re.compile(r"\d+")
 _RE_ALPHA = re.compile(r"[a-zA-Z]")
 _RE_NON_ALNUM = re.compile(r"[^A-Z0-9]")
 
-_KEYWORDS_DANIFICADO = frozenset([
-    "danificad", "avaria", "avariado", "quebrad", "defeito",
-    "vencid", "impropri", "vazand", "estraga", "molhad",
-    "rasgad", "furad", "amassd", "amassad", "contaminad",
-])
-
-
 # ══════════════════════════════════════════════════════════════════════════════
 # DATABASE — conexão + init de tabelas UMA VEZ SÓ
 # ══════════════════════════════════════════════════════════════════════════════
@@ -685,10 +678,6 @@ def parse_annotation(nota: str, qtd_sistema: int) -> tuple:
         s = int(m.group(1))
         return (qtd_sistema + s, s, m.group(2).strip(), "sobra")
 
-    # DANIFICADOS
-    if any(k in tl for k in _KEYWORDS_DANIFICADO):
-        return (qtd_sistema, 0, text, "danificado")
-
     # Fallback
     m = _RE_FALTA_MID.search(tl)
     if m:
@@ -1105,14 +1094,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS") -> str:
             qs = int(r["qtd_sistema"])
             qf = int(r["qtd_fisica"]) if pd.notnull(r.get("qtd_fisica")) else qs
             diff = int(r["diferenca"]) if pd.notnull(r.get("diferenca")) else 0
-            stat = str(r.get("status", "ok"))
-            note = str(r.get("nota", "")) if pd.notnull(r.get("nota")) else ""
 
-            if stat == "danificado":
-                bg, txt = "#a55eea", "#fff"
-                nums = _RE_DIGITS.findall(note)
-                info = f"{qs} · AV:{nums[0]}" if nums else f"{qs} · AVARIA"
-            elif diff == 0:
+            if diff == 0:
                 bg, txt = "#00d68f", "#0a2e1a"
                 info = str(qs)
             elif diff < 0:
@@ -1751,7 +1734,6 @@ if has_mestre:
     n_ok = (df_view["status"] == "ok").sum()
     n_falta = (df_view["status"] == "falta").sum()
     n_sobra = (df_view["status"] == "sobra").sum()
-    n_danificado = (df_view["status"] == "danificado").sum()
 
     df_reposicao = get_reposicao_pendente()
     n_repor = len(df_reposicao)
@@ -1763,13 +1745,12 @@ if has_mestre:
         <div class="stat-card"><div class="stat-value">{n_ok}</div><div class="stat-label">OK</div></div>
         <div class="stat-card"><div class="stat-value red">{n_falta}</div><div class="stat-label">Faltas</div></div>
         <div class="stat-card"><div class="stat-value amber">{n_sobra}</div><div class="stat-label">Sobras</div></div>
-        <div class="stat-card"><div class="stat-value purple">{n_danificado}</div><div class="stat-label">Danificados</div></div>
         <div class="stat-card"><div class="stat-value blue">{n_repor}</div><div class="stat-label">Repor Loja</div></div>
         <div class="stat-card"><div class="stat-value red">{n_avarias}</div><div class="stat-label">Avarias</div></div>
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "💔 Danificados", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias"])
+    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias"])
 
     with t1:
         st.markdown(build_css_treemap(df_view, "TODOS"), unsafe_allow_html=True)
@@ -1785,14 +1766,7 @@ if has_mestre:
             )
 
     with t3:
-        df_dan = df_view[df_view["status"] == "danificado"]
-        if df_dan.empty:
-            st.info("Nenhum produto danificado.")
-        else:
-            st.dataframe(df_dan[["codigo", "produto", "qtd_sistema", "nota", "ultima_contagem"]], hide_index=True, use_container_width=True)
-
-    with t4:
-        if df_reposicao.empty:
+        if df_reposicao.empty:  # Repor na Loja
             st.success("Nenhum produto pendente de reposição! 🎉")
         else:
             st.caption(f"{n_repor} produto(s) para repor. Itens somem após 7 dias ou quando marcados.")
@@ -1823,18 +1797,18 @@ if has_mestre:
                         marcar_reposto(int(item["id"]))
                         st.rerun()
 
-    with t5:
+    with t4:
         df_vendas = get_vendas_historico()
         build_vendas_tab(df_vendas)
 
-    with t6:
+    with t5:
         df_hist = get_historico_uploads()
         if df_hist.empty:
             st.info("Nenhum upload registrado.")
         else:
             st.dataframe(df_hist, hide_index=True, use_container_width=True)
 
-    with t7:
+    with t6:
         # ── CSS da aba ──
         st.markdown("""
         <style>
@@ -1917,7 +1891,7 @@ if has_mestre:
                     st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
-    with t8:
+    with t7:
         st.markdown("""
         <style>
         .av-card{background:rgba(165,94,234,0.06);border:1px solid rgba(165,94,234,0.25);border-radius:14px;padding:14px 16px;margin-bottom:10px;}
