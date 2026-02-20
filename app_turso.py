@@ -2403,22 +2403,26 @@ if has_mestre:
       EVENTOS[dia].forEach(ev => todosMes.push({{dia: parseInt(dia), ...ev}}));
     }});
 
-    const lista = diaSel !== null && evsDia.length > 0
-      ? evsDia.map(ev => ({{dia: diaSel, ...ev}}))
-      : todosMes.slice(0, 12);
-
-    if (diaSel && evsDia.length > 0) {{
-      title.textContent = `Dia ${{String(diaSel).padStart(2,'0')}}/${{String(MES).padStart(2,'0')}}/${{ANO}}`;
+    // Se há dia selecionado, mostra só os eventos daquele dia (ou vazio)
+    // Sem dia selecionado, mostra resumo do mês
+    let lista;
+    if (diaSel !== null) {{
+      lista = evsDia.map(ev => ({{dia: diaSel, ...ev}}));
+      title.textContent = evsDia.length > 0
+        ? `Dia ${{String(diaSel).padStart(2,'0')}}/${{String(MES).padStart(2,'0')}}/${{ANO}}`
+        : `Sem eventos em ${{String(diaSel).padStart(2,'0')}}/${{String(MES).padStart(2,'0')}}`;
     }} else {{
-      title.textContent = evsDia.length === 0 && diaSel
-        ? `Sem eventos em ${{diaSel}}/${{MES}}`
-        : 'Eventos do mês';
+      lista = todosMes.slice(0, 12);
+      title.textContent = 'Eventos do mês';
     }}
 
     body.innerHTML = '';
 
     if (lista.length === 0) {{
-      body.innerHTML = '<div class="ev-empty">Nenhum evento registrado este mês.</div>';
+      const msg = diaSel !== null
+        ? 'Nenhum evento neste dia.'
+        : 'Nenhum evento registrado este mês.';
+      body.innerHTML = `<div class="ev-empty">${{msg}}</div>`;
       return;
     }}
 
