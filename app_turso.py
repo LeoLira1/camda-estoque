@@ -2053,268 +2053,388 @@ if has_mestre:
                 st.markdown("</div>", unsafe_allow_html=True)
 
     with t8:
-        # ── CSS do Calendário Glassmorphism ─────────────────────────────────
-        st.markdown("""
-        <style>
-        .agenda-wrap {
-            display: flex;
-            gap: 20px;
-            align-items: flex-start;
-            flex-wrap: wrap;
-        }
-        .cal-glass {
-            background: rgba(30, 41, 59, 0.55);
-            backdrop-filter: blur(18px);
-            -webkit-backdrop-filter: blur(18px);
-            border: 1px solid rgba(255,255,255,0.08);
-            border-radius: 18px;
-            padding: 22px 20px 18px 20px;
-            min-width: 300px;
-            max-width: 340px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-        }
-        .cal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-        .cal-month {
-            font-family: 'Outfit', sans-serif;
-            font-weight: 700;
-            font-size: 1.1rem;
-            color: #e0e6ed;
-            letter-spacing: .5px;
-        }
-        .cal-nav {
-            background: rgba(255,255,255,0.07);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 8px;
-            color: #94a3b8;
-            font-size: 0.8rem;
-            padding: 2px 10px;
-            cursor: pointer;
-        }
-        .cal-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 4px;
-            text-align: center;
-        }
-        .cal-dow {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.55rem;
-            color: rgba(148,163,184,0.6);
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            padding-bottom: 8px;
-            border-bottom: 1px solid rgba(255,255,255,0.05);
-            margin-bottom: 4px;
-        }
-        .cal-day {
-            font-family: 'Outfit', sans-serif;
-            font-size: 0.85rem;
-            color: #cbd5e1;
-            padding: 6px 4px;
-            border-radius: 50%;
-            cursor: default;
-            position: relative;
-            transition: background .15s;
-            line-height: 1;
-        }
-        .cal-day.empty { color: transparent; cursor: default; }
-        .cal-day.today {
-            background: #e0e6ed;
-            color: #0a0f1a;
-            font-weight: 900;
-            border-radius: 50%;
-            width: 30px;
-            height: 30px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto;
-        }
-        .cal-day.has-event::after {
-            content: '';
-            display: block;
-            width: 4px;
-            height: 4px;
-            border-radius: 50%;
-            background: #00d68f;
-            margin: 2px auto 0;
-        }
-        .cal-day.has-alert::after {
-            background: #ff4757;
-        }
-        .cal-day.has-warn::after {
-            background: #ffa502;
-        }
-        .cal-day.weekend { color: rgba(148,163,184,0.45); }
-
-        /* Lista de eventos */
-        .ev-list {
-            flex: 1;
-            min-width: 220px;
-        }
-        .ev-title {
-            font-family: 'Outfit', sans-serif;
-            font-weight: 700;
-            font-size: 0.85rem;
-            color: #94a3b8;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            margin-bottom: 12px;
-        }
-        .ev-item {
-            background: rgba(30,41,59,0.6);
-            border-left: 3px solid #00d68f;
-            border-radius: 0 10px 10px 0;
-            padding: 8px 12px;
-            margin-bottom: 8px;
-            display: flex;
-            flex-direction: column;
-            gap: 2px;
-        }
-        .ev-item.alerta { border-left-color: #ff4757; }
-        .ev-item.aviso  { border-left-color: #ffa502; }
-        .ev-item.info   { border-left-color: #3b82f6; }
-        .ev-item-title  { font-size: 0.8rem; color: #e0e6ed; font-weight: 600; }
-        .ev-item-sub    { font-size: 0.65rem; color: #64748b; font-family: 'JetBrains Mono', monospace; }
-        </style>
-        """, unsafe_allow_html=True)
+        import streamlit.components.v1 as components
+        import calendar as _cal
+        import json as _json
 
         # ── Coleta de eventos do próprio banco ──────────────────────────────
         hoje = datetime.now()
         ano, mes = hoje.year, hoje.month
 
-        # Nomes dos meses em PT-BR
         _MESES = ["", "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
                   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
 
-        # Montar lista de eventos: {dia: [(titulo, tipo)]}
-        eventos = {}  # dia (int) -> list of (label, tipo: 'ok'|'alerta'|'aviso'|'info')
+        eventos = {}  # dia (int) -> list of (label, tipo)
 
         def _add_ev(dia, label, tipo="ok"):
             if 1 <= dia <= 31:
                 eventos.setdefault(dia, []).append((label, tipo))
 
-        # Avarias abertas → dia do registro
+        # Avarias abertas
         try:
             df_av_ag = listar_avarias(apenas_abertas=True)
             for _, av in df_av_ag.iterrows():
                 try:
                     dt = datetime.strptime(av["registrado_em"], "%Y-%m-%d %H:%M:%S")
                     if dt.year == ano and dt.month == mes:
-                        _add_ev(dt.day, f"Avaria: {av['produto'][:22]}...", "alerta")
+                        _add_ev(dt.day, f"Avaria: {av['produto'][:25]}", "alerta")
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Reposições pendentes → dia do registro
+        # Reposições pendentes
         try:
             for _, rep in df_reposicao.iterrows():
                 try:
                     dt = datetime.strptime(rep["criado_em"], "%Y-%m-%d %H:%M:%S")
                     if dt.year == ano and dt.month == mes:
-                        _add_ev(dt.day, f"Repor: {rep['produto'][:22]}...", "aviso")
+                        _add_ev(dt.day, f"Repor: {rep['produto'][:25]}", "aviso")
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Histórico de uploads → dia
+        # Histórico de uploads
         try:
             df_hist_ag = get_historico_uploads()
             for _, h in df_hist_ag.iterrows():
                 try:
                     dt = datetime.strptime(h["data"], "%Y-%m-%d %H:%M:%S")
                     if dt.year == ano and dt.month == mes:
-                        _add_ev(dt.day, f"Upload: {h['arquivo'][:22]}", "info")
+                        _add_ev(dt.day, f"Upload: {h['arquivo'][:25]}", "info")
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # Divergências do estoque atual → marcar hoje se houver
+        # Divergências
         if n_falta > 0 or n_sobra > 0:
-            _add_ev(hoje.day, f"{n_falta} faltas / {n_sobra} sobras hoje", "alerta" if n_falta > 0 else "aviso")
+            _add_ev(hoje.day, f"{n_falta} faltas / {n_sobra} sobras", "alerta" if n_falta > 0 else "aviso")
 
-        # ── Construção do HTML do calendário ────────────────────────────────
-        import calendar as _cal
+        # ── Serializar eventos para JSON (para o JS) ─────────────────────────
+        eventos_js = {}
+        for dia, evs in eventos.items():
+            eventos_js[str(dia)] = [{"label": label, "tipo": tipo} for label, tipo in evs]
+        eventos_json = _json.dumps(eventos_js)
+
+        # ── Dados do calendário ──────────────────────────────────────────────
         primeiro_dia_semana, total_dias = _cal.monthrange(ano, mes)
-        # Python: monday=0; queremos Sunday=0
-        primeiro_dia_semana = (primeiro_dia_semana + 1) % 7
+        primeiro_dia_semana = (primeiro_dia_semana + 1) % 7  # Sunday=0
+        nome_mes = _MESES[mes]
+        hoje_dia = hoje.day
 
-        dows = ["S", "M", "T", "W", "T", "F", "S"]
-        dows_html = "".join(f'<div class="cal-dow">{d}</div>' for d in dows)
+        # ── Estado: dia selecionado ──────────────────────────────────────────
+        if "agenda_dia_sel" not in st.session_state:
+            st.session_state["agenda_dia_sel"] = hoje_dia
 
-        cells = []
-        for _ in range(primeiro_dia_semana):
-            cells.append('<div class="cal-day empty"></div>')
+        # ── Componente HTML interativo ───────────────────────────────────────
+        cal_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;500;700;900&display=swap" rel="stylesheet">
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{
+    background: transparent;
+    font-family: 'Outfit', sans-serif;
+    color: #e0e6ed;
+  }}
+  .wrap {{
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 4px 2px 8px 2px;
+  }}
+  /* ── Calendário ── */
+  .cal-glass {{
+    background: rgba(30,41,59,0.55);
+    backdrop-filter: blur(18px);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 18px;
+    padding: 20px 18px 16px 18px;
+    min-width: 290px;
+    max-width: 320px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }}
+  .cal-header {{
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 14px;
+  }}
+  .cal-month {{
+    font-weight: 700;
+    font-size: 1.05rem;
+    color: #e0e6ed;
+    letter-spacing: .5px;
+  }}
+  .cal-grid {{
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 3px;
+    text-align: center;
+  }}
+  .cal-dow {{
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.52rem;
+    color: rgba(148,163,184,0.55);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    margin-bottom: 3px;
+  }}
+  .cal-day {{
+    font-size: 0.82rem;
+    color: #cbd5e1;
+    padding: 5px 2px;
+    border-radius: 50%;
+    cursor: pointer;
+    position: relative;
+    transition: background .15s, color .15s, transform .1s;
+    line-height: 1.2;
+    user-select: none;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+  }}
+  .cal-day:not(.empty):hover {{
+    background: rgba(0,214,143,0.15);
+    color: #00d68f;
+    transform: scale(1.12);
+  }}
+  .cal-day.empty {{ color: transparent; cursor: default; pointer-events: none; }}
+  .cal-day.today {{
+    background: #e0e6ed;
+    color: #0a0f1a;
+    font-weight: 900;
+  }}
+  .cal-day.today:hover {{
+    background: #c8d5e2;
+    color: #0a0f1a;
+  }}
+  .cal-day.selected {{
+    background: rgba(0,214,143,0.25);
+    color: #00d68f;
+    border: 1.5px solid #00d68f;
+    font-weight: 700;
+  }}
+  .cal-day.today.selected {{
+    background: #00d68f;
+    color: #0a0f1a;
+    border: none;
+  }}
+  .cal-day.weekend {{ color: rgba(148,163,184,0.4); }}
+  .cal-day.weekend:hover {{ color: #00d68f; }}
+  /* pontos de evento */
+  .dot {{
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    margin-top: 2px;
+  }}
+  .dot-ok    {{ background: #00d68f; }}
+  .dot-aviso {{ background: #ffa502; }}
+  .dot-alerta{{ background: #ff4757; }}
+  .dot-info  {{ background: #3b82f6; }}
 
-        for d in range(1, total_dias + 1):
-            evs = eventos.get(d, [])
-            tipos = [e[1] for e in evs]
-            is_today = (d == hoje.day)
-            is_weekend = ((primeiro_dia_semana + d - 1) % 7) in (0, 6)
+  /* ── Lista de Eventos ── */
+  .ev-list {{
+    flex: 1;
+    min-width: 220px;
+    max-width: 500px;
+  }}
+  .ev-title {{
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 10px;
+  }}
+  .ev-empty {{
+    color: #4a5568;
+    font-size: 0.78rem;
+    padding: 10px 0;
+  }}
+  .ev-item {{
+    background: rgba(30,41,59,0.6);
+    border-left: 3px solid #00d68f;
+    border-radius: 0 10px 10px 0;
+    padding: 8px 12px;
+    margin-bottom: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    animation: fadeIn .2s ease;
+  }}
+  @keyframes fadeIn {{ from {{ opacity:0; transform:translateY(4px) }} to {{ opacity:1; transform:translateY(0) }} }}
+  .ev-item.alerta {{ border-left-color: #ff4757; }}
+  .ev-item.aviso  {{ border-left-color: #ffa502; }}
+  .ev-item.info   {{ border-left-color: #3b82f6; }}
+  .ev-item-title  {{ font-size: 0.78rem; color: #e0e6ed; font-weight: 600; }}
+  .ev-item-sub    {{ font-size: 0.62rem; color: #64748b; font-family: 'JetBrains Mono', monospace; }}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- Calendário -->
+  <div class="cal-glass">
+    <div class="cal-header">
+      <span class="cal-month">{nome_mes} {ano}</span>
+    </div>
+    <div class="cal-grid" id="cal-grid">
+      <!-- gerado por JS -->
+    </div>
+  </div>
 
-            cls = "cal-day"
-            if is_today:
-                cls += " today"
-            elif is_weekend:
-                cls += " weekend"
+  <!-- Lista de eventos -->
+  <div class="ev-list">
+    <div class="ev-title" id="ev-title">Eventos do mês</div>
+    <div id="ev-body"><!-- gerado por JS --></div>
+  </div>
+</div>
 
-            if evs:
-                if "alerta" in tipos:
-                    cls += " has-alert"
-                elif "aviso" in tipos:
-                    cls += " has-warn"
-                else:
-                    cls += " has-event"
+<script>
+  const EVENTOS = {eventos_json};
+  const TOTAL_DIAS = {total_dias};
+  const PRIMEIRO_DIA = {primeiro_dia_semana};
+  const HOJE = {hoje_dia};
+  const MES = {mes};
+  const ANO = {ano};
+  const MESES_PT = ["","Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                    "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
-            cells.append(f'<div class="{cls}">{d}</div>')
+  let diaSel = HOJE;
 
-        grid_html = dows_html + "".join(cells)
+  function tipoMaisPrioritario(tipos) {{
+    if (tipos.includes('alerta')) return 'alerta';
+    if (tipos.includes('aviso'))  return 'aviso';
+    if (tipos.includes('info'))   return 'info';
+    return 'ok';
+  }}
 
-        # ── Coleta eventos do mês para a lista lateral ───────────────────────
-        todos_eventos_mes = []
-        for dia, evs in sorted(eventos.items()):
-            for (label, tipo) in evs:
-                todos_eventos_mes.append((dia, label, tipo))
+  function renderCalendario() {{
+    const grid = document.getElementById('cal-grid');
+    grid.innerHTML = '';
 
-        ev_list_html = ""
-        if todos_eventos_mes:
-            for dia, label, tipo in todos_eventos_mes[:12]:  # max 12 itens
-                ev_list_html += f"""
-                <div class="ev-item {tipo if tipo != 'ok' else ''}">
-                    <span class="ev-item-title">{label}</span>
-                    <span class="ev-item-sub">{dia:02d}/{mes:02d}/{ano}</span>
-                </div>"""
-        else:
-            ev_list_html = '<div style="color:#4a5568;font-size:0.8rem;">Nenhum evento registrado este mês.</div>'
+    // Cabeçalho dias
+    ['D','S','T','Q','Q','S','S'].forEach(d => {{
+      const el = document.createElement('div');
+      el.className = 'cal-dow';
+      el.textContent = d;
+      grid.appendChild(el);
+    }});
 
-        st.markdown(f"""
-        <div class="agenda-wrap">
-          <div class="cal-glass">
-            <div class="cal-header">
-              <span class="cal-month">{_MESES[mes]} {ano}</span>
-            </div>
-            <div class="cal-grid">
-              {grid_html}
-            </div>
-          </div>
-          <div class="ev-list">
-            <div class="ev-title">Eventos do mês</div>
-            {ev_list_html}
-          </div>
-        </div>
-        """, unsafe_allow_html=True)
+    // Células vazias
+    for (let i = 0; i < PRIMEIRO_DIA; i++) {{
+      const el = document.createElement('div');
+      el.className = 'cal-day empty';
+      grid.appendChild(el);
+    }}
 
-        # ── Adicionar evento manual ──────────────────────────────────────────
-        st.markdown("---")
-        st.caption("📌 Os eventos acima são gerados automaticamente a partir de avarias, reposições e uploads registrados no sistema.")
+    // Dias
+    for (let d = 1; d <= TOTAL_DIAS; d++) {{
+      const el = document.createElement('div');
+      const evs = EVENTOS[String(d)] || [];
+      const tipos = evs.map(e => e.tipo);
+      const diaSemana = (PRIMEIRO_DIA + d - 1) % 7;
+
+      let cls = 'cal-day';
+      if (d === HOJE)   cls += ' today';
+      else if (diaSemana === 0 || diaSemana === 6) cls += ' weekend';
+      if (d === diaSel) cls += ' selected';
+
+      el.className = cls;
+
+      // Número
+      const num = document.createElement('span');
+      num.textContent = d;
+      el.appendChild(num);
+
+      // Ponto de evento
+      if (evs.length > 0) {{
+        const tip = tipoMaisPrioritario(tipos);
+        const dot = document.createElement('div');
+        dot.className = 'dot dot-' + tip;
+        el.appendChild(dot);
+      }}
+
+      el.addEventListener('click', () => {{
+        diaSel = d;
+        renderCalendario();
+        renderEventos();
+      }});
+
+      grid.appendChild(el);
+    }}
+  }}
+
+  function renderEventos() {{
+    const body = document.getElementById('ev-body');
+    const title = document.getElementById('ev-title');
+
+    const evsDia = EVENTOS[String(diaSel)] || [];
+    const todosMes = [];
+    Object.keys(EVENTOS).sort((a,b)=>parseInt(a)-parseInt(b)).forEach(dia => {{
+      EVENTOS[dia].forEach(ev => todosMes.push({{dia: parseInt(dia), ...ev}}));
+    }});
+
+    const lista = diaSel !== null && evsDia.length > 0
+      ? evsDia.map(ev => ({{dia: diaSel, ...ev}}))
+      : todosMes.slice(0, 12);
+
+    if (diaSel && evsDia.length > 0) {{
+      title.textContent = `Dia ${{String(diaSel).padStart(2,'0')}}/${{String(MES).padStart(2,'0')}}/${{ANO}}`;
+    }} else {{
+      title.textContent = evsDia.length === 0 && diaSel
+        ? `Sem eventos em ${{diaSel}}/${{MES}}`
+        : 'Eventos do mês';
+    }}
+
+    body.innerHTML = '';
+
+    if (lista.length === 0) {{
+      body.innerHTML = '<div class="ev-empty">Nenhum evento registrado este mês.</div>';
+      return;
+    }}
+
+    lista.forEach(ev => {{
+      const item = document.createElement('div');
+      item.className = 'ev-item ' + (ev.tipo !== 'ok' ? ev.tipo : '');
+      item.innerHTML = `
+        <span class="ev-item-title">${{ev.label}}</span>
+        <span class="ev-item-sub">${{String(ev.dia).padStart(2,'0')}}/${{String(MES).padStart(2,'0')}}/${{ANO}}</span>
+      `;
+      body.appendChild(item);
+    }});
+  }}
+
+  renderCalendario();
+  renderEventos();
+</script>
+</body>
+</html>
+"""
+
+        components.html(cal_html, height=420, scrolling=False)
+
+        # ── Legenda ──────────────────────────────────────────────────────────
+        st.markdown(
+            '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;padding-left:2px;">'
+            '<span style="font-size:0.65rem;color:#64748b;">🟢 Upload &nbsp; 🟡 Reposição &nbsp; 🔴 Avaria &nbsp; 🔵 Info</span>'
+            '</div>',
+            unsafe_allow_html=True
+        )
+        st.caption("📌 Clique em qualquer dia para filtrar os eventos. Pontos coloridos indicam registros naquele dia.")
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
