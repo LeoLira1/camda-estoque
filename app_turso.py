@@ -2077,7 +2077,7 @@ if has_mestre:
                 try:
                     dt = datetime.strptime(av["registrado_em"], "%Y-%m-%d %H:%M:%S")
                     if dt.year == ano and dt.month == mes:
-                        _add_ev(dt.day, f"Avaria: {av['produto'][:25]}", "alerta")
+                        _add_ev(dt.day, f"Avaria: {av['produto']}", "alerta")
                 except Exception:
                     pass
         except Exception:
@@ -2089,7 +2089,7 @@ if has_mestre:
                 try:
                     dt = datetime.strptime(rep["criado_em"], "%Y-%m-%d %H:%M:%S")
                     if dt.year == ano and dt.month == mes:
-                        _add_ev(dt.day, f"Repor: {rep['produto'][:25]}", "aviso")
+                        _add_ev(dt.day, f"Repor: {rep['produto']}", "aviso")
                 except Exception:
                     pass
         except Exception:
@@ -2102,7 +2102,7 @@ if has_mestre:
                 try:
                     dt = datetime.strptime(h["data"], "%Y-%m-%d %H:%M:%S")
                     if dt.year == ano and dt.month == mes:
-                        _add_ev(dt.day, f"Upload: {h['arquivo'][:25]}", "info")
+                        _add_ev(dt.day, f"Upload: {h['arquivo']}", "info")
                 except Exception:
                     pass
         except Exception:
@@ -2251,6 +2251,8 @@ if has_mestre:
     flex: 1;
     min-width: 220px;
     max-width: 500px;
+    display: flex;
+    flex-direction: column;
   }}
   .ev-title {{
     font-weight: 700;
@@ -2259,7 +2261,18 @@ if has_mestre:
     text-transform: uppercase;
     letter-spacing: 1.5px;
     margin-bottom: 10px;
+    flex-shrink: 0;
   }}
+  .ev-scroll {{
+    overflow-y: auto;
+    max-height: 340px;
+    padding-right: 6px;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0,214,143,0.3) transparent;
+  }}
+  .ev-scroll::-webkit-scrollbar {{ width: 4px; }}
+  .ev-scroll::-webkit-scrollbar-track {{ background: transparent; }}
+  .ev-scroll::-webkit-scrollbar-thumb {{ background: rgba(0,214,143,0.35); border-radius: 4px; }}
   .ev-empty {{
     color: #4a5568;
     font-size: 0.78rem;
@@ -2280,7 +2293,7 @@ if has_mestre:
   .ev-item.alerta {{ border-left-color: #ff4757; }}
   .ev-item.aviso  {{ border-left-color: #ffa502; }}
   .ev-item.info   {{ border-left-color: #3b82f6; }}
-  .ev-item-title  {{ font-size: 0.78rem; color: #e0e6ed; font-weight: 600; }}
+  .ev-item-title  {{ font-size: 0.78rem; color: #e0e6ed; font-weight: 600; white-space: normal; word-break: break-word; }}
   .ev-item-sub    {{ font-size: 0.62rem; color: #64748b; font-family: 'JetBrains Mono', monospace; }}
 </style>
 </head>
@@ -2299,7 +2312,7 @@ if has_mestre:
   <!-- Lista de eventos -->
   <div class="ev-list">
     <div class="ev-title" id="ev-title">Eventos do mês</div>
-    <div id="ev-body"><!-- gerado por JS --></div>
+    <div class="ev-scroll" id="ev-body"><!-- gerado por JS --></div>
   </div>
 </div>
 
@@ -2425,7 +2438,7 @@ if has_mestre:
 </html>
 """
 
-        components.html(cal_html, height=420, scrolling=False)
+        components.html(cal_html, height=480, scrolling=False)
 
         # ── Legenda ──────────────────────────────────────────────────────────
         st.markdown(
