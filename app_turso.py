@@ -1761,7 +1761,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias"])
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -2051,6 +2051,270 @@ if has_mestre:
                         st.rerun()
 
                 st.markdown("</div>", unsafe_allow_html=True)
+
+    with t8:
+        # ── CSS do Calendário Glassmorphism ─────────────────────────────────
+        st.markdown("""
+        <style>
+        .agenda-wrap {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+        .cal-glass {
+            background: rgba(30, 41, 59, 0.55);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 18px;
+            padding: 22px 20px 18px 20px;
+            min-width: 300px;
+            max-width: 340px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        .cal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .cal-month {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #e0e6ed;
+            letter-spacing: .5px;
+        }
+        .cal-nav {
+            background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #94a3b8;
+            font-size: 0.8rem;
+            padding: 2px 10px;
+            cursor: pointer;
+        }
+        .cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+            text-align: center;
+        }
+        .cal-dow {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.55rem;
+            color: rgba(148,163,184,0.6);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            margin-bottom: 4px;
+        }
+        .cal-day {
+            font-family: 'Outfit', sans-serif;
+            font-size: 0.85rem;
+            color: #cbd5e1;
+            padding: 6px 4px;
+            border-radius: 50%;
+            cursor: default;
+            position: relative;
+            transition: background .15s;
+            line-height: 1;
+        }
+        .cal-day.empty { color: transparent; cursor: default; }
+        .cal-day.today {
+            background: #e0e6ed;
+            color: #0a0f1a;
+            font-weight: 900;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+        }
+        .cal-day.has-event::after {
+            content: '';
+            display: block;
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: #00d68f;
+            margin: 2px auto 0;
+        }
+        .cal-day.has-alert::after {
+            background: #ff4757;
+        }
+        .cal-day.has-warn::after {
+            background: #ffa502;
+        }
+        .cal-day.weekend { color: rgba(148,163,184,0.45); }
+
+        /* Lista de eventos */
+        .ev-list {
+            flex: 1;
+            min-width: 220px;
+        }
+        .ev-title {
+            font-family: 'Outfit', sans-serif;
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 12px;
+        }
+        .ev-item {
+            background: rgba(30,41,59,0.6);
+            border-left: 3px solid #00d68f;
+            border-radius: 0 10px 10px 0;
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .ev-item.alerta { border-left-color: #ff4757; }
+        .ev-item.aviso  { border-left-color: #ffa502; }
+        .ev-item.info   { border-left-color: #3b82f6; }
+        .ev-item-title  { font-size: 0.8rem; color: #e0e6ed; font-weight: 600; }
+        .ev-item-sub    { font-size: 0.65rem; color: #64748b; font-family: 'JetBrains Mono', monospace; }
+        </style>
+        """, unsafe_allow_html=True)
+
+        # ── Coleta de eventos do próprio banco ──────────────────────────────
+        hoje = datetime.now()
+        ano, mes = hoje.year, hoje.month
+
+        # Nomes dos meses em PT-BR
+        _MESES = ["", "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+                  "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
+
+        # Montar lista de eventos: {dia: [(titulo, tipo)]}
+        eventos = {}  # dia (int) -> list of (label, tipo: 'ok'|'alerta'|'aviso'|'info')
+
+        def _add_ev(dia, label, tipo="ok"):
+            if 1 <= dia <= 31:
+                eventos.setdefault(dia, []).append((label, tipo))
+
+        # Avarias abertas → dia do registro
+        try:
+            df_av_ag = listar_avarias(apenas_abertas=True)
+            for _, av in df_av_ag.iterrows():
+                try:
+                    dt = datetime.strptime(av["registrado_em"], "%Y-%m-%d %H:%M:%S")
+                    if dt.year == ano and dt.month == mes:
+                        _add_ev(dt.day, f"Avaria: {av['produto'][:22]}...", "alerta")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Reposições pendentes → dia do registro
+        try:
+            for _, rep in df_reposicao.iterrows():
+                try:
+                    dt = datetime.strptime(rep["criado_em"], "%Y-%m-%d %H:%M:%S")
+                    if dt.year == ano and dt.month == mes:
+                        _add_ev(dt.day, f"Repor: {rep['produto'][:22]}...", "aviso")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Histórico de uploads → dia
+        try:
+            df_hist_ag = get_historico_uploads()
+            for _, h in df_hist_ag.iterrows():
+                try:
+                    dt = datetime.strptime(h["data"], "%Y-%m-%d %H:%M:%S")
+                    if dt.year == ano and dt.month == mes:
+                        _add_ev(dt.day, f"Upload: {h['arquivo'][:22]}", "info")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # Divergências do estoque atual → marcar hoje se houver
+        if n_falta > 0 or n_sobra > 0:
+            _add_ev(hoje.day, f"{n_falta} faltas / {n_sobra} sobras hoje", "alerta" if n_falta > 0 else "aviso")
+
+        # ── Construção do HTML do calendário ────────────────────────────────
+        import calendar as _cal
+        primeiro_dia_semana, total_dias = _cal.monthrange(ano, mes)
+        # Python: monday=0; queremos Sunday=0
+        primeiro_dia_semana = (primeiro_dia_semana + 1) % 7
+
+        dows = ["S", "M", "T", "W", "T", "F", "S"]
+        dows_html = "".join(f'<div class="cal-dow">{d}</div>' for d in dows)
+
+        cells = []
+        for _ in range(primeiro_dia_semana):
+            cells.append('<div class="cal-day empty"></div>')
+
+        for d in range(1, total_dias + 1):
+            evs = eventos.get(d, [])
+            tipos = [e[1] for e in evs]
+            is_today = (d == hoje.day)
+            is_weekend = ((primeiro_dia_semana + d - 1) % 7) in (0, 6)
+
+            cls = "cal-day"
+            if is_today:
+                cls += " today"
+            elif is_weekend:
+                cls += " weekend"
+
+            if evs:
+                if "alerta" in tipos:
+                    cls += " has-alert"
+                elif "aviso" in tipos:
+                    cls += " has-warn"
+                else:
+                    cls += " has-event"
+
+            cells.append(f'<div class="{cls}">{d}</div>')
+
+        grid_html = dows_html + "".join(cells)
+
+        # ── Coleta eventos do mês para a lista lateral ───────────────────────
+        todos_eventos_mes = []
+        for dia, evs in sorted(eventos.items()):
+            for (label, tipo) in evs:
+                todos_eventos_mes.append((dia, label, tipo))
+
+        ev_list_html = ""
+        if todos_eventos_mes:
+            for dia, label, tipo in todos_eventos_mes[:12]:  # max 12 itens
+                ev_list_html += f"""
+                <div class="ev-item {tipo if tipo != 'ok' else ''}">
+                    <span class="ev-item-title">{label}</span>
+                    <span class="ev-item-sub">{dia:02d}/{mes:02d}/{ano}</span>
+                </div>"""
+        else:
+            ev_list_html = '<div style="color:#4a5568;font-size:0.8rem;">Nenhum evento registrado este mês.</div>'
+
+        st.markdown(f"""
+        <div class="agenda-wrap">
+          <div class="cal-glass">
+            <div class="cal-header">
+              <span class="cal-month">{_MESES[mes]} {ano}</span>
+            </div>
+            <div class="cal-grid">
+              {grid_html}
+            </div>
+          </div>
+          <div class="ev-list">
+            <div class="ev-title">Eventos do mês</div>
+            {ev_list_html}
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Adicionar evento manual ──────────────────────────────────────────
+        st.markdown("---")
+        st.caption("📌 Os eventos acima são gerados automaticamente a partir de avarias, reposições e uploads registrados no sistema.")
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
