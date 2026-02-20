@@ -2070,13 +2070,15 @@ if has_mestre:
             if 1 <= dia <= 31:
                 eventos.setdefault(dia, []).append((label, tipo))
 
+        hoje_date = hoje.date()  # usado para bloquear dias futuros
+
         # Avarias abertas
         try:
             df_av_ag = listar_avarias(apenas_abertas=True)
             for _, av in df_av_ag.iterrows():
                 try:
                     dt = datetime.strptime(av["registrado_em"], "%Y-%m-%d %H:%M:%S")
-                    if dt.year == ano and dt.month == mes:
+                    if dt.year == ano and dt.month == mes and dt.date() <= hoje_date:
                         _add_ev(dt.day, f"Avaria: {av['produto']}", "alerta")
                 except Exception:
                     pass
@@ -2088,7 +2090,7 @@ if has_mestre:
             for _, rep in df_reposicao.iterrows():
                 try:
                     dt = datetime.strptime(rep["criado_em"], "%Y-%m-%d %H:%M:%S")
-                    if dt.year == ano and dt.month == mes:
+                    if dt.year == ano and dt.month == mes and dt.date() <= hoje_date:
                         _add_ev(dt.day, f"Repor: {rep['produto']}", "aviso")
                 except Exception:
                     pass
@@ -2101,7 +2103,7 @@ if has_mestre:
             for _, h in df_hist_ag.iterrows():
                 try:
                     dt = datetime.strptime(h["data"], "%Y-%m-%d %H:%M:%S")
-                    if dt.year == ano and dt.month == mes:
+                    if dt.year == ano and dt.month == mes and dt.date() <= hoje_date:
                         _add_ev(dt.day, f"Upload: {h['arquivo']}", "info")
                 except Exception:
                     pass
