@@ -1355,7 +1355,10 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             (df_vendas["qtd_estoque"] > 0) &
             (df_vendas["qtd_estoque"] < df_vendas["qtd_vendida"] * 0.5) &
             (df_vendas["qtd_vendida"] > 10)
-        ].sort_values("qtd_vendida", ascending=False)
+        ].copy()
+        # Ordenar por dias de cobertura (menor = mais urgente)
+        df_crit["dias_cobertura"] = df_crit["qtd_estoque"] / (df_crit["qtd_vendida"] / 30)
+        df_crit = df_crit.sort_values("dias_cobertura", ascending=True)
 
         kc1, kc2, kc3 = st.columns(3)
         with kc1:
@@ -1369,11 +1372,15 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             st.markdown(f"""<div class="stat-card"><div class="stat-value purple">{total_alert}</div>
             <div class="stat-label">⚡ Total Alertas</div></div>""", unsafe_allow_html=True)
 
-        # Combinar e mostrar top 20
+        # Combinar e mostrar top 25 (zerados top 15 + críticos top 15, ordenado por urgência)
         df_alerta = pd.concat([
-            df_zero.head(15).assign(nivel="ZERADO"),
-            df_crit.head(10).assign(nivel="CRÍTICO"),
-        ]).sort_values("qtd_vendida", ascending=False).head(20)
+            df_zero.head(15).assign(nivel="ZERADO", dias_cobertura=0.0),
+            df_crit.head(15).assign(nivel="CRÍTICO"),
+        ]).sort_values(
+            ["nivel", "dias_cobertura"],
+            ascending=[True, True],  # ZERADO primeiro, depois menor cobertura
+            key=lambda col: col.map({"ZERADO": 0, "CRÍTICO": 1}) if col.name == "nivel" else col
+        ).head(25)
 
         if not df_alerta.empty:
             # Bar chart horizontal com cores de severidade
@@ -1387,6 +1394,8 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 text=df_alerta.apply(lambda r: f"Est: {int(r['qtd_estoque'])}", axis=1),
                 textposition="outside", textfont=dict(size=9, color="#94a3b8"),
                 hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br>%{text}<extra></extra>",
+                hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br>%{text}<br>Cobertura: %{customdata}d<extra></extra>",
+
             ))
             fig_alert.update_layout(
                 **_PLOTLY_LAYOUT,
