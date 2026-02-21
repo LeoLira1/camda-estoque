@@ -1393,7 +1393,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 marker=dict(color=colors, cornerradius=3),
                 text=df_alerta.apply(lambda r: f"Est: {int(r['qtd_estoque'])}", axis=1),
                 textposition="outside", textfont=dict(size=9, color="#94a3b8"),
-                hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br>%{text}<extra></extra>",
+                customdata=df_alerta["dias_cobertura"].fillna(0).round(1),
                 hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br>%{text}<br>Cobertura: %{customdata}d<extra></extra>",
 
             ))
