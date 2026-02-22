@@ -84,8 +84,10 @@ class AgroFitClient:
                     time.sleep(_RETRY_WAIT * attempt)
                     continue
                 else:
+                    print(f"[Agrofit._get] HTTP {resp.status_code} para {url} params={params} | body={resp.text[:300]}")
                     return None
-            except requests.RequestException:
+            except requests.RequestException as exc:
+                print(f"[Agrofit._get] RequestException tentativa {attempt}/{_MAX_RETRIES}: {exc}")
                 if attempt < _MAX_RETRIES:
                     time.sleep(_RETRY_WAIT)
         return None
@@ -547,6 +549,48 @@ def _try_get_token_silent() -> str:
         return _get_token()
     except ValueError:
         return ""
+
+
+def debug_busca_praga(nome_praga: str, token: str) -> dict:
+    """
+    Versão de diagnóstico (sem cache) da busca por praga.
+    Retorna dict com resultados intermediários para exibição na UI.
+    """
+    result: dict = {
+        "praga_buscada": nome_praga,
+        "pragas_comuns_encontradas": [],
+        "produtos_direto": 0,
+        "marcas_direto": [],
+        "por_praga_norm": [],
+        "erro": None,
+    }
+    try:
+        client = AgroFitClient(token=token)
+
+        # Passo 1 — busca direta com o termo como praga_nome_comum
+        r_direto = client.buscar_por_praga(nome_praga, max_results=5)
+        result["produtos_direto"] = len(r_direto)
+        result["marcas_direto"] = [p.get("marca_comercial", "") for p in r_direto]
+
+        # Passo 2 — nomes de pragas conhecidas pelo Agrofit para esse termo
+        pragas_comuns = client.buscar_pragas_comuns(nome_praga, max_results=10)
+        result["pragas_comuns_encontradas"] = pragas_comuns
+
+        # Passo 3 — busca por cada nome normalizado
+        for pn in pragas_comuns[:5]:
+            if pn.strip().upper() == nome_praga.strip().upper():
+                continue
+            r_norm = client.buscar_por_praga(pn, max_results=5)
+            result["por_praga_norm"].append({
+                "praga": pn,
+                "count": len(r_norm),
+                "marcas": [p.get("marca_comercial", "") for p in r_norm],
+            })
+
+    except Exception as exc:
+        result["erro"] = str(exc)
+
+    return result
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
