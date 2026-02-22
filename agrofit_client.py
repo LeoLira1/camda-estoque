@@ -154,7 +154,7 @@ class AgroFitClient:
         """
         data = self._get("/search/produtos-formulados", params={
             "praga_nome_comum": nome_praga,
-            "page": 0,
+            "page": 1,
             "size": max_results,
         })
         if not data:
@@ -169,7 +169,7 @@ class AgroFitClient:
         """
         data = self._get("/search/pragas-nomes-comuns", params={
             "q": nome,
-            "page": 0,
+            "page": 1,
             "size": max_results,
         })
         if not data:
