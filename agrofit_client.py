@@ -566,6 +566,7 @@ def debug_busca_praga(nome_praga: str, token: str) -> dict:
         "pragas_comuns_encontradas": [],
         "produtos_direto": 0,
         "marcas_direto": [],
+        "raw_keys_exemplo": [],
         "por_praga_norm": [],
         "erro": None,
     }
@@ -573,6 +574,16 @@ def debug_busca_praga(nome_praga: str, token: str) -> dict:
         client = AgroFitClient(token=token)
 
         # Passo 1 — busca direta com o termo como praga_nome_comum
+        # Acessa o endpoint diretamente para inspecionar o raw response
+        _raw_data = client._get("/search/produtos-formulados", params={
+            "praga_nome_comum": nome_praga, "page": 1, "size": 3,
+        })
+        if _raw_data:
+            _items_raw = _raw_data.get("content", _raw_data) if isinstance(_raw_data, dict) else _raw_data
+            if _items_raw and isinstance(_items_raw, list) and len(_items_raw) > 0:
+                first = _items_raw[0]
+                result["raw_keys_exemplo"] = list(first.keys()) if isinstance(first, dict) else [str(first)]
+
         r_direto = client.buscar_por_praga(nome_praga, max_results=5)
         result["produtos_direto"] = len(r_direto)
         result["marcas_direto"] = [p.get("marca_comercial", "") for p in r_direto]
