@@ -10,6 +10,17 @@ import plotly.express as px
 from datetime import datetime, timedelta, date
 from PIL import Image
 
+# ── AGROFIT ──────────────────────────────────────────────────────────────────
+try:
+    from agrofit_client import (
+        widget_busca_agrofit,
+        botao_enriquecer_estoque,
+        salvar_resultado_agrofit_no_banco,
+    )
+    _AGROFIT_DISPONIVEL = True
+except ImportError:
+    _AGROFIT_DISPONIVEL = False
+
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CAMDA Estoque Mestre",
@@ -1593,6 +1604,10 @@ has_mestre = stock_count > 0
 # ── Upload Section ───────────────────────────────────────────────────────────
 with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 
+    if _AGROFIT_DISPONIVEL:
+        with st.expander("🌿 Consulta AGROFIT (MAPA)", expanded=False):
+            widget_busca_agrofit()
+
     if not has_mestre:
         st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
 
@@ -1688,6 +1703,19 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     st.rerun()
             else:
                 st.error("Não foi possível ler a planilha. Verifique se tem colunas 'Produto' e 'Princípio Ativo'.")
+
+        # ── AGROFIT: enriquecimento automático ───────────────────────────────
+        if _AGROFIT_DISPONIVEL:
+            st.markdown("---")
+            df_atual = get_current_stock()
+            df_enriquecido = botao_enriquecer_estoque(df_atual)
+            if df_enriquecido is not None:
+                n = salvar_resultado_agrofit_no_banco(df_enriquecido, get_db())
+                if n > 0:
+                    st.success(f"✅ {n} ingredientes ativos salvos no banco via AGROFIT!")
+                    sync_db()
+        else:
+            st.info("📦 Coloque agrofit_client.py na mesma pasta do app para habilitar integração AGROFIT.")
 
         st.markdown("---")
         _, col_sync, col_reset = st.columns([2, 1, 1])
