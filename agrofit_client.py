@@ -289,7 +289,7 @@ def _normalizar_produto(p: dict) -> dict:
         return {}
 
     # Ingrediente ativo pode ser lista de objetos ou string
-    ing_raw = p.get("ingredienteAtivo") or p.get("ingredientesAtivos") or []
+    ing_raw = p.get("ingredienteAtivo") or p.get("ingrediente_ativo") or p.get("ingredientesAtivos") or []
     if isinstance(ing_raw, list):
         ingrediente = "; ".join(
             i.get("nomeComum", i.get("nome", str(i))) if isinstance(i, dict) else str(i)
@@ -301,19 +301,19 @@ def _normalizar_produto(p: dict) -> dict:
         ingrediente = str(ing_raw)
 
     # Classe agronômica
-    classe_raw = p.get("classeAgronomica") or p.get("classe") or {}
+    classe_raw = p.get("classeAgronomica") or p.get("classe_categoria_agronomica") or p.get("classe") or {}
     classe = classe_raw.get("descricao", classe_raw) if isinstance(classe_raw, dict) else str(classe_raw or "")
 
     # Titular do registro
-    titular_raw = p.get("titularRegistro") or p.get("titular") or {}
+    titular_raw = p.get("titularRegistro") or p.get("titular_registro") or p.get("titular") or {}
     titular = titular_raw.get("razaoSocial", titular_raw) if isinstance(titular_raw, dict) else str(titular_raw or "")
 
     # Classificação toxicológica
-    tox_raw = p.get("classificacaoToxicologica") or {}
+    tox_raw = p.get("classificacaoToxicologica") or p.get("classificacao_toxicologica") or {}
     tox = tox_raw.get("descricao", tox_raw) if isinstance(tox_raw, dict) else str(tox_raw or "")
 
     # Classificação ambiental
-    amb_raw = p.get("classificacaoAmbiental") or {}
+    amb_raw = p.get("classificacaoAmbiental") or p.get("classificacao_ambiental") or {}
     amb = amb_raw.get("descricao", amb_raw) if isinstance(amb_raw, dict) else str(amb_raw or "")
 
     # Formulação
@@ -322,14 +322,14 @@ def _normalizar_produto(p: dict) -> dict:
 
     return {
         "id":                        p.get("id"),
-        "nr_registro":               p.get("numeroRegistro") or p.get("nrRegistro"),
-        "marca_comercial":           p.get("marcaComercial") or p.get("marca"),
+        "nr_registro":               p.get("numeroRegistro") or p.get("numero_registro") or p.get("nrRegistro"),
+        "marca_comercial":           p.get("marcaComercial") or p.get("marca_comercial") or p.get("marca"),
         "titular":                   titular,
         "ingrediente_ativo":         ingrediente,
         "classe_agronomica":         classe,
         "classificacao_toxicologica": tox,
         "classificacao_ambiental":   amb,
-        "bioinsumo":                 bool(p.get("bioinsumo") or p.get("origemBiologica")),
+        "bioinsumo":                 bool(p.get("bioinsumo") or p.get("origemBiologica") or p.get("produto_biologico")),
         "formulacao":                formulacao,
         "_raw":                      p,           # campo oculto com resposta completa
         "_confianca":                0.0,         # preenchido por _melhor_match
