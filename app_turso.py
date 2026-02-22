@@ -445,7 +445,7 @@ def get_reposicao_pendente() -> pd.DataFrame:
         ph = ",".join(["?" for _ in excl])
         rows = conn.execute(f"""
             SELECT r.id, r.codigo, r.produto, r.categoria, r.qtd_vendida,
-                   COALESCE(e.qtd_estoque, 0) AS qtd_estoque, r.criado_em
+                   COALESCE(e.qtd_sistema, 0) AS qtd_estoque, r.criado_em
             FROM reposicao_loja r
             LEFT JOIN estoque_mestre e ON r.codigo = e.codigo
             WHERE r.reposto = 0 AND r.criado_em >= ? AND r.qtd_vendida > 0
