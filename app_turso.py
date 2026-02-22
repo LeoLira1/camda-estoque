@@ -1892,6 +1892,8 @@ if has_mestre:
             with st.expander("🔬 Diagnóstico detalhado Agrofit", expanded=True):
                 if _dbg.get("erro"):
                     st.error(f"Erro na API: {_dbg['erro']}")
+                if _dbg.get("raw_keys_exemplo"):
+                    st.write(f"**🔑 Campos da API (raw):** `{_dbg['raw_keys_exemplo']}`")
                 st.write(f"**Passo 1 — busca direta** `praga_nome_comum={search_term}`: "
                          f"{_dbg.get('produtos_direto', '?')} produto(s) → marcas: `{_dbg.get('marcas_direto', [])[:5]}`")
                 pragas_norm = _dbg.get("pragas_comuns_encontradas", [])
