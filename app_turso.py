@@ -616,6 +616,7 @@ def search_by_praga_agrofit(search_term: str, df_estoque: pd.DataFrame) -> set:
         print(f"[Agrofit] Iniciando fuzzy match: {len(marcas_agrofit)} marcas × {len(produtos_estoque)} produtos (threshold=0.45)")
 
         matches = set()
+        top_scores: list[tuple[float, str, str]] = []  # (score, prod, marca) — para debug
         for prod in produtos_estoque:
             melhor_score = 0.0
             melhor_marca = ""
@@ -624,9 +625,18 @@ def search_by_praga_agrofit(search_term: str, df_estoque: pd.DataFrame) -> set:
                 if score > melhor_score:
                     melhor_score = score
                     melhor_marca = marca
+            if melhor_score > 0:
+                top_scores.append((melhor_score, str(prod), melhor_marca))
             if melhor_score >= 0.45:
                 print(f"[Agrofit] ✓ Match: '{prod}' ↔ '{melhor_marca}' (score={melhor_score:.2f})")
                 matches.add(str(prod).upper())
+
+        # Loga os 10 pares com maior score (mesmo os que ficaram abaixo do threshold)
+        top_scores.sort(key=lambda x: x[0], reverse=True)
+        print(f"[Agrofit] Top scores (threshold=0.45):")
+        for sc, pr, ma in top_scores[:10]:
+            flag = "✓" if sc >= 0.45 else "✗"
+            print(f"  {flag} score={sc:.2f} | '{pr}' ↔ '{ma}'")
 
         print(f"[Agrofit] Resultado: {len(matches)} produto(s) do estoque para praga '{search_term}' → {matches}")
         return matches
@@ -1872,8 +1882,12 @@ if has_mestre:
         if _has_agrofit_token and not mask.any():
             st.write(f"🌿 **DEBUG:** Nenhum resultado local — consultando Agrofit para praga **'{search_term}'**...")
             with st.spinner(f"🌿 Consultando Agrofit para praga '{search_term}'..."):
+                # Expõe as marcas da API na UI antes de fazer fuzzy match
+                _token_dbg = _try_get_token_silent()
+                _marcas_dbg = buscar_marcas_por_praga_cached(search_term, _token_dbg) if _token_dbg else []
+                st.write(f"🌿 **DEBUG marcas API:** {len(_marcas_dbg)} marca(s) retornada(s) → `{_marcas_dbg[:10]}`")
                 praga_produtos = search_by_praga_agrofit(search_term, df_mestre)
-            st.write(f"🌿 **DEBUG Agrofit:** {len(praga_produtos)} produto(s) com match → `{list(praga_produtos)[:5]}`")
+            st.write(f"🌿 **DEBUG fuzzy match:** {len(praga_produtos)} produto(s) do estoque com score≥0.45 → `{list(praga_produtos)[:5]}`")
             if praga_produtos:
                 mask_praga = df_view["produto"].str.upper().isin(praga_produtos)
                 mask = mask | mask_praga
