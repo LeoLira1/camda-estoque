@@ -593,23 +593,47 @@ def search_by_praga_agrofit(search_term: str, df_estoque: pd.DataFrame) -> set:
     os nomes dos produtos do estoque local que correspondem (fuzzy match).
     Só é chamada quando _AGROFIT_DISPONIVEL é True.
     """
+    import traceback
     if not _AGROFIT_DISPONIVEL:
+        print("[Agrofit] Módulo agrofit_client não disponível (ImportError).")
         return set()
     try:
         token = _try_get_token_silent()
         if not token:
+            print("[Agrofit] AGROFIT_TOKEN não configurado — busca por praga desabilitada.")
             return set()
+
+        print(f"[Agrofit] search_by_praga_agrofit: buscando '{search_term}' (token presente)")
         marcas_agrofit = buscar_marcas_por_praga_cached(search_term, token)
+
+        print(f"[Agrofit] Marcas retornadas para '{search_term}': {len(marcas_agrofit)} → {marcas_agrofit[:10]}")
+
         if not marcas_agrofit:
+            print(f"[Agrofit] Nenhuma marca encontrada no Agrofit para a praga '{search_term}'.")
             return set()
+
+        produtos_estoque = df_estoque["produto"].tolist()
+        print(f"[Agrofit] Iniciando fuzzy match: {len(marcas_agrofit)} marcas × {len(produtos_estoque)} produtos (threshold=0.45)")
+
         matches = set()
-        for prod in df_estoque["produto"].tolist():
+        for prod in produtos_estoque:
+            melhor_score = 0.0
+            melhor_marca = ""
             for marca in marcas_agrofit:
-                if _similaridade(str(prod), str(marca)) >= 0.45:
-                    matches.add(str(prod).upper())
-                    break
+                score = _similaridade(str(prod), str(marca))
+                if score > melhor_score:
+                    melhor_score = score
+                    melhor_marca = marca
+            if melhor_score >= 0.45:
+                print(f"[Agrofit] ✓ Match: '{prod}' ↔ '{melhor_marca}' (score={melhor_score:.2f})")
+                matches.add(str(prod).upper())
+
+        print(f"[Agrofit] Resultado: {len(matches)} produto(s) do estoque para praga '{search_term}' → {matches}")
         return matches
-    except Exception:
+
+    except Exception as e:
+        print(f"[Agrofit] ERRO em search_by_praga_agrofit('{search_term}'): {e}")
+        print(traceback.format_exc())
         return set()
 
 
@@ -1819,16 +1843,18 @@ if has_mestre:
     pa_match_info = ""
     praga_match_info = ""
     if search_term:
-        # Busca padrão por nome/código
+        # ── Busca padrão por nome/código ─────────────────────────────────────
         mask_nome_cod = (
             df_view["produto"].str.contains(search_term, case=False, na=False)
             | df_view["codigo"].str.contains(search_term, case=False, na=False)
         )
         mask = mask_nome_cod
+        print(f"[Busca] termo='{search_term}' | nome/código: {mask_nome_cod.sum()} resultado(s)")
 
-        # Busca por princípio ativo
+        # ── Busca por princípio ativo ─────────────────────────────────────────
         if has_pa:
             pa_produtos = search_by_principio_ativo(search_term, df_pa)
+            print(f"[Busca] PA match: {len(pa_produtos)} produto(s) → {list(pa_produtos)[:5]}")
             if pa_produtos:
                 mask_pa = df_view["produto"].str.upper().isin(pa_produtos)
                 mask = mask | mask_pa
@@ -1839,16 +1865,25 @@ if has_mestre:
                 elif n_pa > 0:
                     pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
 
-        # Busca por praga via Agrofit (só se não achou nada localmente ou para ampliar resultados)
+        # ── Busca por praga via Agrofit (só se busca local zerou) ────────────
+        print(f"[Busca] _has_agrofit_token={_has_agrofit_token} | mask.any()={mask.any()}")
+        st.write(f"🔍 **DEBUG busca:** local={mask.sum()} resultado(s) | token Agrofit={'✅' if _has_agrofit_token else '❌ ausente'}")
+
         if _has_agrofit_token and not mask.any():
+            st.write(f"🌿 **DEBUG:** Nenhum resultado local — consultando Agrofit para praga **'{search_term}'**...")
             with st.spinner(f"🌿 Consultando Agrofit para praga '{search_term}'..."):
                 praga_produtos = search_by_praga_agrofit(search_term, df_mestre)
+            st.write(f"🌿 **DEBUG Agrofit:** {len(praga_produtos)} produto(s) com match → `{list(praga_produtos)[:5]}`")
             if praga_produtos:
                 mask_praga = df_view["produto"].str.upper().isin(praga_produtos)
                 mask = mask | mask_praga
                 n_praga = mask_praga.sum()
                 if n_praga > 0:
                     praga_match_info = f"🌿 Praga **{search_term}** (Agrofit): {n_praga} produto(s) registrado(s)"
+            else:
+                st.info(f"ℹ️ Agrofit não encontrou produtos do estoque registrados para a praga **'{search_term}'**.")
+        elif not _has_agrofit_token:
+            print("[Busca] Token Agrofit ausente — busca por praga desabilitada.")
 
         df_view = df_view[mask]
 
@@ -1856,6 +1891,8 @@ if has_mestre:
             st.caption(pa_match_info)
         if praga_match_info:
             st.caption(praga_match_info)
+        if not mask.any():
+            st.warning(f"Nenhum produto encontrado para **'{search_term}'**.")
 
     n_ok = (df_view["status"] == "ok").sum()
     n_falta = (df_view["status"] == "falta").sum()

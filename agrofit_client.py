@@ -553,13 +553,45 @@ def _try_get_token_silent() -> str:
 def buscar_marcas_por_praga_cached(nome_praga: str, token: str) -> list[str]:
     """
     Busca no Agrofit as marcas comerciais registradas para uma praga (com cache de 1h).
-    Retorna lista de nomes de marca comercial.
+    Tenta primeiro busca direta; se retornar zero resultados, normaliza o nome via
+    buscar_pragas_comuns e tenta novamente para cada nome normalizado.
+    Retorna lista de nomes de marca comercial únicos.
     """
+    import traceback
     try:
+        print(f"[Agrofit] buscar_marcas_por_praga_cached: iniciando para '{nome_praga}'")
         client = AgroFitClient(token=token)
-        resultados = client.buscar_por_praga(nome_praga, max_results=50)
-        return [r.get("marca_comercial", "") for r in resultados if r.get("marca_comercial")]
-    except Exception:
+
+        todas_marcas: list[str] = []
+
+        # --- Tentativa 1: busca direta pelo termo informado ---
+        resultados_diretos = client.buscar_por_praga(nome_praga, max_results=50)
+        print(f"[Agrofit] buscar_por_praga('{nome_praga}') direto → {len(resultados_diretos)} produto(s)")
+        marcas_diretas = [r.get("marca_comercial", "") for r in resultados_diretos if r.get("marca_comercial")]
+        print(f"[Agrofit] Marcas (direto): {marcas_diretas[:10]}")
+        todas_marcas.extend(marcas_diretas)
+
+        # --- Tentativa 2: normalizar via buscar_pragas_comuns ---
+        pragas_norm = client.buscar_pragas_comuns(nome_praga, max_results=10)
+        print(f"[Agrofit] buscar_pragas_comuns('{nome_praga}') → {pragas_norm}")
+        for praga_norm in pragas_norm:
+            nome_norm_upper = praga_norm.strip().upper()
+            if nome_norm_upper == nome_praga.strip().upper():
+                continue  # já tentamos esse termo
+            res2 = client.buscar_por_praga(praga_norm, max_results=50)
+            print(f"[Agrofit] buscar_por_praga('{praga_norm}') normalizado → {len(res2)} produto(s)")
+            marcas2 = [r.get("marca_comercial", "") for r in res2 if r.get("marca_comercial")]
+            print(f"[Agrofit] Marcas ('{praga_norm}'): {marcas2[:5]}")
+            todas_marcas.extend(marcas2)
+
+        # Remove duplicatas preservando ordem
+        marcas_unicas = list(dict.fromkeys(m.strip() for m in todas_marcas if m.strip()))
+        print(f"[Agrofit] Total marcas únicas para '{nome_praga}': {len(marcas_unicas)}")
+        return marcas_unicas
+
+    except Exception as e:
+        print(f"[Agrofit] ERRO em buscar_marcas_por_praga_cached('{nome_praga}'): {e}")
+        print(traceback.format_exc())
         return []
 
 
