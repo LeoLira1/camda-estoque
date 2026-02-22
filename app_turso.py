@@ -17,6 +17,7 @@ try:
         botao_enriquecer_estoque,
         salvar_resultado_agrofit_no_banco,
         buscar_marcas_por_praga_cached,
+        debug_busca_praga,
         _similaridade,
         _try_get_token_silent,
     )
@@ -1882,12 +1883,24 @@ if has_mestre:
         if _has_agrofit_token and not mask.any():
             st.write(f"🌿 **DEBUG:** Nenhum resultado local — consultando Agrofit para praga **'{search_term}'**...")
             with st.spinner(f"🌿 Consultando Agrofit para praga '{search_term}'..."):
-                # Expõe as marcas da API na UI antes de fazer fuzzy match
                 _token_dbg = _try_get_token_silent()
+                # Diagnóstico passo a passo (sem cache)
+                _dbg = debug_busca_praga(search_term, _token_dbg) if _token_dbg else {}
                 _marcas_dbg = buscar_marcas_por_praga_cached(search_term, _token_dbg) if _token_dbg else []
-                st.write(f"🌿 **DEBUG marcas API:** {len(_marcas_dbg)} marca(s) retornada(s) → `{_marcas_dbg[:10]}`")
                 praga_produtos = search_by_praga_agrofit(search_term, df_mestre)
-            st.write(f"🌿 **DEBUG fuzzy match:** {len(praga_produtos)} produto(s) do estoque com score≥0.45 → `{list(praga_produtos)[:5]}`")
+
+            with st.expander("🔬 Diagnóstico detalhado Agrofit", expanded=True):
+                if _dbg.get("erro"):
+                    st.error(f"Erro na API: {_dbg['erro']}")
+                st.write(f"**Passo 1 — busca direta** `praga_nome_comum={search_term}`: "
+                         f"{_dbg.get('produtos_direto', '?')} produto(s) → marcas: `{_dbg.get('marcas_direto', [])[:5]}`")
+                pragas_norm = _dbg.get("pragas_comuns_encontradas", [])
+                st.write(f"**Passo 2 — pragas conhecidas** `/search/pragas-nomes-comuns?q={search_term}`: "
+                         f"`{pragas_norm}`")
+                for item in _dbg.get("por_praga_norm", []):
+                    st.write(f"  ↳ `{item['praga']}` → {item['count']} produto(s): `{item['marcas'][:3]}`")
+                st.write(f"**Total marcas (cache):** {len(_marcas_dbg)} → `{_marcas_dbg[:10]}`")
+                st.write(f"**Fuzzy match no estoque (score≥0.45):** {len(praga_produtos)} produto(s) → `{list(praga_produtos)[:5]}`")
             if praga_produtos:
                 mask_praga = df_view["produto"].str.upper().isin(praga_produtos)
                 mask = mask | mask_praga
