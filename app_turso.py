@@ -1402,7 +1402,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             xaxis=dict(gridcolor="#1e293b", title=None),
             showlegend=False,
         )
-        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_bar, width='stretch', config={"displayModeBar": False})
 
         # Dois gráficos lado a lado
         c1, c2 = st.columns(2)
@@ -1424,7 +1424,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 height=320, showlegend=True,
                 legend=dict(font=dict(size=9), orientation="h", y=-0.15),
             )
-            st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_pie, width='stretch', config={"displayModeBar": False})
 
         with c2:
             # Grouped bar — vendido vs estoque
@@ -1445,7 +1445,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(tickangle=-35, tickfont=dict(size=8), gridcolor="rgba(0,0,0,0)"),
                 legend=dict(orientation="h", y=1.12, font=dict(size=10)),
             )
-            st.plotly_chart(fig_vs, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_vs, width='stretch', config={"displayModeBar": False})
 
     # ══════════════════════════════════════════════════════════════════════
     # TAB 2 — ESTOQUE CRÍTICO
@@ -1508,13 +1508,13 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_alert, width='stretch', config={"displayModeBar": False})
 
             # Tabela detalhada
             with st.expander("📋 Tabela Detalhada — Críticos", expanded=False):
                 df_show = df_alerta[["codigo", "produto", "grupo", "qtd_vendida", "qtd_estoque", "nivel"]].copy()
                 df_show.columns = ["Código", "Produto", "Grupo", "Vendido", "Estoque", "Nível"]
-                st.dataframe(df_show, hide_index=True, use_container_width=True)
+                st.dataframe(df_show, hide_index=True, width='stretch')
         else:
             st.success("Nenhum produto em situação crítica! 🎉")
 
@@ -1524,7 +1524,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 df_zero_show = df_zero[["codigo", "produto", "grupo", "qtd_vendida"]].copy()
                 df_zero_show.columns = ["Código", "Produto", "Grupo", "Vendido"]
                 df_zero_show = df_zero_show.reset_index(drop=True)
-                st.dataframe(df_zero_show, hide_index=True, use_container_width=True, height=400)
+                st.dataframe(df_zero_show, hide_index=True, width='stretch', height=400)
 
     # ══════════════════════════════════════════════════════════════════════
     # TAB 3 — TAXA DE GIRO (BURN RATE)
@@ -1571,7 +1571,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Dias", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_burn, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_burn, width='stretch', config={"displayModeBar": False})
 
             # Info box
             urgentes = df_burn[df_burn["dias_estoque"] < 15]["grupo"].tolist()
@@ -1618,7 +1618,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_top, width='stretch', config={"displayModeBar": False})
 
             # Scatter vendido vs estoque
             st.markdown("---")
@@ -1650,7 +1650,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 yaxis=dict(title="Qtd Estoque", gridcolor="#1e293b"),
                 legend=dict(font=dict(size=8), orientation="h", y=-0.2),
             )
-            st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_scatter, width='stretch', config={"displayModeBar": False})
         else:
             st.info("Nenhum produto encontrado para o filtro selecionado.")
 
@@ -1745,7 +1745,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     st.info(f"🗑️ {len(zerados)} produto(s) com estoque zerado serão removidos do mestre")
                 st.dataframe(
                     df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
-                    hide_index=True, use_container_width=True, height=250,
+                    hide_index=True, width='stretch', height=250,
                 )
 
             if st.button("🚀 Processar", type="primary"):
@@ -1942,7 +1942,7 @@ if has_mestre:
         else:
             st.dataframe(
                 df_div[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "ultima_contagem"]],
-                hide_index=True, use_container_width=True,
+                hide_index=True, width='stretch',
             )
 
     with t3:
@@ -1987,7 +1987,7 @@ if has_mestre:
         if df_hist.empty:
             st.info("Nenhum upload registrado.")
         else:
-            st.dataframe(df_hist, hide_index=True, use_container_width=True)
+            st.dataframe(df_hist, hide_index=True, width='stretch')
 
     with t6:
         # ── CSS da aba ──
@@ -2020,15 +2020,15 @@ if has_mestre:
             )
             if foto is not None:
                 img_bytes = foto.read()
-                st.image(img_bytes, caption="Prévia — confirme antes de salvar", use_container_width=True)
+                st.image(img_bytes, caption="Prévia — confirme antes de salvar", width='stretch')
                 col_ok, col_cancel = st.columns(2)
                 with col_ok:
-                    if st.button("✅ Salvar pendência", use_container_width=True, type="primary", key="pend_salvar"):
+                    if st.button("✅ Salvar pendência", width='stretch', type="primary", key="pend_salvar"):
                         inserir_pendencia(img_bytes)
                         st.success("Pendência registrada! ✔")
                         st.rerun()
                 with col_cancel:
-                    if st.button("✖ Cancelar", use_container_width=True, key="pend_cancelar"):
+                    if st.button("✖ Cancelar", width='stretch', key="pend_cancelar"):
                         st.rerun()
 
         st.divider()
@@ -2070,10 +2070,10 @@ if has_mestre:
                     unsafe_allow_html=True
                 )
                 try:
-                    st.image(base64.b64decode(foto_b64), use_container_width=True)
+                    st.image(base64.b64decode(foto_b64), width='stretch')
                 except Exception:
                     st.warning("Erro ao carregar imagem.")
-                if st.button(f"✅ Entregue — remover", key=f"pend_del_{pid}", use_container_width=True):
+                if st.button(f"✅ Entregue — remover", key=f"pend_del_{pid}", width='stretch'):
                     deletar_pendencia(pid)
                     st.success("Pendência removida.")
                     st.rerun()

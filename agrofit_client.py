@@ -392,7 +392,7 @@ def widget_busca_agrofit(token: Optional[str] = None):
                     }
                     for r in resultados
                 ])
-                st.dataframe(df_res, use_container_width=True, hide_index=True)
+                st.dataframe(df_res, width='stretch', hide_index=True)
         except ValueError as e:
             st.error(str(e))
             st.info("Configure AGROFIT_TOKEN em st.secrets ou como variável de ambiente.")
@@ -528,7 +528,7 @@ def _render_tabela_agrofit(df: pd.DataFrame):
         "Código", "Produto", "Categoria", "Ingrediente Ativo",
         "Classe", "Tox.", "Amb.", "Bioinsumo", "Nº Registro", "Confiança"
     ]
-    st.dataframe(df_display, use_container_width=True, hide_index=True)
+    st.dataframe(df_display, width='stretch', hide_index=True)
 
     # Download CSV
     csv = df_filtrado.to_csv(index=False).encode("utf-8")
