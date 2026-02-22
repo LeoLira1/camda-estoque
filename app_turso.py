@@ -437,18 +437,20 @@ def get_stock_count() -> int:
 
 
 def get_reposicao_pendente() -> pd.DataFrame:
-    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "criado_em"]
+    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "qtd_estoque", "criado_em"]
     try:
         conn = get_db()
         cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         excl = list(CATEGORIAS_EXCLUIDAS_REPOSICAO)
         ph = ",".join(["?" for _ in excl])
         rows = conn.execute(f"""
-            SELECT id, codigo, produto, categoria, qtd_vendida, criado_em
-            FROM reposicao_loja
-            WHERE reposto = 0 AND criado_em >= ? AND qtd_vendida > 0
-              AND UPPER(categoria) NOT IN ({ph})
-            ORDER BY criado_em DESC
+            SELECT r.id, r.codigo, r.produto, r.categoria, r.qtd_vendida,
+                   COALESCE(e.qtd_sistema, 0) AS qtd_estoque, r.criado_em
+            FROM reposicao_loja r
+            LEFT JOIN estoque_mestre e ON e.codigo = r.codigo
+            WHERE r.reposto = 0 AND r.criado_em >= ? AND r.qtd_vendida > 0
+              AND UPPER(r.categoria) NOT IN ({ph})
+            ORDER BY r.criado_em DESC
         """, [cutoff] + excl).fetchall()
         return pd.DataFrame(rows, columns=cols)
     except Exception as e:
@@ -1802,6 +1804,7 @@ if has_mestre:
                     dias = 0
                 tempo = "hoje" if dias == 0 else ("ontem" if dias == 1 else f"{dias}d atrás")
                 qtd_v = int(item["qtd_vendida"]) if pd.notnull(item["qtd_vendida"]) else 0
+                qtd_estoque = int(item["qtd_estoque"]) if pd.notnull(item["qtd_estoque"]) else 0
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
@@ -1813,7 +1816,7 @@ if has_mestre:
                         f'<div style="margin-top:4px;display:flex;gap:12px;">'
                         f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
-                        f'<span style="color:#ffa502;font-size:0.65rem;font-weight:700;">Vendido: {qtd_v} → Repor: {qtd_v}</span>'
+                        f'<span style="color:#ffa502;font-size:0.65rem;font-weight:700;">Estoque: {qtd_estoque} → Repor: {qtd_v}</span>'
                         f'</div></div>',
                         unsafe_allow_html=True,
                     )
