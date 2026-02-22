@@ -177,9 +177,10 @@ class AgroFitClient:
         if not data:
             return []
         items = data.get("content", data) if isinstance(data, dict) else data
-        if items and isinstance(items[0], dict):
-            return [i.get("nome", i.get("nomeComum", str(i))) for i in items]
-        return [str(i) for i in items]
+        return [
+            i.get("nome", i.get("nomeComum", str(i))) if isinstance(i, dict) else str(i)
+            for i in items
+        ]
 
     # ─── enriquecimento em lote ───────────────────────────────────────────────
 
