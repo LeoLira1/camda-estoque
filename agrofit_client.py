@@ -315,6 +315,10 @@ def _normalizar_produto(p: dict) -> dict:
     amb_raw = p.get("classificacaoAmbiental") or {}
     amb = amb_raw.get("descricao", amb_raw) if isinstance(amb_raw, dict) else str(amb_raw or "")
 
+    # Formulação
+    formulacao_raw = p.get("formulacao")
+    formulacao = formulacao_raw.get("sigla", "") if isinstance(formulacao_raw, dict) else str(formulacao_raw or "")
+
     return {
         "id":                        p.get("id"),
         "nr_registro":               p.get("numeroRegistro") or p.get("nrRegistro"),
@@ -325,7 +329,7 @@ def _normalizar_produto(p: dict) -> dict:
         "classificacao_toxicologica": tox,
         "classificacao_ambiental":   amb,
         "bioinsumo":                 bool(p.get("bioinsumo") or p.get("origemBiologica")),
-        "formulacao":                (p.get("formulacao") or {}).get("sigla", ""),
+        "formulacao":                formulacao,
         "_raw":                      p,           # campo oculto com resposta completa
         "_confianca":                0.0,         # preenchido por _melhor_match
     }
