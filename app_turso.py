@@ -16,6 +16,9 @@ try:
         widget_busca_agrofit,
         botao_enriquecer_estoque,
         salvar_resultado_agrofit_no_banco,
+        buscar_marcas_por_praga_cached,
+        _similaridade,
+        _try_get_token_silent,
     )
     _AGROFIT_DISPONIVEL = True
 except ImportError:
@@ -191,7 +194,9 @@ def _get_connection():
         CREATE TABLE IF NOT EXISTS principios_ativos (
             produto TEXT NOT NULL,
             principio_ativo TEXT NOT NULL,
-            categoria TEXT DEFAULT ''
+            categoria TEXT DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'excel',
+            UNIQUE(produto, principio_ativo)
         )
     """)
     conn.execute("""
@@ -249,6 +254,30 @@ def _get_connection():
             if col not in cols:
                 conn.execute(f"ALTER TABLE reposicao_loja ADD COLUMN {col} {definition}")
         conn.commit()
+    except Exception:
+        pass
+
+    # ── Migração: principios_ativos → adiciona coluna source + UNIQUE constraint ──
+    try:
+        pa_cols = {row[1] for row in conn.execute("PRAGMA table_info(principios_ativos)").fetchall()}
+        if "source" not in pa_cols:
+            # Recria a tabela com UNIQUE e coluna source preservando dados existentes
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS principios_ativos_new (
+                    produto TEXT NOT NULL,
+                    principio_ativo TEXT NOT NULL,
+                    categoria TEXT DEFAULT '',
+                    source TEXT NOT NULL DEFAULT 'excel',
+                    UNIQUE(produto, principio_ativo)
+                )
+            """)
+            conn.execute("""
+                INSERT OR IGNORE INTO principios_ativos_new (produto, principio_ativo, categoria, source)
+                SELECT produto, principio_ativo, categoria, 'excel' FROM principios_ativos
+            """)
+            conn.execute("DROP TABLE principios_ativos")
+            conn.execute("ALTER TABLE principios_ativos_new RENAME TO principios_ativos")
+            conn.commit()
     except Exception:
         pass
 
@@ -516,14 +545,15 @@ def load_principios_ativos_from_excel(filepath: str) -> list:
 
 
 def sync_principios_ativos(records: list):
-    """Sincroniza tabela de princípios ativos no banco."""
+    """Sincroniza princípios ativos do Excel no banco.
+    Substitui apenas registros de origem 'excel', preservando dados enriquecidos via Agrofit API."""
     if not records:
         return
     try:
         conn = get_db()
-        conn.execute("DELETE FROM principios_ativos")
+        conn.execute("DELETE FROM principios_ativos WHERE source = 'excel'")
         conn.executemany(
-            "INSERT INTO principios_ativos (produto, principio_ativo, categoria) VALUES (?, ?, ?)",
+            "INSERT OR REPLACE INTO principios_ativos (produto, principio_ativo, categoria, source) VALUES (?, ?, ?, 'excel')",
             [(r["produto"], r["principio_ativo"], r["categoria"]) for r in records]
         )
         conn.commit()
@@ -555,6 +585,32 @@ def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
         return set()
     mask = df_pa["principio_ativo"].str.contains(search_term, case=False, na=False)
     return set(df_pa.loc[mask, "produto"].str.upper())
+
+
+def search_by_praga_agrofit(search_term: str, df_estoque: pd.DataFrame) -> set:
+    """
+    Busca no Agrofit produtos registrados para uma praga e retorna
+    os nomes dos produtos do estoque local que correspondem (fuzzy match).
+    Só é chamada quando _AGROFIT_DISPONIVEL é True.
+    """
+    if not _AGROFIT_DISPONIVEL:
+        return set()
+    try:
+        token = _try_get_token_silent()
+        if not token:
+            return set()
+        marcas_agrofit = buscar_marcas_por_praga_cached(search_term, token)
+        if not marcas_agrofit:
+            return set()
+        matches = set()
+        for prod in df_estoque["produto"].tolist():
+            for marca in marcas_agrofit:
+                if _similaridade(str(prod), str(marca)) >= 0.45:
+                    matches.add(str(prod).upper())
+                    break
+        return matches
+    except Exception:
+        return set()
 
 
 def reset_db():
@@ -1748,40 +1804,58 @@ if has_mestre:
     df_pa = get_principios_ativos()
     has_pa = not df_pa.empty
 
-    search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
+    _has_agrofit_token = _AGROFIT_DISPONIVEL and bool(_try_get_token_silent() if _AGROFIT_DISPONIVEL else False)
+    if has_pa and _has_agrofit_token:
+        search_placeholder = "Nome, Código, Princípio Ativo ou Praga..."
+    elif has_pa:
+        search_placeholder = "Nome, Código ou Princípio Ativo..."
+    elif _has_agrofit_token:
+        search_placeholder = "Nome, Código ou Praga (via Agrofit)..."
+    else:
+        search_placeholder = "Nome ou Código..."
     search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed")
 
     df_view = df_mestre
     pa_match_info = ""
+    praga_match_info = ""
     if search_term:
         # Busca padrão por nome/código
         mask_nome_cod = (
             df_view["produto"].str.contains(search_term, case=False, na=False)
             | df_view["codigo"].str.contains(search_term, case=False, na=False)
         )
+        mask = mask_nome_cod
 
         # Busca por princípio ativo
         if has_pa:
             pa_produtos = search_by_principio_ativo(search_term, df_pa)
             if pa_produtos:
                 mask_pa = df_view["produto"].str.upper().isin(pa_produtos)
-                mask = mask_nome_cod | mask_pa
+                mask = mask | mask_pa
                 n_pa = mask_pa.sum()
                 if n_pa > 0 and not mask_nome_cod.any():
-                    # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
                     pa_found = df_pa[df_pa["principio_ativo"].str.contains(search_term, case=False, na=False)]["principio_ativo"].unique()
                     pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
                 elif n_pa > 0:
                     pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
-            else:
-                mask = mask_nome_cod
-        else:
-            mask = mask_nome_cod
+
+        # Busca por praga via Agrofit (só se não achou nada localmente ou para ampliar resultados)
+        if _has_agrofit_token and not mask.any():
+            with st.spinner(f"🌿 Consultando Agrofit para praga '{search_term}'..."):
+                praga_produtos = search_by_praga_agrofit(search_term, df_mestre)
+            if praga_produtos:
+                mask_praga = df_view["produto"].str.upper().isin(praga_produtos)
+                mask = mask | mask_praga
+                n_praga = mask_praga.sum()
+                if n_praga > 0:
+                    praga_match_info = f"🌿 Praga **{search_term}** (Agrofit): {n_praga} produto(s) registrado(s)"
 
         df_view = df_view[mask]
 
         if pa_match_info:
             st.caption(pa_match_info)
+        if praga_match_info:
+            st.caption(praga_match_info)
 
     n_ok = (df_view["status"] == "ok").sum()
     n_falta = (df_view["status"] == "falta").sum()

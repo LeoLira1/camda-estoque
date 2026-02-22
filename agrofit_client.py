@@ -147,6 +147,38 @@ class AgroFitClient:
         items = data.get("content", data) if isinstance(data, dict) else data
         return items
 
+    def buscar_por_praga(self, nome_praga: str, max_results: int = 30) -> list[dict]:
+        """
+        Busca produtos formulados registrados para uma praga pelo nome comum.
+        Usa o endpoint /search/produtos-formulados com filtro praga_nome_comum.
+        """
+        data = self._get("/search/produtos-formulados", params={
+            "praga_nome_comum": nome_praga,
+            "page": 0,
+            "size": max_results,
+        })
+        if not data:
+            return []
+        items = data.get("content", data) if isinstance(data, dict) else data
+        return [_normalizar_produto(p) for p in items]
+
+    def buscar_pragas_comuns(self, nome: str, max_results: int = 10) -> list[str]:
+        """
+        Busca nomes comuns de pragas que correspondem ao termo informado.
+        Útil para autocompletar/sugerir ao usuário.
+        """
+        data = self._get("/search/pragas-nomes-comuns", params={
+            "q": nome,
+            "page": 0,
+            "size": max_results,
+        })
+        if not data:
+            return []
+        items = data.get("content", data) if isinstance(data, dict) else data
+        if items and isinstance(items[0], dict):
+            return [i.get("nome", i.get("nomeComum", str(i))) for i in items]
+        return [str(i) for i in items]
+
     # ─── enriquecimento em lote ───────────────────────────────────────────────
 
     def enriquecer_estoque(
@@ -517,6 +549,20 @@ def _try_get_token_silent() -> str:
         return ""
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def buscar_marcas_por_praga_cached(nome_praga: str, token: str) -> list[str]:
+    """
+    Busca no Agrofit as marcas comerciais registradas para uma praga (com cache de 1h).
+    Retorna lista de nomes de marca comercial.
+    """
+    try:
+        client = AgroFitClient(token=token)
+        resultados = client.buscar_por_praga(nome_praga, max_results=50)
+        return [r.get("marca_comercial", "") for r in resultados if r.get("marca_comercial")]
+    except Exception:
+        return []
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # FUNÇÃO DE SINCRONIZAÇÃO COM A TABELA principios_ativos
 # ══════════════════════════════════════════════════════════════════════════════
@@ -524,7 +570,7 @@ def _try_get_token_silent() -> str:
 def salvar_resultado_agrofit_no_banco(df_resultado: pd.DataFrame, conn) -> int:
     """
     Recebe o DataFrame de resultado AGROFIT e persiste na tabela
-    `principios_ativos` do banco existente (complementa o Excel manual).
+    `principios_ativos` do banco existente com source='agrofit'.
 
     Retorna o número de registros inseridos/atualizados.
     """
@@ -540,11 +586,11 @@ def salvar_resultado_agrofit_no_banco(df_resultado: pd.DataFrame, conn) -> int:
         return 0
 
     try:
-        # Usa INSERT OR REPLACE para não duplicar
+        # Usa INSERT OR REPLACE para upsert (requer UNIQUE constraint em produto+principio_ativo)
         conn.executemany(
             """
-            INSERT OR REPLACE INTO principios_ativos (produto, principio_ativo, categoria)
-            VALUES (?, ?, ?)
+            INSERT OR REPLACE INTO principios_ativos (produto, principio_ativo, categoria, source)
+            VALUES (?, ?, ?, 'agrofit')
             """,
             registros,
         )
