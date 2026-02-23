@@ -440,7 +440,6 @@ def get_reposicao_pendente() -> pd.DataFrame:
     cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "qtd_estoque", "criado_em"]
     try:
         conn = get_db()
-        cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         excl = list(CATEGORIAS_EXCLUIDAS_REPOSICAO)
         ph = ",".join(["?" for _ in excl])
         rows = conn.execute(f"""
@@ -448,10 +447,10 @@ def get_reposicao_pendente() -> pd.DataFrame:
                    COALESCE(e.qtd_sistema, 0) AS qtd_estoque, r.criado_em
             FROM reposicao_loja r
             LEFT JOIN estoque_mestre e ON r.codigo = e.codigo
-            WHERE r.reposto = 0 AND r.criado_em >= ? AND r.qtd_vendida > 0
+            WHERE r.reposto = 0 AND r.qtd_vendida > 0
               AND UPPER(r.categoria) NOT IN ({ph})
             ORDER BY r.criado_em DESC
-        """, [cutoff] + excl).fetchall()
+        """, excl).fetchall()
         return pd.DataFrame(rows, columns=cols)
     except Exception as e:
         st.warning(f"⚠️ Erro ao buscar reposição: {e}")
@@ -1796,7 +1795,7 @@ if has_mestre:
         if df_reposicao.empty:  # Repor na Loja
             st.success("Nenhum produto pendente de reposição! 🎉")
         else:
-            st.caption(f"{n_repor} produto(s) para repor. Itens somem após 7 dias ou quando marcados.")
+            st.caption(f"{n_repor} produto(s) para repor. Itens saem apenas quando desmarcados.")
             for _, item in df_reposicao.iterrows():
                 try:
                     dias = (datetime.now() - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
