@@ -10,21 +10,6 @@ import plotly.express as px
 from datetime import datetime, timedelta, date
 from PIL import Image
 
-# ── AGROFIT ──────────────────────────────────────────────────────────────────
-try:
-    from agrofit_client import (
-        widget_busca_agrofit,
-        botao_enriquecer_estoque,
-        salvar_resultado_agrofit_no_banco,
-        buscar_marcas_por_praga_cached,
-        debug_busca_praga,
-        _similaridade,
-        _try_get_token_silent,
-    )
-    _AGROFIT_DISPONIVEL = True
-except ImportError:
-    _AGROFIT_DISPONIVEL = False
-
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CAMDA Estoque Mestre",
@@ -195,9 +180,7 @@ def _get_connection():
         CREATE TABLE IF NOT EXISTS principios_ativos (
             produto TEXT NOT NULL,
             principio_ativo TEXT NOT NULL,
-            categoria TEXT DEFAULT '',
-            source TEXT NOT NULL DEFAULT 'excel',
-            UNIQUE(produto, principio_ativo)
+            categoria TEXT DEFAULT ''
         )
     """)
     conn.execute("""
@@ -255,30 +238,6 @@ def _get_connection():
             if col not in cols:
                 conn.execute(f"ALTER TABLE reposicao_loja ADD COLUMN {col} {definition}")
         conn.commit()
-    except Exception:
-        pass
-
-    # ── Migração: principios_ativos → adiciona coluna source + UNIQUE constraint ──
-    try:
-        pa_cols = {row[1] for row in conn.execute("PRAGMA table_info(principios_ativos)").fetchall()}
-        if "source" not in pa_cols:
-            # Recria a tabela com UNIQUE e coluna source preservando dados existentes
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS principios_ativos_new (
-                    produto TEXT NOT NULL,
-                    principio_ativo TEXT NOT NULL,
-                    categoria TEXT DEFAULT '',
-                    source TEXT NOT NULL DEFAULT 'excel',
-                    UNIQUE(produto, principio_ativo)
-                )
-            """)
-            conn.execute("""
-                INSERT OR IGNORE INTO principios_ativos_new (produto, principio_ativo, categoria, source)
-                SELECT produto, principio_ativo, categoria, 'excel' FROM principios_ativos
-            """)
-            conn.execute("DROP TABLE principios_ativos")
-            conn.execute("ALTER TABLE principios_ativos_new RENAME TO principios_ativos")
-            conn.commit()
     except Exception:
         pass
 
@@ -478,20 +437,18 @@ def get_stock_count() -> int:
 
 
 def get_reposicao_pendente() -> pd.DataFrame:
-    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "qtd_estoque", "criado_em"]
+    cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "criado_em"]
     try:
         conn = get_db()
         cutoff = (datetime.now() - timedelta(days=7)).strftime("%Y-%m-%d %H:%M:%S")
         excl = list(CATEGORIAS_EXCLUIDAS_REPOSICAO)
         ph = ",".join(["?" for _ in excl])
         rows = conn.execute(f"""
-            SELECT r.id, r.codigo, r.produto, r.categoria, r.qtd_vendida,
-                   COALESCE(e.qtd_sistema, 0) AS qtd_estoque, r.criado_em
-            FROM reposicao_loja r
-            LEFT JOIN estoque_mestre e ON r.codigo = e.codigo
-            WHERE r.reposto = 0 AND r.criado_em >= ? AND r.qtd_vendida > 0
-              AND UPPER(r.categoria) NOT IN ({ph})
-            ORDER BY r.criado_em DESC
+            SELECT id, codigo, produto, categoria, qtd_vendida, criado_em
+            FROM reposicao_loja
+            WHERE reposto = 0 AND criado_em >= ? AND qtd_vendida > 0
+              AND UPPER(categoria) NOT IN ({ph})
+            ORDER BY criado_em DESC
         """, [cutoff] + excl).fetchall()
         return pd.DataFrame(rows, columns=cols)
     except Exception as e:
@@ -546,15 +503,14 @@ def load_principios_ativos_from_excel(filepath: str) -> list:
 
 
 def sync_principios_ativos(records: list):
-    """Sincroniza princípios ativos do Excel no banco.
-    Substitui apenas registros de origem 'excel', preservando dados enriquecidos via Agrofit API."""
+    """Sincroniza tabela de princípios ativos no banco."""
     if not records:
         return
     try:
         conn = get_db()
-        conn.execute("DELETE FROM principios_ativos WHERE source = 'excel'")
+        conn.execute("DELETE FROM principios_ativos")
         conn.executemany(
-            "INSERT OR REPLACE INTO principios_ativos (produto, principio_ativo, categoria, source) VALUES (?, ?, ?, 'excel')",
+            "INSERT INTO principios_ativos (produto, principio_ativo, categoria) VALUES (?, ?, ?)",
             [(r["produto"], r["principio_ativo"], r["categoria"]) for r in records]
         )
         conn.commit()
@@ -586,66 +542,6 @@ def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
         return set()
     mask = df_pa["principio_ativo"].str.contains(search_term, case=False, na=False)
     return set(df_pa.loc[mask, "produto"].str.upper())
-
-
-def search_by_praga_agrofit(search_term: str, df_estoque: pd.DataFrame) -> set:
-    """
-    Busca no Agrofit produtos registrados para uma praga e retorna
-    os nomes dos produtos do estoque local que correspondem (fuzzy match).
-    Só é chamada quando _AGROFIT_DISPONIVEL é True.
-    """
-    import traceback
-    if not _AGROFIT_DISPONIVEL:
-        print("[Agrofit] Módulo agrofit_client não disponível (ImportError).")
-        return set()
-    try:
-        token = _try_get_token_silent()
-        if not token:
-            print("[Agrofit] AGROFIT_TOKEN não configurado — busca por praga desabilitada.")
-            return set()
-
-        print(f"[Agrofit] search_by_praga_agrofit: buscando '{search_term}' (token presente)")
-        marcas_agrofit = buscar_marcas_por_praga_cached(search_term, token)
-
-        print(f"[Agrofit] Marcas retornadas para '{search_term}': {len(marcas_agrofit)} → {marcas_agrofit[:10]}")
-
-        if not marcas_agrofit:
-            print(f"[Agrofit] Nenhuma marca encontrada no Agrofit para a praga '{search_term}'.")
-            return set()
-
-        produtos_estoque = df_estoque["produto"].tolist()
-        print(f"[Agrofit] Iniciando fuzzy match: {len(marcas_agrofit)} marcas × {len(produtos_estoque)} produtos (threshold=0.45)")
-
-        matches = set()
-        top_scores: list[tuple[float, str, str]] = []  # (score, prod, marca) — para debug
-        for prod in produtos_estoque:
-            melhor_score = 0.0
-            melhor_marca = ""
-            for marca in marcas_agrofit:
-                score = _similaridade(str(prod), str(marca))
-                if score > melhor_score:
-                    melhor_score = score
-                    melhor_marca = marca
-            if melhor_score > 0:
-                top_scores.append((melhor_score, str(prod), melhor_marca))
-            if melhor_score >= 0.45:
-                print(f"[Agrofit] ✓ Match: '{prod}' ↔ '{melhor_marca}' (score={melhor_score:.2f})")
-                matches.add(str(prod).upper())
-
-        # Loga os 10 pares com maior score (mesmo os que ficaram abaixo do threshold)
-        top_scores.sort(key=lambda x: x[0], reverse=True)
-        print(f"[Agrofit] Top scores (threshold=0.45):")
-        for sc, pr, ma in top_scores[:10]:
-            flag = "✓" if sc >= 0.45 else "✗"
-            print(f"  {flag} score={sc:.2f} | '{pr}' ↔ '{ma}'")
-
-        print(f"[Agrofit] Resultado: {len(matches)} produto(s) do estoque para praga '{search_term}' → {matches}")
-        return matches
-
-    except Exception as e:
-        print(f"[Agrofit] ERRO em search_by_praga_agrofit('{search_term}'): {e}")
-        print(traceback.format_exc())
-        return set()
 
 
 def reset_db():
@@ -1403,7 +1299,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             xaxis=dict(gridcolor="#1e293b", title=None),
             showlegend=False,
         )
-        st.plotly_chart(fig_bar, width='stretch', config={"displayModeBar": False})
+        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False})
 
         # Dois gráficos lado a lado
         c1, c2 = st.columns(2)
@@ -1425,7 +1321,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 height=320, showlegend=True,
                 legend=dict(font=dict(size=9), orientation="h", y=-0.15),
             )
-            st.plotly_chart(fig_pie, width='stretch', config={"displayModeBar": False})
+            st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False})
 
         with c2:
             # Grouped bar — vendido vs estoque
@@ -1446,7 +1342,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(tickangle=-35, tickfont=dict(size=8), gridcolor="rgba(0,0,0,0)"),
                 legend=dict(orientation="h", y=1.12, font=dict(size=10)),
             )
-            st.plotly_chart(fig_vs, width='stretch', config={"displayModeBar": False})
+            st.plotly_chart(fig_vs, use_container_width=True, config={"displayModeBar": False})
 
     # ══════════════════════════════════════════════════════════════════════
     # TAB 2 — ESTOQUE CRÍTICO
@@ -1509,13 +1405,13 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_alert, width='stretch', config={"displayModeBar": False})
+            st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False})
 
             # Tabela detalhada
             with st.expander("📋 Tabela Detalhada — Críticos", expanded=False):
                 df_show = df_alerta[["codigo", "produto", "grupo", "qtd_vendida", "qtd_estoque", "nivel"]].copy()
                 df_show.columns = ["Código", "Produto", "Grupo", "Vendido", "Estoque", "Nível"]
-                st.dataframe(df_show, hide_index=True, width='stretch')
+                st.dataframe(df_show, hide_index=True, use_container_width=True)
         else:
             st.success("Nenhum produto em situação crítica! 🎉")
 
@@ -1525,7 +1421,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 df_zero_show = df_zero[["codigo", "produto", "grupo", "qtd_vendida"]].copy()
                 df_zero_show.columns = ["Código", "Produto", "Grupo", "Vendido"]
                 df_zero_show = df_zero_show.reset_index(drop=True)
-                st.dataframe(df_zero_show, hide_index=True, width='stretch', height=400)
+                st.dataframe(df_zero_show, hide_index=True, use_container_width=True, height=400)
 
     # ══════════════════════════════════════════════════════════════════════
     # TAB 3 — TAXA DE GIRO (BURN RATE)
@@ -1572,7 +1468,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Dias", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_burn, width='stretch', config={"displayModeBar": False})
+            st.plotly_chart(fig_burn, use_container_width=True, config={"displayModeBar": False})
 
             # Info box
             urgentes = df_burn[df_burn["dias_estoque"] < 15]["grupo"].tolist()
@@ -1619,7 +1515,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_top, width='stretch', config={"displayModeBar": False})
+            st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False})
 
             # Scatter vendido vs estoque
             st.markdown("---")
@@ -1651,7 +1547,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 yaxis=dict(title="Qtd Estoque", gridcolor="#1e293b"),
                 legend=dict(font=dict(size=8), orientation="h", y=-0.2),
             )
-            st.plotly_chart(fig_scatter, width='stretch', config={"displayModeBar": False})
+            st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False})
         else:
             st.info("Nenhum produto encontrado para o filtro selecionado.")
 
@@ -1669,7 +1565,7 @@ st.markdown(f'''
 .camda-header-wrap {{ position: relative; width: 100%; margin-bottom: 0.8rem; }}
 .camda-header {{
     width: 100%; height: 220px;
-    background-image: url(https://raw.githubusercontent.com/LeoLira1/estoquecamda/main/banner.jpg);
+    background-image: url(https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/banner.jpg);
     background-size: cover;
     background-position: center;
     border-radius: 14px;
@@ -1694,10 +1590,6 @@ has_mestre = stock_count > 0
 
 # ── Upload Section ───────────────────────────────────────────────────────────
 with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
-
-    if _AGROFIT_DISPONIVEL:
-        with st.expander("🌿 Consulta AGROFIT (MAPA)", expanded=False):
-            widget_busca_agrofit()
 
     if not has_mestre:
         st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
@@ -1746,7 +1638,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     st.info(f"🗑️ {len(zerados)} produto(s) com estoque zerado serão removidos do mestre")
                 st.dataframe(
                     df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
-                    hide_index=True, width='stretch', height=250,
+                    hide_index=True, use_container_width=True, height=250,
                 )
 
             if st.button("🚀 Processar", type="primary"):
@@ -1795,19 +1687,6 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
             else:
                 st.error("Não foi possível ler a planilha. Verifique se tem colunas 'Produto' e 'Princípio Ativo'.")
 
-        # ── AGROFIT: enriquecimento automático ───────────────────────────────
-        if _AGROFIT_DISPONIVEL:
-            st.markdown("---")
-            df_atual = get_current_stock()
-            df_enriquecido = botao_enriquecer_estoque(df_atual)
-            if df_enriquecido is not None:
-                n = salvar_resultado_agrofit_no_banco(df_enriquecido, get_db())
-                if n > 0:
-                    st.success(f"✅ {n} ingredientes ativos salvos no banco via AGROFIT!")
-                    sync_db()
-        else:
-            st.info("📦 Coloque agrofit_client.py na mesma pasta do app para habilitar integração AGROFIT.")
-
         st.markdown("---")
         _, col_sync, col_reset = st.columns([2, 1, 1])
         with col_sync:
@@ -1839,89 +1718,40 @@ if has_mestre:
     df_pa = get_principios_ativos()
     has_pa = not df_pa.empty
 
-    _has_agrofit_token = _AGROFIT_DISPONIVEL and bool(_try_get_token_silent() if _AGROFIT_DISPONIVEL else False)
-    if has_pa and _has_agrofit_token:
-        search_placeholder = "Nome, Código, Princípio Ativo ou Praga..."
-    elif has_pa:
-        search_placeholder = "Nome, Código ou Princípio Ativo..."
-    elif _has_agrofit_token:
-        search_placeholder = "Nome, Código ou Praga (via Agrofit)..."
-    else:
-        search_placeholder = "Nome ou Código..."
+    search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
     search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed")
 
     df_view = df_mestre
     pa_match_info = ""
-    praga_match_info = ""
     if search_term:
-        # ── Busca padrão por nome/código ─────────────────────────────────────
+        # Busca padrão por nome/código
         mask_nome_cod = (
             df_view["produto"].str.contains(search_term, case=False, na=False)
             | df_view["codigo"].str.contains(search_term, case=False, na=False)
         )
-        mask = mask_nome_cod
-        print(f"[Busca] termo='{search_term}' | nome/código: {mask_nome_cod.sum()} resultado(s)")
 
-        # ── Busca por princípio ativo ─────────────────────────────────────────
+        # Busca por princípio ativo
         if has_pa:
             pa_produtos = search_by_principio_ativo(search_term, df_pa)
-            print(f"[Busca] PA match: {len(pa_produtos)} produto(s) → {list(pa_produtos)[:5]}")
             if pa_produtos:
                 mask_pa = df_view["produto"].str.upper().isin(pa_produtos)
-                mask = mask | mask_pa
+                mask = mask_nome_cod | mask_pa
                 n_pa = mask_pa.sum()
                 if n_pa > 0 and not mask_nome_cod.any():
+                    # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
                     pa_found = df_pa[df_pa["principio_ativo"].str.contains(search_term, case=False, na=False)]["principio_ativo"].unique()
                     pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
                 elif n_pa > 0:
                     pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
-
-        # ── Busca por praga via Agrofit (só se busca local zerou) ────────────
-        print(f"[Busca] _has_agrofit_token={_has_agrofit_token} | mask.any()={mask.any()}")
-        st.write(f"🔍 **DEBUG busca:** local={mask.sum()} resultado(s) | token Agrofit={'✅' if _has_agrofit_token else '❌ ausente'}")
-
-        if _has_agrofit_token and not mask.any():
-            st.write(f"🌿 **DEBUG:** Nenhum resultado local — consultando Agrofit para praga **'{search_term}'**...")
-            with st.spinner(f"🌿 Consultando Agrofit para praga '{search_term}'..."):
-                _token_dbg = _try_get_token_silent()
-                # Diagnóstico passo a passo (sem cache)
-                _dbg = debug_busca_praga(search_term, _token_dbg) if _token_dbg else {}
-                _marcas_dbg = buscar_marcas_por_praga_cached(search_term, _token_dbg) if _token_dbg else []
-                praga_produtos = search_by_praga_agrofit(search_term, df_mestre)
-
-            with st.expander("🔬 Diagnóstico detalhado Agrofit", expanded=True):
-                if _dbg.get("erro"):
-                    st.error(f"Erro na API: {_dbg['erro']}")
-                if _dbg.get("raw_keys_exemplo"):
-                    st.write(f"**🔑 Campos da API (raw):** `{_dbg['raw_keys_exemplo']}`")
-                st.write(f"**Passo 1 — busca direta** `praga_nome_comum={search_term}`: "
-                         f"{_dbg.get('produtos_direto', '?')} produto(s) → marcas: `{_dbg.get('marcas_direto', [])[:5]}`")
-                pragas_norm = _dbg.get("pragas_comuns_encontradas", [])
-                st.write(f"**Passo 2 — pragas conhecidas** `/search/pragas-nomes-comuns?q={search_term}`: "
-                         f"`{pragas_norm}`")
-                for item in _dbg.get("por_praga_norm", []):
-                    st.write(f"  ↳ `{item['praga']}` → {item['count']} produto(s): `{item['marcas'][:3]}`")
-                st.write(f"**Total marcas (cache):** {len(_marcas_dbg)} → `{_marcas_dbg[:10]}`")
-                st.write(f"**Fuzzy match no estoque (score≥0.45):** {len(praga_produtos)} produto(s) → `{list(praga_produtos)[:5]}`")
-            if praga_produtos:
-                mask_praga = df_view["produto"].str.upper().isin(praga_produtos)
-                mask = mask | mask_praga
-                n_praga = mask_praga.sum()
-                if n_praga > 0:
-                    praga_match_info = f"🌿 Praga **{search_term}** (Agrofit): {n_praga} produto(s) registrado(s)"
             else:
-                st.info(f"ℹ️ Agrofit não encontrou produtos do estoque registrados para a praga **'{search_term}'**.")
-        elif not _has_agrofit_token:
-            print("[Busca] Token Agrofit ausente — busca por praga desabilitada.")
+                mask = mask_nome_cod
+        else:
+            mask = mask_nome_cod
 
         df_view = df_view[mask]
 
         if pa_match_info:
             st.caption(pa_match_info)
-        if praga_match_info:
-            st.caption(praga_match_info)
-        if not mask.any():
-            st.warning(f"Nenhum produto encontrado para **'{search_term}'**.")
 
     n_ok = (df_view["status"] == "ok").sum()
     n_falta = (df_view["status"] == "falta").sum()
@@ -1957,7 +1787,7 @@ if has_mestre:
         else:
             st.dataframe(
                 df_div[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "ultima_contagem"]],
-                hide_index=True, width='stretch',
+                hide_index=True, use_container_width=True,
             )
 
     with t3:
@@ -1972,7 +1802,6 @@ if has_mestre:
                     dias = 0
                 tempo = "hoje" if dias == 0 else ("ontem" if dias == 1 else f"{dias}d atrás")
                 qtd_v = int(item["qtd_vendida"]) if pd.notnull(item["qtd_vendida"]) else 0
-                qtd_e = int(item["qtd_estoque"]) if pd.notnull(item.get("qtd_estoque")) else 0
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
@@ -1984,7 +1813,7 @@ if has_mestre:
                         f'<div style="margin-top:4px;display:flex;gap:12px;">'
                         f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
-                        f'<span style="color:#ffa502;font-size:0.65rem;font-weight:700;">Estoque: {qtd_e} → Repor: {qtd_v}</span>'
+                        f'<span style="color:#ffa502;font-size:0.65rem;font-weight:700;">Vendido: {qtd_v} → Repor: {qtd_v}</span>'
                         f'</div></div>',
                         unsafe_allow_html=True,
                     )
@@ -2002,7 +1831,7 @@ if has_mestre:
         if df_hist.empty:
             st.info("Nenhum upload registrado.")
         else:
-            st.dataframe(df_hist, hide_index=True, width='stretch')
+            st.dataframe(df_hist, hide_index=True, use_container_width=True)
 
     with t6:
         # ── CSS da aba ──
@@ -2035,15 +1864,15 @@ if has_mestre:
             )
             if foto is not None:
                 img_bytes = foto.read()
-                st.image(img_bytes, caption="Prévia — confirme antes de salvar", width='stretch')
+                st.image(img_bytes, caption="Prévia — confirme antes de salvar", use_container_width=True)
                 col_ok, col_cancel = st.columns(2)
                 with col_ok:
-                    if st.button("✅ Salvar pendência", width='stretch', type="primary", key="pend_salvar"):
+                    if st.button("✅ Salvar pendência", use_container_width=True, type="primary", key="pend_salvar"):
                         inserir_pendencia(img_bytes)
                         st.success("Pendência registrada! ✔")
                         st.rerun()
                 with col_cancel:
-                    if st.button("✖ Cancelar", width='stretch', key="pend_cancelar"):
+                    if st.button("✖ Cancelar", use_container_width=True, key="pend_cancelar"):
                         st.rerun()
 
         st.divider()
@@ -2085,10 +1914,10 @@ if has_mestre:
                     unsafe_allow_html=True
                 )
                 try:
-                    st.image(base64.b64decode(foto_b64), width='stretch')
+                    st.image(base64.b64decode(foto_b64), use_container_width=True)
                 except Exception:
                     st.warning("Erro ao carregar imagem.")
-                if st.button(f"✅ Entregue — remover", key=f"pend_del_{pid}", width='stretch'):
+                if st.button(f"✅ Entregue — remover", key=f"pend_del_{pid}", use_container_width=True):
                     deletar_pendencia(pid)
                     st.success("Pendência removida.")
                     st.rerun()
