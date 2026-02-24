@@ -570,6 +570,20 @@ def marcar_reposto(item_id: int):
         st.error(f"❌ Erro ao marcar reposto: {e}")
 
 
+def resolver_divergencia(codigo: str):
+    """Remove manualmente um produto da lista de divergências (seta status para 'ok')."""
+    try:
+        conn = get_db()
+        conn.execute(
+            "UPDATE estoque_mestre SET status = 'ok', diferenca = 0 WHERE codigo = ?",
+            [codigo]
+        )
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao resolver divergência: {e}")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # CLASSIFICAÇÃO E PARSING — otimizados
 # ══════════════════════════════════════════════════════════════════════════════
@@ -935,6 +949,11 @@ def upload_mestre(records: list) -> tuple:
         conn = get_db()
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+        # Preservar divergências existentes antes de limpar o banco
+        existing_div = {row[0]: row[1] for row in conn.execute(
+            "SELECT codigo, status FROM estoque_mestre WHERE status IN ('falta', 'sobra')"
+        ).fetchall()}
+
         conn.execute("DELETE FROM estoque_mestre")
 
         # BATCH INSERT via executemany
@@ -949,7 +968,17 @@ def upload_mestre(records: list) -> tuple:
             for r in records
         ])
 
-        n_div = sum(1 for r in records if r["status"] != "ok")
+        # Restaurar status de divergência para produtos que já estavam divergentes
+        # (só sobrescreve se o novo upload não trouxe uma nova divergência)
+        if existing_div:
+            conn.executemany(
+                "UPDATE estoque_mestre SET status = ? WHERE codigo = ? AND status = 'ok'",
+                [(status, codigo) for codigo, status in existing_div.items()]
+            )
+
+        n_div = conn.execute(
+            "SELECT COUNT(*) FROM estoque_mestre WHERE status IN ('falta', 'sobra')"
+        ).fetchone()[0]
         conn.execute("""
             INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -995,11 +1024,14 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
                 ))
 
         # BATCH updates e inserts
+        # Preserva status 'falta'/'sobra' existente — só sai de divergência por ação manual
         if update_data:
             conn.executemany("""
                 UPDATE estoque_mestre SET
                     produto=?, categoria=?, qtd_sistema=?, qtd_fisica=?,
-                    diferenca=?, nota=?, status=?, ultima_contagem=?
+                    diferenca=?, nota=?,
+                    status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
+                    ultima_contagem=?
                 WHERE codigo=?
             """, update_data)
 
@@ -1786,10 +1818,34 @@ if has_mestre:
         if df_div.empty:
             st.info("Nenhuma divergência.")
         else:
-            st.dataframe(
-                df_div[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "ultima_contagem"]],
-                hide_index=True, use_container_width=True,
-            )
+            st.caption(f"{len(df_div)} divergência(s) · Itens saem apenas quando desmarcados manualmente.")
+            for _, item in df_div.iterrows():
+                status_cor = "#ef4444" if item["status"] == "falta" else "#f59e0b"
+                status_label = "⬇️ FALTA" if item["status"] == "falta" else "⬆️ SOBRA"
+                diferenca = int(item["diferenca"]) if pd.notnull(item["diferenca"]) else 0
+                qtd_s = int(item["qtd_sistema"]) if pd.notnull(item["qtd_sistema"]) else 0
+                qtd_f = int(item["qtd_fisica"]) if pd.notnull(item["qtd_fisica"]) else 0
+                nota = str(item["nota"]) if pd.notnull(item["nota"]) and str(item["nota"]).strip() else ""
+
+                col_info, col_btn = st.columns([5, 1])
+                with col_info:
+                    st.markdown(
+                        f'<div style="background:#111827;border:1px solid {status_cor}44;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
+                        f'<span style="color:{status_cor};font-size:0.7rem;font-weight:700;">{status_label} {abs(diferenca)}</span></div>'
+                        f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
+                        f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
+                        f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
+                        f'<span style="color:#64748b;font-size:0.65rem;">Sistema: <b style="color:#94a3b8;">{qtd_s}</b> · Físico: <b style="color:#94a3b8;">{qtd_f}</b></span>'
+                        + (f'<span style="color:#64748b;font-size:0.65rem;">Obs: <i style="color:#94a3b8;">{nota}</i></span>' if nota else '')
+                        + f'</div></div>',
+                        unsafe_allow_html=True,
+                    )
+                with col_btn:
+                    if st.button("✅", key=f"div_{item['codigo']}", help="Resolver divergência manualmente"):
+                        resolver_divergencia(str(item["codigo"]))
+                        st.rerun()
 
     with t3:
         if df_reposicao.empty:  # Repor na Loja
