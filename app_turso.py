@@ -113,7 +113,10 @@ if not st.session_state.authenticated:
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
     .stApp {
-        background: linear-gradient(160deg,#1c2e52 0%,#2d3e6e 20%,#3d3060 45%,#6b3a5a 65%,#3d5a7a 85%,#1c3a5a 100%);
+        background:
+            linear-gradient(160deg,rgba(10,15,26,0.55) 0%,rgba(10,15,26,0.45) 100%),
+            url('https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/Cerrado.jpg')
+            center center / cover no-repeat fixed;
         font-family:'Outfit',sans-serif;
     }
     #MainMenu,footer,header{visibility:hidden;}
