@@ -1166,7 +1166,8 @@ def get_contagem_itens() -> "pd.DataFrame":
 
 def atualizar_item_contagem(
     item_id: int, status: str, motivo: str = "",
-    qtd_divergencia: int = 0, codigo: str = "", qtd_sistema: int = 0
+    qtd_divergencia: int = 0, codigo: str = "", qtd_sistema: int = 0,
+    tipo_div: str = "falta"
 ) -> bool:
     """Atualiza item da contagem e reflete em estoque_mestre. Retorna True se atualizou estoque."""
     conn = get_db()
@@ -1180,17 +1181,23 @@ def atualizar_item_contagem(
 
     if codigo:
         if status == "divergencia":
-            qtd_fisica = max(0, qtd_sistema - qtd_divergencia)
-            diferenca = qtd_fisica - qtd_sistema
+            if tipo_div == "sobra":
+                qtd_fisica = qtd_sistema + qtd_divergencia
+                diferenca = qtd_divergencia
+                status_estoque = "sobra"
+            else:
+                qtd_fisica = max(0, qtd_sistema - qtd_divergencia)
+                diferenca = qtd_fisica - qtd_sistema
+                status_estoque = "falta"
             cur = conn.execute("""
                 UPDATE estoque_mestre SET
-                    status = 'falta',
+                    status = ?,
                     qtd_fisica = ?,
                     diferenca = ?,
                     nota = ?,
                     ultima_contagem = ?
                 WHERE codigo = ?
-            """, [qtd_fisica, diferenca, motivo, now, codigo])
+            """, [status_estoque, qtd_fisica, diferenca, motivo, now, codigo])
             rows_afetadas = getattr(cur, "rowcount", -1)
 
         elif status in ("certa", "pendente"):
@@ -1201,7 +1208,7 @@ def atualizar_item_contagem(
                     diferenca = 0,
                     nota = '',
                     ultima_contagem = ?
-                WHERE codigo = ? AND status = 'falta'
+                WHERE codigo = ? AND status IN ('falta', 'sobra')
             """, [now, codigo])
 
     # Só commit local — não chama sync_db() aqui para evitar que o pull
@@ -2789,7 +2796,15 @@ if has_mestre:
                                 st.rerun()
 
                     if item_id in st.session_state.contagem_div_open:
-                        fc1, fc2, fc3 = st.columns([3, 1.5, 1])
+                        fc0, fc1, fc2, fc3 = st.columns([1.5, 3, 1.5, 1])
+                        with fc0:
+                            tipo_div_val = st.radio(
+                                "Tipo",
+                                ["⬇️ Falta", "⬆️ Sobra"],
+                                key=f"ct_tipo_{item_id}",
+                                horizontal=False,
+                            )
+                            tipo_div_str = "sobra" if "Sobra" in tipo_div_val else "falta"
                         with fc1:
                             motivo_val = st.text_input(
                                 "Motivo da divergência",
@@ -2808,7 +2823,8 @@ if has_mestre:
                                 ok = atualizar_item_contagem(
                                     item_id, "divergencia",
                                     motivo_val.strip(), int(qty_val),
-                                    codigo=_cod, qtd_sistema=_qtd_sis
+                                    codigo=_cod, qtd_sistema=_qtd_sis,
+                                    tipo_div=tipo_div_str
                                 )
                                 if not ok:
                                     st.warning(f"⚠️ Divergência salva na contagem, mas não refletiu no estoque (código: {_cod}). Reporte ao suporte.")
