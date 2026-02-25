@@ -1164,25 +1164,20 @@ def get_contagem_itens() -> "pd.DataFrame":
     return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
 
 
-def atualizar_item_contagem(item_id: int, status: str, motivo: str = "", qtd_divergencia: int = 0) -> None:
+def atualizar_item_contagem(
+    item_id: int, status: str, motivo: str = "",
+    qtd_divergencia: int = 0, codigo: str = "", qtd_sistema: int = 0
+) -> None:
     conn = get_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    # Recupera estado anterior antes de atualizar
-    row = conn.execute(
-        "SELECT codigo, qtd_estoque, status FROM contagem_itens WHERE id=?", [item_id]
-    ).fetchone()
 
     conn.execute(
         "UPDATE contagem_itens SET status=?, motivo=?, qtd_divergencia=? WHERE id=?",
         [status, motivo, qtd_divergencia, item_id]
     )
 
-    if row:
-        codigo, qtd_sistema, status_anterior = row
-
+    if codigo:
         if status == "divergencia":
-            # Atualiza estoque_mestre imediatamente → aparece na aba Divergências
             qtd_fisica = max(0, qtd_sistema - qtd_divergencia)
             diferenca = qtd_fisica - qtd_sistema
             conn.execute("""
@@ -1194,9 +1189,7 @@ def atualizar_item_contagem(item_id: int, status: str, motivo: str = "", qtd_div
                     ultima_contagem = ?
                 WHERE codigo = ?
             """, [qtd_fisica, diferenca, motivo, now, codigo])
-
-        elif status in ("certa", "pendente") and status_anterior == "divergencia":
-            # Desfaz a alteração feita pela contagem no estoque_mestre
+        elif status in ("certa", "pendente"):
             conn.execute("""
                 UPDATE estoque_mestre SET
                     status = 'ok',
@@ -2743,15 +2736,18 @@ if has_mestre:
                         badge_html, _ = badge_map.get(status, (status, False))
                         st.markdown(badge_html, unsafe_allow_html=True)
 
+                    _cod = str(item["codigo"])
+                    _qtd_sis = qty
+
                     with col_b1:
                         if status in ("pendente", "divergencia"):
                             if st.button("✅ Certa", key=f"ct_ok_{item_id}", use_container_width=True):
-                                atualizar_item_contagem(item_id, "certa")
+                                atualizar_item_contagem(item_id, "certa", codigo=_cod, qtd_sistema=_qtd_sis)
                                 st.session_state.contagem_div_open.discard(item_id)
                                 st.rerun()
                         else:
                             if st.button("↩️ Desfazer", key=f"ct_undo_{item_id}", use_container_width=True):
-                                atualizar_item_contagem(item_id, "pendente")
+                                atualizar_item_contagem(item_id, "pendente", codigo=_cod, qtd_sistema=_qtd_sis)
                                 st.rerun()
 
                     with col_b2:
@@ -2761,7 +2757,7 @@ if has_mestre:
                                 st.rerun()
                         elif status == "divergencia":
                             if st.button("↩️ Desfazer", key=f"ct_undo_div_{item_id}", use_container_width=True):
-                                atualizar_item_contagem(item_id, "pendente")
+                                atualizar_item_contagem(item_id, "pendente", codigo=_cod, qtd_sistema=_qtd_sis)
                                 st.rerun()
                         else:
                             if st.button("Cancelar", key=f"ct_cancel_open_{item_id}", use_container_width=True):
@@ -2785,7 +2781,11 @@ if has_mestre:
                         with fc3:
                             st.markdown("<div style='margin-top:26px'>", unsafe_allow_html=True)
                             if st.button("Confirmar", key=f"ct_conf_{item_id}", type="primary", use_container_width=True):
-                                atualizar_item_contagem(item_id, "divergencia", motivo_val.strip(), int(qty_val))
+                                atualizar_item_contagem(
+                                    item_id, "divergencia",
+                                    motivo_val.strip(), int(qty_val),
+                                    codigo=_cod, qtd_sistema=_qtd_sis
+                                )
                                 st.session_state.contagem_div_open.discard(item_id)
                                 st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
