@@ -266,6 +266,20 @@ def _get_connection():
             resolvido_em TEXT DEFAULT ''
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS contagem_itens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            upload_id INTEGER NOT NULL DEFAULT 0,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            qtd_estoque INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'pendente',
+            motivo TEXT DEFAULT '',
+            qtd_divergencia INTEGER DEFAULT 0,
+            registrado_em TEXT NOT NULL
+        )
+    """)
     conn.commit()
 
     # ── Migrações (roda 1x) ──
@@ -443,6 +457,13 @@ CATEGORIAS_EXCLUIDAS_REPOSICAO = frozenset({
     "INOCULANTES P/ SILAGEM",
     "DIETA ANIMAL",
     "RATICIDAS",
+})
+
+# Categorias exibidas na aba Contagem
+CATEGORIAS_CONTAGEM = frozenset({
+    "HERBICIDAS", "INSETICIDAS", "FUNGICIDAS",
+    "ÓLEOS", "ADJUVANTES", "ADJUVANTES/ESPALHANTES ADESIVO",
+    "SUPLEMENTO MINERAL",
 })
 
 CATEGORIA_PRIORITY = [
@@ -1091,6 +1112,9 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
             INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, [now, "PARCIAL", "", len(records), len(novos_data), len(update_data), n_div])
+        upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        popular_contagem(records, upload_id, conn)
 
         conn.commit()
         sync_db()  # Sync UMA VEZ no final
@@ -1107,6 +1131,47 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
         return (True, " · ".join(parts))
     except Exception as e:
         return (False, f"❌ Erro: {e}")
+
+
+def popular_contagem(records: list, upload_id: int, conn) -> None:
+    """Limpa contagem anterior e popula com itens do upload parcial filtrados por categoria."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    itens = [
+        (upload_id, r["codigo"], r["produto"], r["categoria"],
+         r["qtd_sistema"], "pendente", "", 0, now)
+        for r in records
+        if r["categoria"] in CATEGORIAS_CONTAGEM
+    ]
+    conn.execute("DELETE FROM contagem_itens")
+    if itens:
+        conn.executemany("""
+            INSERT INTO contagem_itens
+                (upload_id, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_divergencia, registrado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, itens)
+
+
+def get_contagem_itens() -> "pd.DataFrame":
+    conn = get_db()
+    rows = conn.execute("""
+        SELECT id, upload_id, codigo, produto, categoria, qtd_estoque,
+               status, motivo, qtd_divergencia, registrado_em
+        FROM contagem_itens
+        ORDER BY categoria, produto
+    """).fetchall()
+    cols = ["id", "upload_id", "codigo", "produto", "categoria", "qtd_estoque",
+            "status", "motivo", "qtd_divergencia", "registrado_em"]
+    return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
+
+
+def atualizar_item_contagem(item_id: int, status: str, motivo: str = "", qtd_divergencia: int = 0) -> None:
+    conn = get_db()
+    conn.execute(
+        "UPDATE contagem_itens SET status=?, motivo=?, qtd_divergencia=? WHERE id=?",
+        [status, motivo, qtd_divergencia, item_id]
+    )
+    conn.commit()
+    sync_db()
 
 
 def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
@@ -1847,7 +1912,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -2565,6 +2630,128 @@ if has_mestre:
             unsafe_allow_html=True
         )
         st.caption("📌 Clique em qualquer dia para filtrar os eventos. Pontos coloridos indicam registros naquele dia.")
+
+    with t9:
+        st.markdown("""
+        <style>
+        .ct-card{background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.18);border-radius:12px;padding:10px 14px;margin-bottom:6px;}
+        .ct-card.certa{background:rgba(0,214,143,0.06);border-color:rgba(0,214,143,0.25);}
+        .ct-card.divergencia{background:rgba(239,68,68,0.06);border-color:rgba(239,68,68,0.25);}
+        .ct-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;letter-spacing:.5px;}
+        .ct-certa{background:rgba(0,214,143,0.15);color:#00d68f;border:1px solid #00d68f44;}
+        .ct-divergencia{background:rgba(239,68,68,0.15);color:#ef4444;border:1px solid #ef444444;}
+        .ct-pendente{background:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid #64748b44;}
+        .ct-cat-header{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#64748b;margin:12px 0 4px;padding:0 2px;}
+        .ct-nome{font-weight:600;font-size:0.88rem;color:#e0e6ed;}
+        .ct-qty{font-family:'JetBrains Mono',monospace;font-size:0.82rem;color:#3b82f6;margin-left:8px;}
+        .ct-motivo{font-size:0.7rem;color:#94a3b8;margin-top:3px;}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### 📋 Contagem")
+        st.caption("Confira os produtos da última planilha parcial · Herbicidas, Inseticidas, Fungicidas, Óleos, Adjuvantes e Suplemento Mineral")
+
+        df_ct = get_contagem_itens()
+
+        if df_ct.empty:
+            st.info("Nenhuma contagem disponível. Faça o upload de uma planilha PARCIAL para iniciar a contagem.")
+        else:
+            n_total = len(df_ct)
+            n_certas = int((df_ct["status"] == "certa").sum())
+            n_divs = int((df_ct["status"] == "divergencia").sum())
+            n_pend = int((df_ct["status"] == "pendente").sum())
+
+            st.markdown(f"""
+            <div class="stat-row">
+                <div class="stat-card"><div class="stat-value">{n_total}</div><div class="stat-label">Total</div></div>
+                <div class="stat-card"><div class="stat-value">{n_certas}</div><div class="stat-label">Certas</div></div>
+                <div class="stat-card"><div class="stat-value red">{n_divs}</div><div class="stat-label">Divergências</div></div>
+                <div class="stat-card"><div class="stat-value amber">{n_pend}</div><div class="stat-label">Pendentes</div></div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if "contagem_div_open" not in st.session_state:
+                st.session_state.contagem_div_open = set()
+
+            cats = sorted(df_ct["categoria"].unique())
+            for cat in cats:
+                df_cat = df_ct[df_ct["categoria"] == cat]
+                st.markdown(f'<div class="ct-cat-header">{cat} ({len(df_cat)})</div>', unsafe_allow_html=True)
+
+                for _, item in df_cat.iterrows():
+                    item_id = int(item["id"])
+                    prod = str(item["produto"])
+                    qty = int(item["qtd_estoque"])
+                    status = str(item["status"])
+
+                    col_info, col_badge, col_b1, col_b2 = st.columns([4, 1.6, 1.2, 1.2])
+
+                    with col_info:
+                        info_html = (
+                            f'<span class="ct-nome">{prod}</span>'
+                            f'<span class="ct-qty">{qty} un</span>'
+                        )
+                        if status == "divergencia":
+                            qtd_div = int(item["qtd_divergencia"]) if pd.notnull(item["qtd_divergencia"]) else 0
+                            motivo_text = str(item["motivo"]) if pd.notnull(item["motivo"]) and str(item["motivo"]).strip() else "(sem motivo)"
+                            info_html += f'<div class="ct-motivo">Motivo: {motivo_text} · Qtd divergindo: {qtd_div}</div>'
+                        st.markdown(f'<div class="ct-card {status}">{info_html}</div>', unsafe_allow_html=True)
+
+                    with col_badge:
+                        badge_map = {
+                            "certa": ('<span class="ct-badge ct-certa">✅ Certa</span>', False),
+                            "divergencia": ('<span class="ct-badge ct-divergencia">❌ Divergência</span>', False),
+                            "pendente": ('<span class="ct-badge ct-pendente">⏳ Pendente</span>', False),
+                        }
+                        badge_html, _ = badge_map.get(status, (status, False))
+                        st.markdown(badge_html, unsafe_allow_html=True)
+
+                    with col_b1:
+                        if status in ("pendente", "divergencia"):
+                            if st.button("✅ Certa", key=f"ct_ok_{item_id}", use_container_width=True):
+                                atualizar_item_contagem(item_id, "certa")
+                                st.session_state.contagem_div_open.discard(item_id)
+                                st.rerun()
+                        else:
+                            if st.button("↩️ Desfazer", key=f"ct_undo_{item_id}", use_container_width=True):
+                                atualizar_item_contagem(item_id, "pendente")
+                                st.rerun()
+
+                    with col_b2:
+                        if status != "divergencia" and item_id not in st.session_state.contagem_div_open:
+                            if st.button("❌ Divergência", key=f"ct_divbtn_{item_id}", use_container_width=True):
+                                st.session_state.contagem_div_open.add(item_id)
+                                st.rerun()
+                        elif status == "divergencia":
+                            if st.button("↩️ Desfazer", key=f"ct_undo_div_{item_id}", use_container_width=True):
+                                atualizar_item_contagem(item_id, "pendente")
+                                st.rerun()
+                        else:
+                            if st.button("Cancelar", key=f"ct_cancel_open_{item_id}", use_container_width=True):
+                                st.session_state.contagem_div_open.discard(item_id)
+                                st.rerun()
+
+                    if item_id in st.session_state.contagem_div_open:
+                        fc1, fc2, fc3 = st.columns([3, 1.5, 1])
+                        with fc1:
+                            motivo_val = st.text_input(
+                                "Motivo da divergência",
+                                key=f"ct_motivo_{item_id}",
+                                placeholder="Ex: produto vencido, faltando, danificado..."
+                            )
+                        with fc2:
+                            qty_val = st.number_input(
+                                "Qtd divergindo",
+                                min_value=0, value=0, step=1,
+                                key=f"ct_qtd_{item_id}"
+                            )
+                        with fc3:
+                            st.markdown("<div style='margin-top:26px'>", unsafe_allow_html=True)
+                            if st.button("Confirmar", key=f"ct_conf_{item_id}", type="primary", use_container_width=True):
+                                atualizar_item_contagem(item_id, "divergencia", motivo_val.strip(), int(qty_val))
+                                st.session_state.contagem_div_open.discard(item_id)
+                                st.rerun()
+                            st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
