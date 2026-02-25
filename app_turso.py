@@ -1166,10 +1166,47 @@ def get_contagem_itens() -> "pd.DataFrame":
 
 def atualizar_item_contagem(item_id: int, status: str, motivo: str = "", qtd_divergencia: int = 0) -> None:
     conn = get_db()
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Recupera estado anterior antes de atualizar
+    row = conn.execute(
+        "SELECT codigo, qtd_estoque, status FROM contagem_itens WHERE id=?", [item_id]
+    ).fetchone()
+
     conn.execute(
         "UPDATE contagem_itens SET status=?, motivo=?, qtd_divergencia=? WHERE id=?",
         [status, motivo, qtd_divergencia, item_id]
     )
+
+    if row:
+        codigo, qtd_sistema, status_anterior = row
+
+        if status == "divergencia":
+            # Atualiza estoque_mestre imediatamente → aparece na aba Divergências
+            qtd_fisica = max(0, qtd_sistema - qtd_divergencia)
+            diferenca = qtd_fisica - qtd_sistema
+            conn.execute("""
+                UPDATE estoque_mestre SET
+                    status = 'falta',
+                    qtd_fisica = ?,
+                    diferenca = ?,
+                    nota = ?,
+                    ultima_contagem = ?
+                WHERE codigo = ?
+            """, [qtd_fisica, diferenca, motivo, now, codigo])
+
+        elif status in ("certa", "pendente") and status_anterior == "divergencia":
+            # Desfaz a alteração feita pela contagem no estoque_mestre
+            conn.execute("""
+                UPDATE estoque_mestre SET
+                    status = 'ok',
+                    qtd_fisica = qtd_sistema,
+                    diferenca = 0,
+                    nota = '',
+                    ultima_contagem = ?
+                WHERE codigo = ? AND status = 'falta'
+            """, [now, codigo])
+
     conn.commit()
     sync_db()
 
