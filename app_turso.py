@@ -92,6 +92,47 @@ st.markdown("""
         font-size: 0.6rem; color: #64748b;
         text-transform: uppercase; letter-spacing: 1px;
     }
+    /* ── Treemap tiles ─────────────────────────────────────────────────── */
+    .tm-wrap { display: flex; flex-wrap: wrap; gap: 2px; }
+    .tm-tile {
+        width: 110px; height: 60px;
+        border-radius: 4px; padding: 4px; margin: 2px;
+        display: flex; flex-direction: column;
+        justify-content: center; align-items: center;
+        overflow: hidden; box-sizing: border-box;
+    }
+    .tm-name {
+        font-size: 0.55rem; font-weight: 700; text-align: center; width: 100%;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .tm-info {
+        font-size: 0.65rem; opacity: 0.9;
+        font-family: 'JetBrains Mono', monospace;
+        font-weight: bold; margin-top: 2px;
+    }
+    .tm-av { font-size: 0.5rem; font-weight: 700; margin-top: 2px; }
+    /* ── Streamlit tabs: sempre scrollável ─────────────────────────────── */
+    .stTabs [data-baseweb="tab-list"] {
+        flex-wrap: nowrap !important;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
+    /* ── Mobile (≤640px) ───────────────────────────────────────────────── */
+    @media (max-width: 640px) {
+        .block-container { padding: 0.3rem 0.3rem !important; }
+        .main-title { font-size: 1.2rem; }
+        .stat-row { flex-wrap: wrap; gap: 4px; }
+        .stat-card { flex: 1 1 calc(33% - 4px); min-width: 0; padding: 6px 4px; }
+        .stat-value { font-size: 0.85rem; }
+        .stat-label { font-size: 0.48rem; letter-spacing: 0.5px; }
+        .stTabs [data-baseweb="tab"] {
+            padding: 6px 8px !important;
+            font-size: 0.65rem !important;
+        }
+        .tm-tile { width: calc(33.33% - 6px); min-width: 90px; height: 58px; }
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -1147,18 +1188,15 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             qtd_av = avarias_map.get(str(r["codigo"]), 0)
             if qtd_av > 0:
                 bg, txt = "#a55eea", "#fff"
-                av_html = f'<div style="font-size:0.5rem;color:#fff;font-weight:700;margin-top:2px;">⚠ {qtd_av} av.</div>'
+                av_html = f'<div class="tm-av">⚠ {qtd_av} av.</div>'
             else:
                 av_html = ""
 
             prods.append(
-                f'<div style="width:110px;height:60px;background:{bg};color:{txt};'
-                f'border-radius:4px;padding:4px;margin:2px;display:flex;flex-direction:column;'
-                f'justify-content:center;align-items:center;overflow:hidden;'
+                f'<div class="tm-tile" style="background:{bg};color:{txt};'
                 f'border:1px solid rgba(0,0,0,0.1);{border}">'
-                f'<div style="font-size:0.55rem;font-weight:700;text-align:center;width:100%;'
-                f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{short_name(r["produto"])}</div>'
-                f'<div style="font-size:0.65rem;opacity:0.9;font-family:monospace;font-weight:bold;margin-top:2px;">{info}</div>'
+                f'<div class="tm-name">{short_name(r["produto"])}</div>'
+                f'<div class="tm-info">{info}</div>'
                 f'{av_html}'
                 f'</div>'
             )
@@ -1169,7 +1207,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             f'<div style="font-size:0.75rem;color:#64748b;font-weight:700;text-transform:uppercase;'
             f'margin-bottom:6px;border-bottom:1px solid #1e293b;padding-bottom:4px;">'
             f'{cat} <span style="font-size:0.6rem;color:#4a5568;font-weight:400;">({len(rows)})</span></div>'
-            f'<div style="display:flex;flex-wrap:wrap;gap:2px;">{"".join(prods)}</div></div>'
+            f'<div class="tm-wrap">{"".join(prods)}</div></div>'
         )
 
     return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>'
@@ -1610,6 +1648,10 @@ st.markdown(f'''
     color: #fff; font-family: Outfit,sans-serif; font-size: 1rem;
     padding: 6px 14px; border-radius: 20px;
     border: 1px solid rgba(255,255,255,0.15);
+}}
+@media (max-width: 640px) {{
+    .camda-header {{ height: 140px; }}
+    .weather-overlay {{ font-size: 0.75rem; padding: 4px 10px; top: 8px; right: 8px; }}
 }}
 </style>
 <div class="camda-header-wrap">
