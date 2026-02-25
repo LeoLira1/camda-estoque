@@ -7,7 +7,7 @@ import base64
 import io
 import plotly.graph_objects as go
 import plotly.express as px
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from PIL import Image
 
 # ── Page Config ──────────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ if not st.session_state.authenticated:
     """, unsafe_allow_html=True)
 
     wd = get_weather_forecast_quirinopolis()
-    _now = datetime.now()
+    _now = datetime.now(tz=timezone(timedelta(hours=-3)))
     _hora = _now.strftime("%H:%M")
     _dia_nome = _DIAS_PT_FULL[_now.weekday()]
     _data_fmt  = _now.strftime("%d/%m/%Y")
