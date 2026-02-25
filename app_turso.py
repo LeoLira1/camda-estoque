@@ -1956,7 +1956,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -2815,6 +2815,211 @@ if has_mestre:
                                 st.session_state.contagem_div_open.discard(item_id)
                                 st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
+
+    with t10:
+        # ── CSS da aba ──────────────────────────────────────────────────────────
+        st.markdown("""
+        <style>
+        .val-kpi-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+        .val-kpi{flex:1;min-width:80px;background:linear-gradient(135deg,#111827,#1a2332);
+                 border:1px solid #1e293b;border-radius:10px;padding:8px 10px;text-align:center;}
+        .val-kpi-v{font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:#00d68f;}
+        .val-kpi-v.red{color:#ff4757;} .val-kpi-v.amber{color:#ffa502;} .val-kpi-v.yellow{color:#ffd32a;}
+        .val-kpi-l{font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;}
+        .val-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;}
+        .val-vencido{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid #ef444455;}
+        .val-30{background:rgba(255,71,87,.12);color:#ff4757;border:1px solid #ff475755;}
+        .val-60{background:rgba(255,165,2,.12);color:#ffa502;border:1px solid #ffa50255;}
+        .val-90{background:rgba(255,211,42,.10);color:#ffd32a;border:1px solid #ffd32a55;}
+        .val-ok{background:rgba(0,214,143,.10);color:#00d68f;border:1px solid #00d68f55;}
+        .val-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
+                     color:#64748b;margin:14px 0 4px;padding:0 2px;}
+        .val-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);
+                 border-radius:8px;padding:8px 10px;margin-bottom:4px;}
+        .val-prod{font-weight:600;font-size:0.85rem;color:#e0e6ed;}
+        .val-meta{font-size:0.68rem;color:#64748b;margin-top:2px;}
+        .val-lote{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#3b82f6;}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown("#### 📅 Controle de Validade")
+        st.caption("Faça upload da planilha SIG de validade para visualizar produtos vencidos e próximos do vencimento")
+
+        # ── Upload ───────────────────────────────────────────────────────────
+        uploaded_val = st.file_uploader(
+            "📤 Enviar planilha de validade (.xlsx)",
+            type=["xlsx"],
+            key="val_upload",
+            help="Planilha SIG — relatório de produtos com lote, fabricação e vencimento"
+        )
+
+        if uploaded_val is not None:
+            try:
+                # ── Leitura com estrutura hierárquica (células mescladas) ───
+                df_raw = pd.read_excel(uploaded_val, header=3, engine="openpyxl")
+                df_raw.columns = ["FILIAL", "GRUPO", "PRODUTO", "LOTE", "FABRICACAO", "VENCIMENTO", "QUANTIDADE", "VALOR"]
+
+                # Forward-fill nas colunas mescladas
+                df_raw["FILIAL"]   = df_raw["FILIAL"].ffill()
+                df_raw["GRUPO"]    = df_raw["GRUPO"].ffill()
+                df_raw["PRODUTO"]  = df_raw["PRODUTO"].ffill()
+
+                # Remover linhas de subtotal e vazias
+                df_val = df_raw[
+                    df_raw["LOTE"].notna() &
+                    (df_raw["LOTE"].astype(str).str.strip() != "Sum") &
+                    (df_raw["LOTE"].astype(str).str.strip() != "")
+                ].copy()
+
+                # Converter datas
+                df_val["VENCIMENTO"]  = pd.to_datetime(df_val["VENCIMENTO"],  errors="coerce")
+                df_val["FABRICACAO"]  = pd.to_datetime(df_val["FABRICACAO"],  errors="coerce")
+                df_val["QUANTIDADE"]  = pd.to_numeric(df_val["QUANTIDADE"], errors="coerce").fillna(0).astype(int)
+                df_val["VALOR"]       = pd.to_numeric(df_val["VALOR"],      errors="coerce").fillna(0)
+
+                hoje = pd.Timestamp.now().normalize()
+
+                # Dias para vencer (negativo = já venceu)
+                df_val["DIAS"]   = (df_val["VENCIMENTO"] - hoje).dt.days
+                df_val["STATUS"] = df_val["DIAS"].apply(
+                    lambda d: "VENCIDO" if d < 0
+                    else "≤30 dias"  if d <= 30
+                    else "≤60 dias"  if d <= 60
+                    else "≤90 dias"  if d <= 90
+                    else "OK"
+                )
+
+                # ── KPIs ─────────────────────────────────────────────────────
+                n_vencidos  = int((df_val["STATUS"] == "VENCIDO").sum())
+                n_30        = int((df_val["STATUS"] == "≤30 dias").sum())
+                n_60        = int((df_val["STATUS"] == "≤60 dias").sum())
+                n_90        = int((df_val["STATUS"] == "≤90 dias").sum())
+                n_ok        = int((df_val["STATUS"] == "OK").sum())
+                val_risco   = df_val[df_val["STATUS"].isin(["VENCIDO","≤30 dias","≤60 dias"])]["VALOR"].sum()
+
+                st.markdown(f"""
+                <div class="val-kpi-row">
+                    <div class="val-kpi"><div class="val-kpi-v red">{n_vencidos}</div><div class="val-kpi-l">Vencidos</div></div>
+                    <div class="val-kpi"><div class="val-kpi-v red">{n_30}</div><div class="val-kpi-l">≤30 dias</div></div>
+                    <div class="val-kpi"><div class="val-kpi-v amber">{n_60}</div><div class="val-kpi-l">≤60 dias</div></div>
+                    <div class="val-kpi"><div class="val-kpi-v yellow">{n_90}</div><div class="val-kpi-l">≤90 dias</div></div>
+                    <div class="val-kpi"><div class="val-kpi-v">{n_ok}</div><div class="val-kpi-l">OK</div></div>
+                    <div class="val-kpi"><div class="val-kpi-v red">R$ {val_risco:,.0f}</div><div class="val-kpi-l">Valor em risco</div></div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                # ── Filtros ───────────────────────────────────────────────────
+                fc1, fc2, fc3 = st.columns([2, 2, 1])
+                with fc1:
+                    grupos = ["Todos"] + sorted(df_val["GRUPO"].dropna().unique().tolist())
+                    grupo_sel = st.selectbox("Grupo", grupos, key="val_grupo")
+                with fc2:
+                    status_opts = ["Todos", "VENCIDO", "≤30 dias", "≤60 dias", "≤90 dias", "OK"]
+                    status_sel = st.selectbox("Status", status_opts, key="val_status",
+                                              index=0)
+                with fc3:
+                    mostrar_ok = st.checkbox("Mostrar OK", value=False, key="val_show_ok")
+
+                df_show = df_val.copy()
+                if grupo_sel != "Todos":
+                    df_show = df_show[df_show["GRUPO"] == grupo_sel]
+                if status_sel != "Todos":
+                    df_show = df_show[df_show["STATUS"] == status_sel]
+                elif not mostrar_ok:
+                    df_show = df_show[df_show["STATUS"] != "OK"]
+
+                df_show = df_show.sort_values("DIAS")
+
+                # ── Gráfico por grupo (produtos em risco) ──────────────────
+                df_risco_grp = (
+                    df_val[df_val["STATUS"].isin(["VENCIDO","≤30 dias","≤60 dias","≤90 dias"])]
+                    .groupby("GRUPO")["VALOR"].sum()
+                    .sort_values(ascending=True)
+                    .reset_index()
+                )
+                if not df_risco_grp.empty:
+                    fig_bar = go.Figure(go.Bar(
+                        x=df_risco_grp["VALOR"],
+                        y=df_risco_grp["GRUPO"],
+                        orientation="h",
+                        marker_color="#ff4757",
+                        text=df_risco_grp["VALOR"].apply(lambda v: f"R$ {v:,.0f}"),
+                        textposition="outside",
+                    ))
+                    fig_bar.update_layout(
+                        title="💰 Valor em risco por grupo (≤90 dias + vencidos)",
+                        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                        font=dict(color="#94a3b8", size=11),
+                        height=max(200, len(df_risco_grp)*32 + 60),
+                        margin=dict(l=10, r=80, t=40, b=10),
+                        xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                        yaxis=dict(tickfont=dict(size=10)),
+                    )
+                    st.plotly_chart(fig_bar, use_container_width=True)
+
+                # ── Lista de produtos ─────────────────────────────────────
+                badge_map = {
+                    "VENCIDO":   '<span class="val-badge val-vencido">🔴 VENCIDO</span>',
+                    "≤30 dias":  '<span class="val-badge val-30">🟠 ≤30 dias</span>',
+                    "≤60 dias":  '<span class="val-badge val-60">🟡 ≤60 dias</span>',
+                    "≤90 dias":  '<span class="val-badge val-90">⚪ ≤90 dias</span>',
+                    "OK":        '<span class="val-badge val-ok">🟢 OK</span>',
+                }
+
+                st.markdown(f'<div class="val-section">{len(df_show)} lote(s) encontrado(s)</div>', unsafe_allow_html=True)
+
+                for _, row in df_show.iterrows():
+                    prod_nome  = str(row["PRODUTO"]).split(" - ", 1)[-1] if " - " in str(row["PRODUTO"]) else str(row["PRODUTO"])
+                    lote       = str(row["LOTE"])
+                    grupo_nome = str(row["GRUPO"])
+                    venc_str   = row["VENCIMENTO"].strftime("%d/%m/%Y") if pd.notna(row["VENCIMENTO"]) else "?"
+                    dias_str   = f"{abs(int(row['DIAS']))} dias {'atrás' if row['DIAS'] < 0 else 'restantes'}" if pd.notna(row["DIAS"]) else ""
+                    qtd        = int(row["QUANTIDADE"])
+                    valor      = float(row["VALOR"])
+                    badge_html = badge_map.get(row["STATUS"], row["STATUS"])
+
+                    st.markdown(f"""
+                    <div class="val-row">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px;">
+                            <span class="val-prod">{prod_nome}</span>
+                            {badge_html}
+                        </div>
+                        <div class="val-meta">
+                            <span class="val-lote">Lote: {lote}</span>
+                            &nbsp;·&nbsp; Grupo: {grupo_nome}
+                            &nbsp;·&nbsp; Vencimento: {venc_str}
+                            &nbsp;·&nbsp; {dias_str}
+                            &nbsp;·&nbsp; Qtd: {qtd} un
+                            &nbsp;·&nbsp; Valor: R$ {valor:,.2f}
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+
+                # ── Download CSV ──────────────────────────────────────────
+                st.markdown("---")
+                csv_val = df_show[["GRUPO","PRODUTO","LOTE","FABRICACAO","VENCIMENTO","QUANTIDADE","VALOR","STATUS","DIAS"]].copy()
+                csv_val["FABRICACAO"] = csv_val["FABRICACAO"].dt.strftime("%d/%m/%Y")
+                csv_val["VENCIMENTO"] = csv_val["VENCIMENTO"].dt.strftime("%d/%m/%Y")
+                csv_bytes = csv_val.to_csv(index=False).encode("utf-8-sig")
+                st.download_button(
+                    "⬇️ Exportar lista filtrada (.csv)",
+                    data=csv_bytes,
+                    file_name=f"validade_{datetime.now().strftime('%Y%m%d')}.csv",
+                    mime="text/csv",
+                    key="val_download"
+                )
+
+            except Exception as e:
+                st.error(f"❌ Erro ao processar planilha: {e}")
+                st.info("Verifique se o arquivo é a planilha SIG de validade com as colunas: FILIAL, GRUPO, PRODUTO, LOTE, FABRICAÇÃO, VENCIMENTO, QUANTIDADE, VALOR")
+        else:
+            st.markdown("""
+            <div style="text-align:center;padding:40px 20px;color:#64748b;">
+                <div style="font-size:2.5rem;margin-bottom:12px;">📋</div>
+                <div style="font-size:0.9rem;margin-bottom:6px;">Nenhuma planilha carregada</div>
+                <div style="font-size:0.75rem;">Faça upload da planilha SIG de validade acima para visualizar os dados</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
