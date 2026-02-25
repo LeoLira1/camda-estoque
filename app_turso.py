@@ -1167,9 +1167,11 @@ def get_contagem_itens() -> "pd.DataFrame":
 def atualizar_item_contagem(
     item_id: int, status: str, motivo: str = "",
     qtd_divergencia: int = 0, codigo: str = "", qtd_sistema: int = 0
-) -> None:
+) -> bool:
+    """Atualiza item da contagem e reflete em estoque_mestre. Retorna True se atualizou estoque."""
     conn = get_db()
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    rows_afetadas = 0
 
     conn.execute(
         "UPDATE contagem_itens SET status=?, motivo=?, qtd_divergencia=? WHERE id=?",
@@ -1180,7 +1182,7 @@ def atualizar_item_contagem(
         if status == "divergencia":
             qtd_fisica = max(0, qtd_sistema - qtd_divergencia)
             diferenca = qtd_fisica - qtd_sistema
-            conn.execute("""
+            cur = conn.execute("""
                 UPDATE estoque_mestre SET
                     status = 'falta',
                     qtd_fisica = ?,
@@ -1189,6 +1191,8 @@ def atualizar_item_contagem(
                     ultima_contagem = ?
                 WHERE codigo = ?
             """, [qtd_fisica, diferenca, motivo, now, codigo])
+            rows_afetadas = getattr(cur, "rowcount", -1)
+
         elif status in ("certa", "pendente"):
             conn.execute("""
                 UPDATE estoque_mestre SET
@@ -1200,6 +1204,16 @@ def atualizar_item_contagem(
                 WHERE codigo = ? AND status = 'falta'
             """, [now, codigo])
 
+    # Só commit local — não chama sync_db() aqui para evitar que o pull
+    # do Turso sobrescreva o write antes de ele ser confirmado no remoto.
+    conn.commit()
+    return rows_afetadas != 0
+
+
+def limpar_contagem() -> None:
+    """Apaga todos os itens da contagem atual."""
+    conn = get_db()
+    conn.execute("DELETE FROM contagem_itens")
     conn.commit()
     sync_db()
 
@@ -2691,14 +2705,24 @@ if has_mestre:
             n_divs = int((df_ct["status"] == "divergencia").sum())
             n_pend = int((df_ct["status"] == "pendente").sum())
 
-            st.markdown(f"""
-            <div class="stat-row">
-                <div class="stat-card"><div class="stat-value">{n_total}</div><div class="stat-label">Total</div></div>
-                <div class="stat-card"><div class="stat-value">{n_certas}</div><div class="stat-label">Certas</div></div>
-                <div class="stat-card"><div class="stat-value red">{n_divs}</div><div class="stat-label">Divergências</div></div>
-                <div class="stat-card"><div class="stat-value amber">{n_pend}</div><div class="stat-label">Pendentes</div></div>
-            </div>
-            """, unsafe_allow_html=True)
+            hdr_col, btn_col = st.columns([5, 1])
+            with hdr_col:
+                st.markdown(f"""
+                <div class="stat-row">
+                    <div class="stat-card"><div class="stat-value">{n_total}</div><div class="stat-label">Total</div></div>
+                    <div class="stat-card"><div class="stat-value">{n_certas}</div><div class="stat-label">Certas</div></div>
+                    <div class="stat-card"><div class="stat-value red">{n_divs}</div><div class="stat-label">Divergências</div></div>
+                    <div class="stat-card"><div class="stat-value amber">{n_pend}</div><div class="stat-label">Pendentes</div></div>
+                </div>
+                """, unsafe_allow_html=True)
+            with btn_col:
+                if st.button("🗑️ Limpar lista", key="ct_limpar", help="Apaga toda a contagem atual"):
+                    limpar_contagem()
+                    st.rerun()
+
+            # Banner de conclusão quando tudo foi revisado
+            if n_pend == 0 and n_total > 0:
+                st.success(f"✅ Contagem concluída! {n_certas} certa(s) · {n_divs} divergência(s). Clique em 'Limpar lista' para encerrar.")
 
             if "contagem_div_open" not in st.session_state:
                 st.session_state.contagem_div_open = set()
@@ -2781,11 +2805,13 @@ if has_mestre:
                         with fc3:
                             st.markdown("<div style='margin-top:26px'>", unsafe_allow_html=True)
                             if st.button("Confirmar", key=f"ct_conf_{item_id}", type="primary", use_container_width=True):
-                                atualizar_item_contagem(
+                                ok = atualizar_item_contagem(
                                     item_id, "divergencia",
                                     motivo_val.strip(), int(qty_val),
                                     codigo=_cod, qtd_sistema=_qtd_sis
                                 )
+                                if not ok:
+                                    st.warning(f"⚠️ Divergência salva na contagem, mas não refletiu no estoque (código: {_cod}). Reporte ao suporte.")
                                 st.session_state.contagem_div_open.discard(item_id)
                                 st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
