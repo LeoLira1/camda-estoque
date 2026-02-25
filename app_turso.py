@@ -47,11 +47,243 @@ def get_weather_quirinopolis():
     except Exception:
         return None, "🌡️", ""
 
+
+@st.cache_data(ttl=1800)
+def get_weather_forecast_quirinopolis():
+    """Retorna previsão completa de 6 dias para Quirinópolis."""
+    try:
+        import urllib.request, json
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            "?latitude=-18.45&longitude=-50.45"
+            "&current=temperature_2m,weathercode,relative_humidity_2m,wind_speed_10m"
+            "&daily=temperature_2m_max,temperature_2m_min,weathercode"
+            ",sunrise,sunset,precipitation_probability_max"
+            "&timezone=America%2FSao_Paulo"
+            "&forecast_days=6"
+        )
+        with urllib.request.urlopen(url, timeout=5) as r:
+            return json.loads(r.read())
+    except Exception:
+        return None
+
+
 # ── Session State ────────────────────────────────────────────────────────────
 if "processed_file" not in st.session_state:
     st.session_state.processed_file = None
 if "confirm_reset" not in st.session_state:
     st.session_state.confirm_reset = False
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+if "login_error" not in st.session_state:
+    st.session_state.login_error = False
+
+# ── Login Screen ─────────────────────────────────────────────────────────────
+if not st.session_state.authenticated:
+    _DIAS_PT_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+    _DIAS_PT      = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
+    def _wcode_emoji_login(code):
+        if code is None: return "🌡️"
+        code = int(code)
+        if code == 0:               return "☀️"
+        elif code in (1, 2):        return "🌤️"
+        elif code == 3:             return "☁️"
+        elif code in (45, 48):      return "🌫️"
+        elif code in (51,53,55):    return "🌦️"
+        elif code in (61,63,65,80,81,82): return "🌧️"
+        elif code in (95,96,99):    return "⛈️"
+        elif code in (71,73,75,77): return "❄️"
+        else:                       return "🌡️"
+
+    def _wcode_desc_login(code):
+        if code is None: return ""
+        code = int(code)
+        if code == 0:               return "Céu limpo"
+        elif code in (1, 2):        return "Poucas nuvens"
+        elif code == 3:             return "Nublado"
+        elif code in (45, 48):      return "Névoa"
+        elif code in (51,53,55):    return "Chuvisco"
+        elif code in (61,63,65):    return "Chuva"
+        elif code in (80,81,82):    return "Pancadas"
+        elif code in (95,96,99):    return "Tempestade"
+        else:                       return ""
+
+    st.markdown("""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
+    .stApp {
+        background: linear-gradient(160deg,#1c2e52 0%,#2d3e6e 20%,#3d3060 45%,#6b3a5a 65%,#3d5a7a 85%,#1c3a5a 100%);
+        font-family:'Outfit',sans-serif;
+    }
+    #MainMenu,footer,header{visibility:hidden;}
+    .block-container{padding:1.5rem 1rem !important;max-width:100% !important;}
+    .stTextInput>div>div>input{
+        background:rgba(255,255,255,0.1) !important;
+        border:1px solid rgba(255,255,255,0.22) !important;
+        border-radius:30px !important;
+        color:white !important;
+        padding:12px 20px !important;
+        font-size:1rem !important;
+        text-align:center;
+        font-family:'Outfit',sans-serif !important;
+        letter-spacing:1px;
+    }
+    .stTextInput>div>div>input::placeholder{color:rgba(255,255,255,0.4) !important;}
+    .stTextInput label{display:none !important;}
+    .stForm{border:none !important;padding:0 !important;}
+    .stFormSubmitButton>button{
+        background:rgba(255,255,255,0.12) !important;
+        border:1px solid rgba(255,255,255,0.28) !important;
+        border-radius:30px !important;
+        color:white !important;
+        font-size:0.95rem !important;
+        font-weight:600 !important;
+        letter-spacing:1.5px !important;
+        padding:10px !important;
+        font-family:'Outfit',sans-serif !important;
+        transition:background .2s !important;
+        width:100%;
+    }
+    .stFormSubmitButton>button:hover{background:rgba(255,255,255,0.22) !important;}
+    @media(max-width:640px){.block-container{padding:0.8rem 0.5rem !important;}}
+    </style>
+    """, unsafe_allow_html=True)
+
+    wd = get_weather_forecast_quirinopolis()
+    _now = datetime.now()
+    _hora = _now.strftime("%H:%M")
+    _dia_nome = _DIAS_PT_FULL[_now.weekday()]
+    _data_fmt  = _now.strftime("%d/%m/%Y")
+
+    if wd:
+        cur   = wd["current"]
+        daily = wd["daily"]
+
+        temp_cur  = round(cur["temperature_2m"])
+        wcode_cur = int(cur["weathercode"])
+        humid     = round(cur.get("relative_humidity_2m", 0))
+        vento     = round(cur.get("wind_speed_10m", 0))
+        emoji_cur = _wcode_emoji_login(wcode_cur)
+        desc_cur  = _wcode_desc_login(wcode_cur)
+
+        sunrise_raw = daily["sunrise"][0]
+        sunset_raw  = daily["sunset"][0]
+        sunrise_t   = sunrise_raw.split("T")[1][:5] if "T" in sunrise_raw else sunrise_raw
+        sunset_t    = sunset_raw.split("T")[1][:5]  if "T" in sunset_raw  else sunset_raw
+        try:
+            sr_h, sr_m = map(int, sunrise_t.split(":"))
+            ss_h, ss_m = map(int, sunset_t.split(":"))
+            dur_min = (ss_h * 60 + ss_m) - (sr_h * 60 + sr_m)
+            dur_str = f"{dur_min // 60}h {dur_min % 60}m"
+        except Exception:
+            dur_str = ""
+
+        chuva_pct = int(daily["precipitation_probability_max"][0] or 0)
+
+        dias_cards_html = ""
+        for i in range(6):
+            date_str = daily["time"][i]
+            dt_d = datetime.strptime(date_str, "%Y-%m-%d")
+            nome_d = "Hoje" if i == 0 else _DIAS_PT[dt_d.weekday()]
+            em_d   = _wcode_emoji_login(daily["weathercode"][i])
+            tmax   = round(daily["temperature_2m_max"][i])
+            tmin   = round(daily["temperature_2m_min"][i])
+            bg_d   = "rgba(255,255,255,0.15)" if i == 0 else "rgba(255,255,255,0.05)"
+            bd_d   = "border:1px solid rgba(255,255,255,0.22);" if i == 0 else ""
+            fw_d   = "700" if i == 0 else "400"
+            dias_cards_html += (
+                f'<div style="flex:1;background:{bg_d};border-radius:14px;padding:8px 2px;'
+                f'text-align:center;{bd_d}">'
+                f'<div style="font-size:0.56rem;color:rgba(255,255,255,0.65);'
+                f'margin-bottom:3px;font-weight:{fw_d};">{nome_d}</div>'
+                f'<div style="font-size:1.05rem;margin:2px 0;">{em_d}</div>'
+                f'<div style="font-size:0.75rem;font-weight:700;color:#fff;">{tmax}°</div>'
+                f'<div style="font-size:0.58rem;color:rgba(255,255,255,0.42);">{tmin}°</div>'
+                f'</div>'
+            )
+
+        card_weather = f"""
+<div style="
+    background:rgba(30,40,80,0.45);
+    backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
+    border:1px solid rgba(255,255,255,0.13);
+    border-radius:28px;padding:22px 18px 16px 18px;
+    color:#fff;font-family:'Outfit',sans-serif;
+    box-shadow:0 20px 60px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.1);
+    margin-bottom:12px;">
+  <div style="text-align:center;font-size:0.72rem;color:rgba(255,255,255,0.5);
+              margin-bottom:12px;letter-spacing:.5px;">{_dia_nome}, {_data_fmt} · {_hora}</div>
+  <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:14px;">
+    <span style="font-size:3rem;line-height:1;">{emoji_cur}</span>
+    <div>
+      <div style="font-size:1.7rem;font-weight:700;line-height:1.15;">{temp_cur}°C</div>
+      <div style="font-size:0.8rem;color:rgba(255,255,255,0.6);">{desc_cur}</div>
+      <div style="font-size:0.7rem;color:rgba(255,255,255,0.42);margin-top:1px;">Quirinópolis, GO</div>
+    </div>
+  </div>
+  <div style="background:rgba(0,0,0,0.22);border-radius:30px;padding:7px 14px;
+              display:flex;justify-content:space-between;align-items:center;
+              margin-bottom:6px;font-size:0.7rem;">
+    <span>🌅 {sunrise_t}</span>
+    <span style="color:rgba(255,255,255,0.38);font-size:0.58rem;">── {dur_str} ──</span>
+    <span>🌇 {sunset_t}</span>
+  </div>
+  <div style="background:rgba(0,0,0,0.28);border-radius:30px;padding:7px 14px;
+              display:flex;align-items:center;justify-content:center;gap:8px;
+              margin-bottom:10px;font-size:0.82rem;font-weight:600;">
+    🌧️ Chuva hoje: {chuva_pct}%
+  </div>
+  <div style="display:flex;justify-content:space-between;margin-bottom:14px;
+              font-size:0.7rem;color:rgba(255,255,255,0.6);">
+    <span>💧 Umidade: {humid}%</span>
+    <span>💨 Vento: {vento} km/h</span>
+  </div>
+  <div style="display:flex;gap:4px;">{dias_cards_html}</div>
+</div>"""
+    else:
+        card_weather = f"""
+<div style="
+    background:rgba(30,40,80,0.45);backdrop-filter:blur(28px);
+    border:1px solid rgba(255,255,255,0.13);border-radius:28px;
+    padding:24px 18px;color:#fff;font-family:'Outfit',sans-serif;
+    text-align:center;margin-bottom:12px;">
+  <div style="font-size:0.72rem;color:rgba(255,255,255,0.5);margin-bottom:12px;">
+    {_dia_nome}, {_data_fmt} · {_hora}</div>
+  <div style="font-size:2.5rem;margin:10px 0;">🌡️</div>
+  <div style="font-size:0.85rem;color:rgba(255,255,255,0.5);">Clima indisponível</div>
+  <div style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-top:4px;">Quirinópolis, GO</div>
+</div>"""
+
+    _, col_login, _ = st.columns([1, 1.5, 1])
+    with col_login:
+        st.markdown(card_weather, unsafe_allow_html=True)
+        with st.form("form_login"):
+            senha_input = st.text_input(
+                "senha", type="password",
+                placeholder="🔑 Senha de acesso",
+                label_visibility="collapsed",
+            )
+            submitted = st.form_submit_button("ENTRAR", use_container_width=True)
+            if submitted:
+                if senha_input == "força":
+                    st.session_state.authenticated = True
+                    st.session_state.login_error = False
+                    st.rerun()
+                else:
+                    st.session_state.login_error = True
+                    st.rerun()
+
+        if st.session_state.login_error:
+            st.markdown(
+                '<div style="background:rgba(255,71,87,0.15);border:1px solid rgba(255,71,87,0.3);'
+                'border-radius:12px;padding:8px 16px;color:#ff6b7a;text-align:center;'
+                'font-size:0.85rem;margin-top:6px;">❌ Senha incorreta</div>',
+                unsafe_allow_html=True
+            )
+
+    st.stop()
+
 
 # ── CSS ──────────────────────────────────────────────────────────────────────
 st.markdown("""
