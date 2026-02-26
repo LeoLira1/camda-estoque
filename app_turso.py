@@ -1911,23 +1911,38 @@ def get_vendas_por_dia() -> pd.DataFrame:
     return pd.DataFrame()
 
 
+_RE_LONA_DIM = re.compile(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)')
+
+
 def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
     """Retorna os top N produtos mais vendidos no período acumulado.
 
-    Produtos do grupo LONAS são excluídos pois são comercializados em m²
-    (ex: filme agrícola 10x50 = 500 m²/unidade), o que distorce o ranking.
+    Para lonas/filmes agrícolas cujo nome contém dimensões (ex: 10x50),
+    o total em m² é convertido para unidades (rolos) dividindo pela área.
+    Lonas sem dimensões no nome permanecem com contagem por unidade.
     """
     try:
-        rows = get_db().execute(f"""
+        rows = get_db().execute("""
             SELECT produto, grupo, SUM(qtd_vendida) AS total
               FROM vendas_historico
-             WHERE grupo != 'LONAS'
              GROUP BY codigo
              ORDER BY total DESC
-             LIMIT {top_n}
         """).fetchall()
         if rows:
-            return pd.DataFrame(rows, columns=["produto", "grupo", "total"])
+            df = pd.DataFrame(rows, columns=["produto", "grupo", "total"])
+
+            def _ajustar_lona(r):
+                if r["grupo"] == "LONAS":
+                    m = _RE_LONA_DIM.search(r["produto"])
+                    if m:
+                        area = (float(m.group(1).replace(",", "."))
+                                * float(m.group(2).replace(",", ".")))
+                        if area > 0:
+                            return max(1, round(r["total"] / area))
+                return r["total"]
+
+            df["total"] = df.apply(_ajustar_lona, axis=1)
+            return df.nlargest(top_n, "total").reset_index(drop=True)
     except Exception:
         pass
     return pd.DataFrame()
