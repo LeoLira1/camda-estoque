@@ -112,6 +112,26 @@ if not st.session_state.authenticated:
         elif code in (95,96,99):    return "Tempestade"
         else:                       return ""
 
+    def _wcode_bg_gradient(code):
+        if code is None: return "linear-gradient(160deg,#1e3c72 0%,#2a5298 100%)"
+        code = int(code)
+        if code == 0:
+            return "linear-gradient(160deg,#0f2027 0%,#203a43 45%,#2c5364 100%)"
+        elif code in (1, 2):
+            return "linear-gradient(160deg,#1565c0 0%,#1976d2 50%,#5e92c8 100%)"
+        elif code == 3:
+            return "linear-gradient(160deg,#2c3e50 0%,#3d5166 50%,#4a6274 100%)"
+        elif code in (45, 48):
+            return "linear-gradient(160deg,#4a5568 0%,#718096 50%,#8fa3b1 100%)"
+        elif code in (51,53,55,61,63,65,80,81,82):
+            return "linear-gradient(160deg,#0d1b3e 0%,#1a3a5c 45%,#1e5799 100%)"
+        elif code in (95,96,99):
+            return "linear-gradient(160deg,#0f0c29 0%,#302b63 50%,#24243e 100%)"
+        elif code in (71,73,75,77):
+            return "linear-gradient(160deg,#2c3e50 0%,#3d5a73 50%,#6b8fa6 100%)"
+        else:
+            return "linear-gradient(160deg,#1e3c72 0%,#2a5298 100%)"
+
     st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
@@ -195,70 +215,86 @@ if not st.session_state.authenticated:
             em_d   = _wcode_emoji_login(daily["weathercode"][i])
             tmax   = round(daily["temperature_2m_max"][i])
             tmin   = round(daily["temperature_2m_min"][i])
-            bg_d   = "rgba(255,255,255,0.15)" if i == 0 else "rgba(255,255,255,0.05)"
-            bd_d   = "border:1px solid rgba(255,255,255,0.22);" if i == 0 else ""
+            bg_d   = "rgba(255,255,255,0.18)" if i == 0 else "rgba(0,0,0,0.18)"
+            bd_d   = "border:1px solid rgba(255,255,255,0.28);" if i == 0 else "border:1px solid rgba(255,255,255,0.06);"
             fw_d   = "700" if i == 0 else "400"
             dias_cards_html += (
-                f'<div style="flex:1;background:{bg_d};border-radius:14px;padding:8px 2px;'
+                f'<div style="flex:1;background:{bg_d};border-radius:14px;padding:9px 2px;'
                 f'text-align:center;{bd_d}">'
-                f'<div style="font-size:0.56rem;color:rgba(255,255,255,0.65);'
-                f'margin-bottom:3px;font-weight:{fw_d};">{nome_d}</div>'
-                f'<div style="font-size:1.05rem;margin:2px 0;">{em_d}</div>'
-                f'<div style="font-size:0.75rem;font-weight:700;color:#fff;">{tmax}°</div>'
-                f'<div style="font-size:0.58rem;color:rgba(255,255,255,0.42);">{tmin}°</div>'
+                f'<div style="font-size:0.55rem;color:rgba(255,255,255,0.6);'
+                f'margin-bottom:4px;font-weight:{fw_d};text-transform:uppercase;letter-spacing:0.3px;">{nome_d}</div>'
+                f'<div style="font-size:1.1rem;margin:3px 0;'
+                f'filter:drop-shadow(0 2px 6px rgba(255,255,255,0.2));">{em_d}</div>'
+                f'<div style="font-size:0.78rem;font-weight:700;color:#fff;margin-top:2px;">{tmax}°</div>'
+                f'<div style="font-size:0.58rem;color:rgba(255,255,255,0.4);">{tmin}°</div>'
                 f'</div>'
             )
 
+        _bg_grad = _wcode_bg_gradient(wcode_cur)
         card_weather = f"""
 <div style="
-    background:rgba(30,40,80,0.45);
-    backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);
-    border:1px solid rgba(255,255,255,0.13);
-    border-radius:28px;padding:22px 18px 16px 18px;
+    background:{_bg_grad};
+    border-radius:28px;padding:26px 20px 18px;
     color:#fff;font-family:'Outfit',sans-serif;
-    box-shadow:0 20px 60px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.1);
-    margin-bottom:12px;">
-  <div style="text-align:center;font-size:0.72rem;color:rgba(255,255,255,0.5);
-              margin-bottom:12px;letter-spacing:.5px;">{_dia_nome}, {_data_fmt} · {_hora}</div>
-  <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:14px;">
-    <span style="font-size:3rem;line-height:1;">{emoji_cur}</span>
-    <div>
-      <div style="font-size:1.7rem;font-weight:700;line-height:1.15;">{temp_cur}°C</div>
-      <div style="font-size:0.8rem;color:rgba(255,255,255,0.6);">{desc_cur}</div>
-      <div style="font-size:0.7rem;color:rgba(255,255,255,0.42);margin-top:1px;">Quirinópolis, GO</div>
+    box-shadow:0 24px 64px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.12);
+    position:relative;overflow:hidden;margin-bottom:12px;">
+  <div style="position:absolute;top:-55px;right:-55px;width:210px;height:210px;
+              border-radius:50%;background:rgba(255,255,255,0.055);pointer-events:none;"></div>
+  <div style="position:absolute;bottom:-75px;left:-65px;width:260px;height:260px;
+              border-radius:50%;background:rgba(255,255,255,0.035);pointer-events:none;"></div>
+  <div style="font-size:0.75rem;color:rgba(255,255,255,0.55);letter-spacing:0.5px;
+              margin-bottom:20px;position:relative;">
+    {_dia_nome} &nbsp;·&nbsp; {_data_fmt} &nbsp;·&nbsp; {_hora}
+  </div>
+  <div style="text-align:center;padding:4px 0 18px;position:relative;">
+    <div style="font-size:5rem;line-height:1;margin-bottom:10px;
+                filter:drop-shadow(0 6px 16px rgba(255,255,255,0.25));">{emoji_cur}</div>
+    <div style="font-size:4.2rem;font-weight:700;line-height:1;letter-spacing:-2px;
+                text-shadow:0 4px 24px rgba(0,0,0,0.3);">{temp_cur}°</div>
+    <div style="font-size:1rem;font-weight:500;color:rgba(255,255,255,0.85);margin-top:10px;">{desc_cur}</div>
+    <div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-top:5px;">📍 Quirinópolis, GO</div>
+  </div>
+  <div style="display:flex;background:rgba(0,0,0,0.22);border-radius:18px;
+              padding:14px 6px;margin-bottom:12px;position:relative;">
+    <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.1);">
+      <div style="font-size:1.3rem;margin-bottom:3px;">💧</div>
+      <div style="font-size:1.05rem;font-weight:700;">{humid}%</div>
+      <div style="font-size:0.6rem;color:rgba(255,255,255,0.48);margin-top:2px;">Umidade</div>
+    </div>
+    <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.1);">
+      <div style="font-size:1.3rem;margin-bottom:3px;">💨</div>
+      <div style="font-size:1.05rem;font-weight:700;">{vento} km/h</div>
+      <div style="font-size:0.6rem;color:rgba(255,255,255,0.48);margin-top:2px;">Vento</div>
+    </div>
+    <div style="flex:1;text-align:center;">
+      <div style="font-size:1.3rem;margin-bottom:3px;">🌧️</div>
+      <div style="font-size:1.05rem;font-weight:700;">{chuva_pct}%</div>
+      <div style="font-size:0.6rem;color:rgba(255,255,255,0.48);margin-top:2px;">Chuva</div>
     </div>
   </div>
-  <div style="background:rgba(0,0,0,0.22);border-radius:30px;padding:7px 14px;
+  <div style="background:rgba(0,0,0,0.18);border-radius:30px;padding:7px 16px;
               display:flex;justify-content:space-between;align-items:center;
-              margin-bottom:6px;font-size:0.7rem;">
+              font-size:0.7rem;margin-bottom:14px;position:relative;">
     <span>🌅 {sunrise_t}</span>
-    <span style="color:rgba(255,255,255,0.38);font-size:0.58rem;">── {dur_str} ──</span>
+    <span style="color:rgba(255,255,255,0.3);font-size:0.58rem;">── {dur_str} ──</span>
     <span>🌇 {sunset_t}</span>
   </div>
-  <div style="background:rgba(0,0,0,0.28);border-radius:30px;padding:7px 14px;
-              display:flex;align-items:center;justify-content:center;gap:8px;
-              margin-bottom:10px;font-size:0.82rem;font-weight:600;">
-    🌧️ Chuva hoje: {chuva_pct}%
-  </div>
-  <div style="display:flex;justify-content:space-between;margin-bottom:14px;
-              font-size:0.7rem;color:rgba(255,255,255,0.6);">
-    <span>💧 Umidade: {humid}%</span>
-    <span>💨 Vento: {vento} km/h</span>
-  </div>
-  <div style="display:flex;gap:4px;">{dias_cards_html}</div>
+  <div style="display:flex;gap:4px;position:relative;">{dias_cards_html}</div>
 </div>"""
     else:
         card_weather = f"""
 <div style="
-    background:rgba(30,40,80,0.45);backdrop-filter:blur(28px);
-    border:1px solid rgba(255,255,255,0.13);border-radius:28px;
-    padding:24px 18px;color:#fff;font-family:'Outfit',sans-serif;
+    background:linear-gradient(160deg,#1e3c72 0%,#2a5298 100%);
+    border-radius:28px;padding:32px 20px;
+    color:#fff;font-family:'Outfit',sans-serif;
+    box-shadow:0 24px 64px rgba(0,0,0,0.5);
     text-align:center;margin-bottom:12px;">
-  <div style="font-size:0.72rem;color:rgba(255,255,255,0.5);margin-bottom:12px;">
-    {_dia_nome}, {_data_fmt} · {_hora}</div>
-  <div style="font-size:2.5rem;margin:10px 0;">🌡️</div>
-  <div style="font-size:0.85rem;color:rgba(255,255,255,0.5);">Clima indisponível</div>
-  <div style="font-size:0.7rem;color:rgba(255,255,255,0.35);margin-top:4px;">Quirinópolis, GO</div>
+  <div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-bottom:20px;">
+    {_dia_nome} &nbsp;·&nbsp; {_data_fmt} &nbsp;·&nbsp; {_hora}</div>
+  <div style="font-size:3.5rem;margin:14px 0;
+              filter:drop-shadow(0 4px 12px rgba(255,255,255,0.2));">🌡️</div>
+  <div style="font-size:0.9rem;color:rgba(255,255,255,0.5);">Clima indisponível</div>
+  <div style="font-size:0.72rem;color:rgba(255,255,255,0.3);margin-top:6px;">📍 Quirinópolis, GO</div>
 </div>"""
 
     _, col_login, _ = st.columns([1, 1.5, 1])
