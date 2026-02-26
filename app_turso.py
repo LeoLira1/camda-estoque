@@ -3705,7 +3705,7 @@ if has_mestre:
                 df_top["nome_curto"] = df_top["produto"].apply(
                     lambda p: (p.split(" - ")[-1] if " - " in p else p)[:35]
                 )
-                cores_top = [_group_color(g) for g in df_top["grupo"]]
+                cores_top = [_get_color(g) for g in df_top["grupo"]]
 
                 fig_top_h = go.Figure()
                 fig_top_h.add_trace(go.Bar(
