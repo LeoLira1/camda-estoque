@@ -1784,59 +1784,145 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
 def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, is_mestre: bool = False):
     """Salva dados de vendas no histórico para gráficos.
-    - MESTRE: substitui tudo (carga completa do ano)
-    - PARCIAL: atualiza apenas os produtos que vieram, mantém o resto
+    - MESTRE: substitui tudo (carga completa)
+    - PARCIAL: ACUMULA por dia — cada dia gera uma linha separada por produto.
+      Se já existe registro para (codigo, hoje) soma a qtd_vendida.
     """
     try:
         conn = get_db()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        hoje = date.today().isoformat()          # "YYYY-MM-DD" — chave do dia
 
         if is_mestre:
-            # Carga completa — substitui tudo
             conn.execute("DELETE FROM vendas_historico")
-        else:
-            # Parcial — remove só os que vieram pra atualizar
-            codigos_update = [r["codigo"] for r in records]
+            rows = []
+            for r in records:
+                rows.append((r["codigo"], r["produto"],
+                             r.get("categoria", "OUTROS"),
+                             r.get("qtd_vendida", 0),
+                             r.get("qtd_sistema", 0), hoje))
             if zerados:
                 for z in zerados:
                     if isinstance(z, dict):
-                        codigos_update.append(z["codigo"])
-            if codigos_update:
-                # Deletar em batches de 500 pra não estourar limite de params
-                for i in range(0, len(codigos_update), 500):
-                    batch = codigos_update[i:i+500]
-                    ph = ",".join(["?" for _ in batch])
-                    conn.execute(f"DELETE FROM vendas_historico WHERE codigo IN ({ph})", batch)
+                        rows.append((z["codigo"], z["produto"],
+                                     z.get("grupo", "OUTROS"),
+                                     z.get("qtd_vendida", 0), 0, hoje))
+            if rows:
+                conn.executemany("""
+                    INSERT INTO vendas_historico
+                        (codigo, produto, grupo, qtd_vendida, qtd_estoque, data_upload)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, rows)
+        else:
+            # ── PARCIAL: acumula dia a dia ────────────────────────────────
+            # Descobre quais códigos já têm registro HOJE
+            todos_records = list(records or []) + [z for z in (zerados or []) if isinstance(z, dict)]
+            if not todos_records:
+                conn.commit()
+                sync_db()
+                return
 
-        rows = []
-        for r in records:
-            qtd_v = r.get("qtd_vendida", 0)
-            qtd_e = r.get("qtd_sistema", 0)
-            grupo = r.get("categoria", "OUTROS")
-            rows.append((r["codigo"], r["produto"], grupo, qtd_v, qtd_e, now))
-        # Incluir zerados
-        if zerados:
-            for z in zerados:
-                if isinstance(z, dict):
-                    rows.append((z["codigo"], z["produto"], z.get("grupo", "OUTROS"), z.get("qtd_vendida", 0), 0, now))
-        if rows:
-            conn.executemany("""
-                INSERT INTO vendas_historico (codigo, produto, grupo, qtd_vendida, qtd_estoque, data_upload)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, rows)
-            conn.commit()
-            sync_db()
+            codigos_hoje_rows = conn.execute(
+                "SELECT codigo FROM vendas_historico WHERE data_upload = ?", (hoje,)
+            ).fetchall()
+            codigos_hoje = {r[0] for r in codigos_hoje_rows}
+
+            updates, inserts = [], []
+            for r in todos_records:
+                cod  = r["codigo"]
+                prod = r.get("produto", cod)
+                grp  = r.get("categoria") or r.get("grupo", "OUTROS")
+                qtdv = r.get("qtd_vendida", 0)
+                qtde = r.get("qtd_sistema", 0)
+                if cod in codigos_hoje:
+                    updates.append((qtdv, qtde, cod, hoje))
+                else:
+                    inserts.append((cod, prod, grp, qtdv, qtde, hoje))
+                    codigos_hoje.add(cod)   # evita duplicar na mesma chamada
+
+            if updates:
+                conn.executemany("""
+                    UPDATE vendas_historico
+                       SET qtd_vendida = qtd_vendida + ?,
+                           qtd_estoque = ?
+                     WHERE codigo = ? AND data_upload = ?
+                """, updates)
+            if inserts:
+                conn.executemany("""
+                    INSERT INTO vendas_historico
+                        (codigo, produto, grupo, qtd_vendida, qtd_estoque, data_upload)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                """, inserts)
+
+        conn.commit()
+        sync_db()
     except Exception:
         pass
 
 
 def get_vendas_historico() -> pd.DataFrame:
+    """Retorna vendas ACUMULADAS por produto (soma de todos os dias)."""
     try:
-        rows = get_db().execute(
-            "SELECT codigo, produto, grupo, qtd_vendida, qtd_estoque, data_upload FROM vendas_historico ORDER BY qtd_vendida DESC"
-        ).fetchall()
+        rows = get_db().execute("""
+            SELECT codigo, produto, grupo,
+                   SUM(qtd_vendida)  AS qtd_vendida,
+                   MAX(qtd_estoque)  AS qtd_estoque,
+                   MAX(data_upload)  AS data_upload
+              FROM vendas_historico
+             GROUP BY codigo
+             ORDER BY SUM(qtd_vendida) DESC
+        """).fetchall()
         if rows:
             return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "qtd_vendida", "qtd_estoque", "data_upload"])
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+def get_periodo_vendas() -> int:
+    """Retorna o número de dias distintos com vendas registradas."""
+    try:
+        row = get_db().execute(
+            "SELECT COUNT(DISTINCT data_upload) FROM vendas_historico"
+        ).fetchone()
+        if row and row[0]:
+            return max(int(row[0]), 1)
+    except Exception:
+        pass
+    return 1
+
+
+def get_vendas_por_dia() -> pd.DataFrame:
+    """Retorna total de unidades vendidas por dia (para o gráfico de histórico)."""
+    try:
+        rows = get_db().execute("""
+            SELECT data_upload              AS dia,
+                   SUM(qtd_vendida)         AS total_vendido,
+                   COUNT(DISTINCT codigo)   AS produtos_vendidos
+              FROM vendas_historico
+             GROUP BY data_upload
+             ORDER BY data_upload ASC
+        """).fetchall()
+        if rows:
+            df = pd.DataFrame(rows, columns=["dia", "total_vendido", "produtos_vendidos"])
+            df["dia"] = pd.to_datetime(df["dia"]).dt.date
+            return df
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
+    """Retorna os top N produtos mais vendidos no período acumulado."""
+    try:
+        rows = get_db().execute(f"""
+            SELECT produto, grupo, SUM(qtd_vendida) AS total
+              FROM vendas_historico
+             GROUP BY codigo
+             ORDER BY total DESC
+             LIMIT {top_n}
+        """).fetchall()
+        if rows:
+            return pd.DataFrame(rows, columns=["produto", "grupo", "total"])
     except Exception:
         pass
     return pd.DataFrame()
@@ -1879,6 +1965,8 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
     if df_vendas.empty:
         st.info("📊 Nenhum dado de vendas carregado ainda. Faça upload de uma planilha de vendas para ativar os gráficos.")
         return
+
+    _periodo_vendas = get_periodo_vendas()
 
     # ── Dados agregados por grupo ────────────────────────────────────────
     df_grupo = df_vendas.groupby("grupo", as_index=False).agg(
@@ -2063,10 +2151,10 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
     # TAB 3 — TAXA DE GIRO (BURN RATE)
     # ══════════════════════════════════════════════════════════════════════
     with vt3:
-        st.caption("Estimativa de dias até zerar estoque no ritmo atual (baseado nos últimos 47 dias de vendas)")
+        st.caption(f"Estimativa de dias até zerar estoque no ritmo atual (baseado nos últimos **{_periodo_vendas} dia{'s' if _periodo_vendas != 1 else ''}** de vendas acumuladas)")
 
         df_burn = df_grupo[df_grupo["qtd_vendida"] > 0].copy()
-        df_burn["dias_estoque"] = (df_burn["qtd_estoque"] / df_burn["qtd_vendida"] * 47).round(0).astype(int)
+        df_burn["dias_estoque"] = (df_burn["qtd_estoque"] / df_burn["qtd_vendida"] * _periodo_vendas).round(0).astype(int)
         df_burn = df_burn.sort_values("dias_estoque").head(12)
 
         if not df_burn.empty:
@@ -2458,7 +2546,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -3546,6 +3634,122 @@ if has_mestre:
                 mime="text/csv",
                 key="val_download"
             )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 11 — HISTÓRICO DE VENDAS
+    # ══════════════════════════════════════════════════════════════════════════
+    with t11:
+        st.markdown("#### 📊 Histórico de Vendas")
+
+        df_dia   = get_vendas_por_dia()
+        df_top   = get_top_produtos_historico(top_n=20)
+        periodo  = get_periodo_vendas()
+
+        if df_dia.empty:
+            st.markdown("""
+            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.3);">
+                <div style="font-size:2.5rem;">📊</div>
+                <div>Nenhum histórico ainda. Comece a enviar as planilhas diárias de vendas.</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            # ── KPIs do período ──────────────────────────────────────────
+            total_unidades = int(df_dia["total_vendido"].sum())
+            media_dia      = round(df_dia["total_vendido"].mean(), 1)
+            melhor_dia_row = df_dia.loc[df_dia["total_vendido"].idxmax()]
+            melhor_dia     = str(melhor_dia_row["dia"])
+            melhor_qtd     = int(melhor_dia_row["total_vendido"])
+
+            k1, k2, k3, k4 = st.columns(4)
+            k1.metric("📅 Dias com dados", periodo)
+            k2.metric("📦 Total vendido", f"{total_unidades:,}".replace(",", "."))
+            k3.metric("📈 Média/dia", f"{media_dia:.0f} un.")
+            k4.metric("🏆 Melhor dia", f"{melhor_qtd} un.", melhor_dia)
+
+            st.markdown("---")
+
+            # ── Gráfico de linha: unidades vendidas por dia ───────────────
+            st.markdown("##### Unidades vendidas por dia")
+            dias_label = [str(d) for d in df_dia["dia"]]
+
+            fig_linha = go.Figure()
+            fig_linha.add_trace(go.Scatter(
+                x=dias_label,
+                y=df_dia["total_vendido"],
+                mode="lines+markers",
+                line=dict(color="#00d68f", width=2),
+                marker=dict(size=5, color="#00d68f"),
+                fill="tozeroy",
+                fillcolor="rgba(0,214,143,0.08)",
+                hovertemplate="<b>%{x}</b><br>%{y} unidades<extra></extra>",
+            ))
+            fig_linha.update_layout(
+                **_PLOTLY_LAYOUT,
+                height=280,
+                xaxis=dict(
+                    gridcolor="#1e293b",
+                    tickangle=-45,
+                    tickfont=dict(size=9),
+                ),
+                yaxis=dict(gridcolor="#1e293b", title="Unidades"),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_linha, use_container_width=True,
+                            config={"displayModeBar": False, "staticPlot": True})
+
+            # ── Gráfico de barras: top produtos ───────────────────────────
+            if not df_top.empty:
+                st.markdown("##### Top 20 produtos mais vendidos no período")
+
+                # nome curto para caber no gráfico
+                df_top["nome_curto"] = df_top["produto"].apply(
+                    lambda p: (p.split(" - ")[-1] if " - " in p else p)[:35]
+                )
+                cores_top = [_group_color(g) for g in df_top["grupo"]]
+
+                fig_top_h = go.Figure()
+                fig_top_h.add_trace(go.Bar(
+                    y=df_top["nome_curto"][::-1],
+                    x=df_top["total"][::-1],
+                    orientation="h",
+                    marker=dict(color=cores_top[::-1], cornerradius=4),
+                    text=df_top["total"][::-1].apply(lambda v: f"{int(v):,}".replace(",", ".")),
+                    textposition="outside",
+                    textfont=dict(size=9, color="#94a3b8"),
+                    hovertemplate="<b>%{y}</b><br>%{x} unidades<extra></extra>",
+                ))
+                fig_top_h.update_layout(
+                    **_PLOTLY_LAYOUT,
+                    height=max(400, len(df_top) * 28),
+                    xaxis=dict(gridcolor="#1e293b", title="Unidades vendidas"),
+                    yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_top_h, use_container_width=True,
+                                config={"displayModeBar": False, "staticPlot": True})
+
+            # ── Botão para zerar histórico ────────────────────────────────
+            st.markdown("---")
+            st.caption("⚠️ Zerar o histórico apaga todos os dados acumulados de vendas. Use ao iniciar um novo período (ex: virada do mês).")
+            if st.button("🗑️ Zerar histórico de vendas", key="hist_zerar", type="secondary"):
+                st.session_state["hist_confirmar_zerar"] = True
+
+            if st.session_state.get("hist_confirmar_zerar"):
+                st.warning("Tem certeza? Isso apaga todo o histórico acumulado de vendas.")
+                col_sim, col_nao = st.columns(2)
+                with col_sim:
+                    if st.button("✅ Sim, zerar", key="hist_zerar_sim", type="primary", use_container_width=True):
+                        get_db().execute("DELETE FROM vendas_historico")
+                        get_db().execute("COMMIT")
+                        sync_db()
+                        st.session_state.pop("hist_confirmar_zerar", None)
+                        st.session_state.pop("alertas_cache", None)
+                        st.success("Histórico zerado. Comece a enviar as planilhas do novo período.")
+                        st.rerun()
+                with col_nao:
+                    if st.button("✖ Cancelar", key="hist_zerar_nao", use_container_width=True):
+                        st.session_state.pop("hist_confirmar_zerar", None)
+                        st.rerun()
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
