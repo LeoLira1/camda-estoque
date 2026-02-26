@@ -1912,11 +1912,16 @@ def get_vendas_por_dia() -> pd.DataFrame:
 
 
 def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
-    """Retorna os top N produtos mais vendidos no período acumulado."""
+    """Retorna os top N produtos mais vendidos no período acumulado.
+
+    Produtos do grupo LONAS são excluídos pois são comercializados em m²
+    (ex: filme agrícola 10x50 = 500 m²/unidade), o que distorce o ranking.
+    """
     try:
         rows = get_db().execute(f"""
             SELECT produto, grupo, SUM(qtd_vendida) AS total
               FROM vendas_historico
+             WHERE grupo != 'LONAS'
              GROUP BY codigo
              ORDER BY total DESC
              LIMIT {top_n}
