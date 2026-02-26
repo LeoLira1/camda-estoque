@@ -1892,20 +1892,42 @@ def get_periodo_vendas() -> int:
 
 
 def get_vendas_por_dia() -> pd.DataFrame:
-    """Retorna total de unidades vendidas por dia (para o gráfico de histórico)."""
+    """Retorna total de unidades vendidas por dia (para o gráfico de histórico).
+
+    Lonas/filmes com dimensões no nome são convertidos de m² para unidades
+    antes de somar por dia.
+    """
     try:
         rows = get_db().execute("""
-            SELECT data_upload              AS dia,
-                   SUM(qtd_vendida)         AS total_vendido,
-                   COUNT(DISTINCT codigo)   AS produtos_vendidos
+            SELECT data_upload AS dia,
+                   codigo,
+                   produto,
+                   grupo,
+                   SUM(qtd_vendida) AS qtd_vendida
               FROM vendas_historico
-             GROUP BY data_upload
+             GROUP BY data_upload, codigo
              ORDER BY data_upload ASC
         """).fetchall()
         if rows:
-            df = pd.DataFrame(rows, columns=["dia", "total_vendido", "produtos_vendidos"])
-            df["dia"] = pd.to_datetime(df["dia"]).dt.date
-            return df
+            df = pd.DataFrame(rows, columns=["dia", "codigo", "produto", "grupo", "qtd_vendida"])
+
+            def _conv(r):
+                if r["grupo"] == "LONAS":
+                    m = _RE_LONA_DIM.search(str(r["produto"]))
+                    if m:
+                        area = (float(m.group(1).replace(",", "."))
+                                * float(m.group(2).replace(",", ".")))
+                        if area > 0:
+                            return max(1, round(r["qtd_vendida"] / area))
+                return r["qtd_vendida"]
+
+            df["qtd_vendida"] = df.apply(_conv, axis=1)
+            df_dia = df.groupby("dia", as_index=False).agg(
+                total_vendido=("qtd_vendida", "sum"),
+                produtos_vendidos=("codigo", "nunique"),
+            )
+            df_dia["dia"] = pd.to_datetime(df_dia["dia"]).dt.date
+            return df_dia
     except Exception:
         pass
     return pd.DataFrame()
