@@ -530,6 +530,15 @@ def _get_connection():
             uploaded_em TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS alertas_disparados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tipo TEXT NOT NULL,
+            ref_chave TEXT NOT NULL,
+            data_disparo TEXT NOT NULL,
+            UNIQUE(tipo, ref_chave)
+        )
+    """)
     conn.commit()
 
     # ── Migrações (roda 1x) ──
@@ -550,6 +559,22 @@ def _get_connection():
         pend_cols = {row[1] for row in conn.execute("PRAGMA table_info(pendencias_entrega)").fetchall()}
         if "observacao" not in pend_cols:
             conn.execute("ALTER TABLE pendencias_entrega ADD COLUMN observacao TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass
+
+    # migração alertas_disparados já é criada no CREATE TABLE IF NOT EXISTS acima
+    # mas garante que a constraint UNIQUE existe para DBs antigos sem ela
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS alertas_disparados (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tipo TEXT NOT NULL,
+                ref_chave TEXT NOT NULL,
+                data_disparo TEXT NOT NULL,
+                UNIQUE(tipo, ref_chave)
+            )
+        """)
         conn.commit()
     except Exception:
         pass
@@ -619,6 +644,100 @@ def _dias_desde(data_str: str) -> int:
         return (date.today() - date.fromisoformat(data_str)).days
     except Exception:
         return 0
+
+
+def checar_e_registrar_alertas() -> dict:
+    """
+    Verifica condições de alerta, registra primeira detecção no banco e
+    retorna alertas ainda dentro da janela de 2 dias de exibição.
+    """
+    from datetime import timedelta
+    hoje = date.today()
+    conn = get_db()
+    result = {"validade_30d": [], "pendencia_5d": []}
+    houve_escrita = False
+
+    # ── Lotes com validade ≤ 30 dias ──────────────────────────────────────
+    try:
+        lotes = conn.execute(
+            "SELECT produto, lote, vencimento FROM validade_lotes"
+        ).fetchall()
+        for produto, lote, venc_str in lotes:
+            try:
+                venc = date.fromisoformat(str(venc_str)[:10])
+                dias_rest = (venc - hoje).days
+                if 0 <= dias_rest <= 30:
+                    chave = f"{produto}|{lote}"
+                    rec = conn.execute(
+                        "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                        ("validade_30d", chave),
+                    ).fetchone()
+                    if rec is None:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                            ("validade_30d", chave, hoje.isoformat()),
+                        )
+                        houve_escrita = True
+                        data_disparo = hoje
+                    else:
+                        data_disparo = date.fromisoformat(rec[0])
+                    if (hoje - data_disparo).days <= 1:
+                        nome_curto = produto.split(" - ")[-1][:40] if " - " in produto else produto[:40]
+                        result["validade_30d"].append({
+                            "produto": nome_curto,
+                            "lote": lote,
+                            "dias_restantes": dias_rest,
+                        })
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    # ── Pendências com mais de 5 dias ─────────────────────────────────────
+    try:
+        pendencias = listar_pendencias()
+        for pid, _, data_reg, _obs in pendencias:
+            dias_pend = _dias_desde(data_reg)
+            if dias_pend > 5:
+                chave = str(pid)
+                rec = conn.execute(
+                    "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                    ("pendencia_5d", chave),
+                ).fetchone()
+                if rec is None:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                        ("pendencia_5d", chave, hoje.isoformat()),
+                    )
+                    houve_escrita = True
+                    data_disparo = hoje
+                else:
+                    data_disparo = date.fromisoformat(rec[0])
+                if (hoje - data_disparo).days <= 1:
+                    result["pendencia_5d"].append({
+                        "pid": pid,
+                        "dias": dias_pend,
+                        "data_reg": data_reg,
+                    })
+    except Exception:
+        pass
+
+    # ── Limpeza de registros com mais de 5 dias ───────────────────────────
+    try:
+        cutoff = (hoje - timedelta(days=5)).isoformat()
+        conn.execute("DELETE FROM alertas_disparados WHERE data_disparo < ?", (cutoff,))
+        houve_escrita = True
+    except Exception:
+        pass
+
+    if houve_escrita:
+        try:
+            conn.commit()
+            sync_db()
+        except Exception:
+            pass
+
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2105,6 +2224,52 @@ st.markdown(f'''
   {_whtml}
 </div>
 ''', unsafe_allow_html=True)
+
+# ── Alertas automáticos (abaixo do clima) ────────────────────────────────────
+if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != date.today().isoformat():
+    st.session_state["alertas_cache"] = checar_e_registrar_alertas()
+    st.session_state["alertas_cache_date"] = date.today().isoformat()
+
+_alertas = st.session_state["alertas_cache"]
+_al_val  = _alertas.get("validade_30d", [])
+_al_pend = _alertas.get("pendencia_5d", [])
+
+if _al_val or _al_pend:
+    _pills = []
+    if _al_pend:
+        n = len(_al_pend)
+        _pills.append(
+            f'<div class="al-pill al-pend">🔴 <b>{n} pendência{"s" if n > 1 else ""}</b>'
+            f' sem entrega há mais de 5 dias</div>'
+        )
+    if _al_val:
+        _urgentes = [a for a in _al_val if a["dias_restantes"] <= 7]
+        _normais  = [a for a in _al_val if a["dias_restantes"] > 7]
+        if _urgentes:
+            _nomes = ", ".join(dict.fromkeys(a["produto"] for a in _urgentes[:3]))
+            if len(_urgentes) > 3:
+                _nomes += f" +{len(_urgentes) - 3}"
+            _pills.append(
+                f'<div class="al-pill al-urgente">🟠 <b>{len(_urgentes)} lote{"s" if len(_urgentes) > 1 else ""}'
+                f' ≤7 dias:</b> {_nomes}</div>'
+            )
+        if _normais:
+            _pills.append(
+                f'<div class="al-pill al-aviso">🟡 <b>{len(_normais)} lote{"s" if len(_normais) > 1 else ""}'
+                f'</b> vence em até 30 dias</div>'
+            )
+    st.markdown(
+        """
+        <style>
+        .al-wrap{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px 0;}
+        .al-pill{padding:6px 14px;border-radius:20px;font-size:0.82rem;font-family:Outfit,sans-serif;line-height:1.4;}
+        .al-pend{background:rgba(255,71,87,0.12);color:#ff4757;border:1px solid rgba(255,71,87,0.35);}
+        .al-urgente{background:rgba(255,140,0,0.12);color:#ff8c00;border:1px solid rgba(255,140,0,0.4);}
+        .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
+        </style>
+        """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
+        unsafe_allow_html=True,
+    )
 
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
