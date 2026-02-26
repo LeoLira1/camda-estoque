@@ -486,7 +486,8 @@ def _get_connection():
         CREATE TABLE IF NOT EXISTS pendencias_entrega (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             foto_base64 TEXT NOT NULL,
-            data_registro TEXT NOT NULL
+            data_registro TEXT NOT NULL,
+            observacao TEXT DEFAULT ''
         )
     """)
     conn.execute("""
@@ -545,6 +546,14 @@ def _get_connection():
     except Exception:
         pass
 
+    try:
+        pend_cols = {row[1] for row in conn.execute("PRAGMA table_info(pendencias_entrega)").fetchall()}
+        if "observacao" not in pend_cols:
+            conn.execute("ALTER TABLE pendencias_entrega ADD COLUMN observacao TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass
+
     return conn
 
 
@@ -573,7 +582,7 @@ def sync_db():
 # PENDÊNCIAS DE ENTREGA — funções CRUD
 # ══════════════════════════════════════════════════════════════════════════════
 
-def inserir_pendencia(foto_bytes: bytes):
+def inserir_pendencia(foto_bytes: bytes, observacao: str = ""):
     img = Image.open(io.BytesIO(foto_bytes)).convert("RGB")
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=70, optimize=True)
@@ -581,8 +590,8 @@ def inserir_pendencia(foto_bytes: bytes):
     data_hoje = date.today().isoformat()
     conn = get_db()
     conn.execute(
-        "INSERT INTO pendencias_entrega (foto_base64, data_registro) VALUES (?, ?)",
-        (foto_b64, data_hoje)
+        "INSERT INTO pendencias_entrega (foto_base64, data_registro, observacao) VALUES (?, ?, ?)",
+        (foto_b64, data_hoje, observacao.strip())
     )
     conn.commit()
     sync_db()
@@ -591,7 +600,7 @@ def inserir_pendencia(foto_bytes: bytes):
 def listar_pendencias() -> list:
     try:
         rows = get_db().execute(
-            "SELECT id, foto_base64, data_registro FROM pendencias_entrega ORDER BY data_registro ASC"
+            "SELECT id, foto_base64, data_registro, observacao FROM pendencias_entrega ORDER BY data_registro ASC"
         ).fetchall()
         return rows
     except Exception:
@@ -2383,6 +2392,7 @@ if has_mestre:
         .badge-amarelo{background:rgba(255,193,7,0.15);color:#ffc107;border:1px solid #ffc10744;}
         .badge-vermelho{background:rgba(255,71,87,0.15);color:#ff4757;border:1px solid #ff475744;}
         .pend-data{font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:'JetBrains Mono',monospace;margin-bottom:8px;}
+        .pend-obs{background:rgba(255,255,255,0.06);border-left:3px solid rgba(100,180,255,0.5);border-radius:0 8px 8px 0;padding:8px 12px;margin:10px 0 4px 0;font-size:0.85rem;color:rgba(255,255,255,0.75);white-space:pre-wrap;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -2399,13 +2409,19 @@ if has_mestre:
                 label_visibility="collapsed",
                 key="pend_foto_upload",
             )
+            obs_nova = st.text_area(
+                "📝 Observação (opcional)",
+                placeholder="Ex: Investigar endereço, cliente solicitou reagendar, aguardar contato...",
+                key="pend_obs_input",
+                height=80,
+            )
             if foto is not None:
                 img_bytes = foto.read()
                 st.image(img_bytes, caption="Prévia — confirme antes de salvar", use_container_width=True)
                 col_ok, col_cancel = st.columns(2)
                 with col_ok:
                     if st.button("✅ Salvar pendência", use_container_width=True, type="primary", key="pend_salvar"):
-                        inserir_pendencia(img_bytes)
+                        inserir_pendencia(img_bytes, obs_nova)
                         st.success("Pendência registrada! ✔")
                         st.rerun()
                 with col_cancel:
@@ -2426,13 +2442,13 @@ if has_mestre:
             """, unsafe_allow_html=True)
         else:
             total_p = len(pendencias)
-            vencidas_p = sum(1 for _, _, d in pendencias if _dias_desde(d) >= 3)
+            vencidas_p = sum(1 for _, _, d, *_ in pendencias if _dias_desde(d) >= 3)
             c1, c2 = st.columns(2)
             c1.metric("Total pendente", total_p)
             c2.metric("⚠️ Vencidas (3d+)", vencidas_p)
             st.markdown("---")
 
-            for pid, foto_b64, data_reg in pendencias:
+            for pid, foto_b64, data_reg, obs in pendencias:
                 dias = _dias_desde(data_reg)
                 if dias <= 1:
                     card_class, badge_class = "pend-card", "badge-verde"
@@ -2445,9 +2461,11 @@ if has_mestre:
                     badge_txt = f"🚨 {dias} dias — VENCIDO!"
 
                 st.markdown(f'<div class="{card_class}">', unsafe_allow_html=True)
+                obs_html = f'<div class="pend-obs">📝 {obs}</div>' if obs else ""
                 st.markdown(
                     f'<span class="badge-dias {badge_class}">{badge_txt}</span>'
-                    f'<div class="pend-data">Registrado em: {data_reg}</div>',
+                    f'<div class="pend-data">Registrado em: {data_reg}</div>'
+                    f'{obs_html}',
                     unsafe_allow_html=True
                 )
                 try:
