@@ -1785,8 +1785,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, is_mestre: bool = False):
     """Salva dados de vendas no histórico para gráficos.
     - MESTRE: substitui tudo (carga completa)
-    - PARCIAL: ACUMULA por dia — cada dia gera uma linha separada por produto.
-      Se já existe registro para (codigo, hoje) soma a qtd_vendida.
+    - PARCIAL: SUBSTITUI por dia — cada dia gera uma linha separada por produto.
+      Se já existe registro para (codigo, hoje) substitui qtd_vendida pelo valor mais recente.
     """
     try:
         conn = get_db()
@@ -1813,7 +1813,7 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
                     VALUES (?, ?, ?, ?, ?, ?)
                 """, rows)
         else:
-            # ── PARCIAL: acumula dia a dia ────────────────────────────────
+            # ── PARCIAL: substitui dia a dia ─────────────────────────────
             # Descobre quais códigos já têm registro HOJE
             todos_records = list(records or []) + [z for z in (zerados or []) if isinstance(z, dict)]
             if not todos_records:
@@ -1842,7 +1842,7 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
             if updates:
                 conn.executemany("""
                     UPDATE vendas_historico
-                       SET qtd_vendida = qtd_vendida + ?,
+                       SET qtd_vendida = ?,
                            qtd_estoque = ?
                      WHERE codigo = ? AND data_upload = ?
                 """, updates)
