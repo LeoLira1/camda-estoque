@@ -81,6 +81,30 @@ if "authenticated" not in st.session_state:
 if "login_error" not in st.session_state:
     st.session_state.login_error = False
 
+# ── Weather gradient helper (usada na tela de login e no dashboard) ───────────
+def _wcode_bg_gradient(code, alpha=1.0):
+    if code is None:
+        r = "30,60,114"; g = "42,82,152"
+    elif int(code) == 0:
+        r = "15,32,39"; g = "44,83,100"
+    elif int(code) in (1, 2):
+        r = "21,101,192"; g = "94,146,200"
+    elif int(code) == 3:
+        r = "44,62,80"; g = "74,98,116"
+    elif int(code) in (45, 48):
+        r = "74,85,104"; g = "143,163,177"
+    elif int(code) in (51,53,55,61,63,65,80,81,82):
+        r = "13,27,62"; g = "30,87,153"
+    elif int(code) in (95,96,99):
+        r = "15,12,41"; g = "36,36,62"
+    elif int(code) in (71,73,75,77):
+        r = "44,62,80"; g = "107,143,166"
+    else:
+        r = "30,60,114"; g = "42,82,152"
+    if alpha < 1.0:
+        return f"linear-gradient(160deg,rgba({r},{alpha}) 0%,rgba({g},{alpha}) 100%)"
+    return f"linear-gradient(160deg,rgb({r}) 0%,rgb({g}) 100%)"
+
 # ── Login Screen ─────────────────────────────────────────────────────────────
 if not st.session_state.authenticated:
     _DIAS_PT_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
@@ -112,25 +136,6 @@ if not st.session_state.authenticated:
         elif code in (95,96,99):    return "Tempestade"
         else:                       return ""
 
-    def _wcode_bg_gradient(code):
-        if code is None: return "linear-gradient(160deg,#1e3c72 0%,#2a5298 100%)"
-        code = int(code)
-        if code == 0:
-            return "linear-gradient(160deg,#0f2027 0%,#203a43 45%,#2c5364 100%)"
-        elif code in (1, 2):
-            return "linear-gradient(160deg,#1565c0 0%,#1976d2 50%,#5e92c8 100%)"
-        elif code == 3:
-            return "linear-gradient(160deg,#2c3e50 0%,#3d5166 50%,#4a6274 100%)"
-        elif code in (45, 48):
-            return "linear-gradient(160deg,#4a5568 0%,#718096 50%,#8fa3b1 100%)"
-        elif code in (51,53,55,61,63,65,80,81,82):
-            return "linear-gradient(160deg,#0d1b3e 0%,#1a3a5c 45%,#1e5799 100%)"
-        elif code in (95,96,99):
-            return "linear-gradient(160deg,#0f0c29 0%,#302b63 50%,#24243e 100%)"
-        elif code in (71,73,75,77):
-            return "linear-gradient(160deg,#2c3e50 0%,#3d5a73 50%,#6b8fa6 100%)"
-        else:
-            return "linear-gradient(160deg,#1e3c72 0%,#2a5298 100%)"
 
     st.markdown("""
     <style>
@@ -2377,8 +2382,41 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Header banner + clima ──────────────────────────────────────────────────
-_wtemp, _wemoji, _wdesc = get_weather_quirinopolis()
-_whtml = f'<div class="weather-overlay">{_wemoji} <b>{_wtemp}°C</b> {_wdesc}</div>' if _wtemp else ""
+_wd_dash = get_weather_forecast_quirinopolis()
+_now_dash = datetime.now(tz=_BRT)
+_dia_abr_dash = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"][_now_dash.weekday()]
+_hora_dash = _now_dash.strftime("%H:%M")
+
+if _wd_dash:
+    _cur_d = _wd_dash["current"]
+    _wtemp_d = round(_cur_d["temperature_2m"])
+    _wcode_d = int(_cur_d["weathercode"])
+    _humid_d = round(_cur_d.get("relative_humidity_2m", 0))
+    _vento_d = round(_cur_d.get("wind_speed_10m", 0))
+    _c = _wcode_d
+    if _c == 0:                      _wemoji_d, _wdesc_d = "☀️", "Céu limpo"
+    elif _c in (1,2):                _wemoji_d, _wdesc_d = "🌤️", "Poucas nuvens"
+    elif _c == 3:                    _wemoji_d, _wdesc_d = "☁️", "Nublado"
+    elif _c in (45,48):              _wemoji_d, _wdesc_d = "🌫️", "Névoa"
+    elif _c in (51,53,55):           _wemoji_d, _wdesc_d = "🌦️", "Chuvisco"
+    elif _c in (61,63,65,80,81,82):  _wemoji_d, _wdesc_d = "🌧️", "Chuva"
+    elif _c in (95,96,99):           _wemoji_d, _wdesc_d = "⛈️", "Tempestade"
+    elif _c in (71,73,75,77):        _wemoji_d, _wdesc_d = "❄️", "Neve"
+    else:                            _wemoji_d, _wdesc_d = "🌡️", ""
+    _bg_dash = _wcode_bg_gradient(_wcode_d, alpha=0.88)
+    _whtml = f"""<div class="wco" style="background:{_bg_dash};">
+  <div style="font-size:0.58rem;color:rgba(255,255,255,0.45);margin-bottom:6px;letter-spacing:0.3px;">{_dia_abr_dash} · {_hora_dash}</div>
+  <div style="font-size:2.4rem;line-height:1;filter:drop-shadow(0 4px 10px rgba(255,255,255,0.28));">{_wemoji_d}</div>
+  <div style="font-size:2.1rem;font-weight:700;line-height:1.1;letter-spacing:-1px;margin-top:5px;">{_wtemp_d}°</div>
+  <div style="font-size:0.7rem;color:rgba(255,255,255,0.82);margin-top:5px;font-weight:500;">{_wdesc_d}</div>
+  <div style="font-size:0.58rem;color:rgba(255,255,255,0.45);margin-top:2px;">Quirinópolis, GO</div>
+  <div style="display:flex;justify-content:center;gap:7px;font-size:0.6rem;color:rgba(255,255,255,0.7);
+              margin-top:8px;background:rgba(0,0,0,0.22);border-radius:10px;padding:5px 8px;">
+    <span>💧 {_humid_d}%</span><span style="opacity:0.3;">|</span><span>💨 {_vento_d}km/h</span>
+  </div>
+</div>"""
+else:
+    _whtml = ""
 
 st.markdown(f'''
 <style>
@@ -2391,16 +2429,20 @@ st.markdown(f'''
     border-radius: 14px;
     overflow: hidden;
 }}
-.weather-overlay {{
+.wco {{
     position: absolute; top: 12px; right: 16px;
-    background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);
-    color: #fff; font-family: Outfit,sans-serif; font-size: 1rem;
-    padding: 6px 14px; border-radius: 20px;
-    border: 1px solid rgba(255,255,255,0.15);
+    color: #fff; font-family: Outfit,sans-serif;
+    border-radius: 18px; padding: 12px 15px 11px;
+    border: 1px solid rgba(255,255,255,0.18);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    text-align: center; min-width: 128px;
 }}
 @media (max-width: 640px) {{
     .camda-header {{ height: 140px; }}
-    .weather-overlay {{ font-size: 0.75rem; padding: 4px 10px; top: 8px; right: 8px; }}
+    .wco {{ top: 6px; right: 6px; padding: 8px 10px 8px; border-radius: 14px; min-width: 100px; }}
+    .wco > div:nth-child(2) {{ font-size: 1.6rem !important; }}
+    .wco > div:nth-child(3) {{ font-size: 1.4rem !important; }}
 }}
 </style>
 <div class="camda-header-wrap">
