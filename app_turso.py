@@ -10,6 +10,9 @@ import plotly.express as px
 from datetime import datetime, timedelta, date, timezone
 from PIL import Image
 
+# Fuso horário de Brasília (UTC-3) — usado em todo o sistema
+_BRT = timezone(timedelta(hours=-3))
+
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CAMDA Estoque Mestre",
@@ -612,7 +615,7 @@ def inserir_pendencia(foto_bytes: bytes, observacao: str = ""):
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=70, optimize=True)
     foto_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-    data_hoje = date.today().isoformat()
+    data_hoje = datetime.now(tz=_BRT).date().isoformat()
     conn = get_db()
     conn.execute(
         "INSERT INTO pendencias_entrega (foto_base64, data_registro, observacao) VALUES (?, ?, ?)",
@@ -641,7 +644,7 @@ def deletar_pendencia(pid: int):
 
 def _dias_desde(data_str: str) -> int:
     try:
-        return (date.today() - date.fromisoformat(data_str)).days
+        return (datetime.now(tz=_BRT).date() - date.fromisoformat(data_str)).days
     except Exception:
         return 0
 
@@ -652,7 +655,7 @@ def checar_e_registrar_alertas() -> dict:
     retorna alertas ainda dentro da janela de 2 dias de exibição.
     """
     from datetime import timedelta
-    hoje = date.today()
+    hoje = datetime.now(tz=_BRT).date()
     conn = get_db()
     result = {"validade_30d": [], "pendencia_5d": []}
     houve_escrita = False
@@ -747,7 +750,7 @@ def checar_e_registrar_alertas() -> dict:
 def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str):
     try:
         conn = get_db()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             """INSERT INTO avarias (codigo, produto, qtd_avariada, motivo, status, registrado_em)
                VALUES (?, ?, ?, ?, 'aberto', ?)""",
@@ -777,7 +780,7 @@ def listar_avarias(apenas_abertas: bool = False) -> pd.DataFrame:
 def resolver_avaria(avaria_id: int):
     try:
         conn = get_db()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             "UPDATE avarias SET status = 'resolvido', resolvido_em = ? WHERE id = ?",
             (now, avaria_id)
@@ -1001,7 +1004,7 @@ def marcar_reposto(item_id: int):
         conn = get_db()
         conn.execute(
             "UPDATE reposicao_loja SET reposto = 1, reposto_em = ? WHERE id = ?",
-            [datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item_id]
+            [datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S"), item_id]
         )
         conn.commit()
         sync_db()
@@ -1386,7 +1389,7 @@ def upload_mestre(records: list) -> tuple:
     """Recebe records já parseados (sem re-parsear o arquivo)."""
     try:
         conn = get_db()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
 
         # Preservar divergências existentes antes de limpar o banco
         existing_div = {row[0]: row[1] for row in conn.execute(
@@ -1434,7 +1437,7 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
     """Recebe records já parseados e lista opcional de códigos com estoque zerado."""
     try:
         conn = get_db()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
 
         # Buscar códigos existentes (1 query)
         existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
@@ -1512,7 +1515,7 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
 
 def popular_contagem(records: list, upload_id: int, conn) -> None:
     """Limpa contagem anterior e popula com itens do upload parcial filtrados por categoria."""
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
     itens = [
         (upload_id, r["codigo"], r["produto"], r["categoria"],
          r["qtd_sistema"], "pendente", "", 0, now)
@@ -1548,7 +1551,7 @@ def atualizar_item_contagem(
 ) -> bool:
     """Atualiza item da contagem e reflete em estoque_mestre. Retorna True se atualizou estoque."""
     conn = get_db()
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
     rows_afetadas = 0
 
     conn.execute(
@@ -1636,7 +1639,7 @@ def save_validade_lotes(df: pd.DataFrame) -> bool:
     """Substitui todos os lotes de validade no banco pela nova planilha."""
     try:
         conn = get_db()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         conn.execute("DELETE FROM validade_lotes")
         rows = []
         for _, r in df.iterrows():
@@ -1790,7 +1793,7 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
     """
     try:
         conn = get_db()
-        hoje = date.today().isoformat()          # "YYYY-MM-DD" — chave do dia
+        hoje = datetime.now(tz=_BRT).date().isoformat()  # "YYYY-MM-DD" — chave do dia (horário Brasília)
 
         if is_mestre:
             conn.execute("DELETE FROM vendas_historico")
@@ -2371,9 +2374,9 @@ st.markdown(f'''
 ''', unsafe_allow_html=True)
 
 # ── Alertas automáticos (abaixo do clima) ────────────────────────────────────
-if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != date.today().isoformat():
+if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != datetime.now(tz=_BRT).date().isoformat():
     st.session_state["alertas_cache"] = checar_e_registrar_alertas()
-    st.session_state["alertas_cache_date"] = date.today().isoformat()
+    st.session_state["alertas_cache_date"] = datetime.now(tz=_BRT).date().isoformat()
 
 _alertas = st.session_state["alertas_cache"]
 _al_val  = _alertas.get("validade_30d", [])
@@ -2652,7 +2655,7 @@ if has_mestre:
             st.caption(f"{n_repor} produto(s) para repor. Itens saem apenas quando desmarcados.")
             for _, item in df_reposicao.iterrows():
                 try:
-                    dias = (datetime.now() - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
+                    dias = (datetime.now(tz=_BRT).replace(tzinfo=None) - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
                 except (ValueError, TypeError):
                     dias = 0
                 tempo = "hoje" if dias == 0 else ("ontem" if dias == 1 else f"{dias}d atrás")
@@ -2884,7 +2887,7 @@ if has_mestre:
                 # Data formatada
                 try:
                     dt_reg = datetime.strptime(av["registrado_em"], "%Y-%m-%d %H:%M:%S")
-                    dias_av = (datetime.now() - dt_reg).days
+                    dias_av = (datetime.now(tz=_BRT).replace(tzinfo=None) - dt_reg).days
                     tempo_av = "hoje" if dias_av == 0 else ("ontem" if dias_av == 1 else f"{dias_av}d atrás")
                 except Exception:
                     tempo_av = av["registrado_em"]
@@ -2934,7 +2937,7 @@ if has_mestre:
         import json as _json
 
         # ── Coleta de eventos do próprio banco ──────────────────────────────
-        hoje = datetime.now()
+        hoje = datetime.now(tz=_BRT)
         ano, mes = hoje.year, hoje.month
 
         _MESES = ["", "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
@@ -3687,7 +3690,7 @@ if has_mestre:
             st.download_button(
                 "⬇️ Exportar lista filtrada (.csv)",
                 data=csv_bytes,
-                file_name=f"validade_{datetime.now().strftime('%Y%m%d')}.csv",
+                file_name=f"validade_{datetime.now(tz=_BRT).strftime('%Y%m%d')}.csv",
                 mime="text/csv",
                 key="val_download"
             )
