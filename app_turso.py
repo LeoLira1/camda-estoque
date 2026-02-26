@@ -1988,6 +1988,21 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 
     _periodo_vendas = get_periodo_vendas()
 
+    # ── Converter lonas com dimensões de m² → unidades antes de agregar ──
+    df_vendas = df_vendas.copy()
+
+    def _conv_lona(r):
+        if r["grupo"] == "LONAS":
+            m = _RE_LONA_DIM.search(str(r["produto"]))
+            if m:
+                area = (float(m.group(1).replace(",", "."))
+                        * float(m.group(2).replace(",", ".")))
+                if area > 0:
+                    return max(1, round(r["qtd_vendida"] / area))
+        return r["qtd_vendida"]
+
+    df_vendas["qtd_vendida"] = df_vendas.apply(_conv_lona, axis=1)
+
     # ── Dados agregados por grupo ────────────────────────────────────────
     df_grupo = df_vendas.groupby("grupo", as_index=False).agg(
         qtd_vendida=("qtd_vendida", "sum"),
