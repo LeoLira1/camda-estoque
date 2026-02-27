@@ -3532,58 +3532,46 @@ if has_mestre:
             cats = sorted(df_ct["categoria"].unique())
             for cat in cats:
                 df_cat = df_ct[df_ct["categoria"] == cat]
-                st.markdown(f'<div class="ct-cat-header">{cat} ({len(df_cat)})</div>', unsafe_allow_html=True)
+                # Exibe apenas itens pendentes (confirmados somem da lista, igual ao repor loja)
+                df_cat_pend = df_cat[df_cat["status"] == "pendente"]
+                if df_cat_pend.empty:
+                    continue
+                n_cat_pend = len(df_cat_pend)
+                n_cat_total = len(df_cat)
+                st.markdown(
+                    f'<div class="ct-cat-header">{cat} '
+                    f'({n_cat_pend} pendente{"s" if n_cat_pend != 1 else ""}'
+                    f'{f" de {n_cat_total}" if n_cat_total != n_cat_pend else ""})</div>',
+                    unsafe_allow_html=True,
+                )
 
-                for _, item in df_cat.iterrows():
+                for _, item in df_cat_pend.iterrows():
                     item_id = int(item["id"])
                     prod = str(item["produto"])
                     qty = int(item["qtd_estoque"])
-                    status = str(item["status"])
 
-                    col_info, col_badge, col_b1, col_b2 = st.columns([4, 1.6, 1.2, 1.2])
+                    col_info, col_b1, col_b2 = st.columns([5, 1.2, 1.2])
 
                     with col_info:
                         info_html = (
                             f'<span class="ct-nome">{prod}</span>'
                             f'<span class="ct-qty">{qty} un</span>'
                         )
-                        if status == "divergencia":
-                            qtd_div = int(item["qtd_divergencia"]) if pd.notnull(item["qtd_divergencia"]) else 0
-                            motivo_text = str(item["motivo"]) if pd.notnull(item["motivo"]) and str(item["motivo"]).strip() else "(sem motivo)"
-                            info_html += f'<div class="ct-motivo">Motivo: {motivo_text} · Qtd divergindo: {qtd_div}</div>'
-                        st.markdown(f'<div class="ct-card {status}">{info_html}</div>', unsafe_allow_html=True)
-
-                    with col_badge:
-                        badge_map = {
-                            "certa": ('<span class="ct-badge ct-certa">✅ Certa</span>', False),
-                            "divergencia": ('<span class="ct-badge ct-divergencia">❌ Divergência</span>', False),
-                            "pendente": ('<span class="ct-badge ct-pendente">⏳ Pendente</span>', False),
-                        }
-                        badge_html, _ = badge_map.get(status, (status, False))
-                        st.markdown(badge_html, unsafe_allow_html=True)
+                        st.markdown(f'<div class="ct-card pendente">{info_html}</div>', unsafe_allow_html=True)
 
                     _cod = str(item["codigo"])
                     _qtd_sis = qty
 
                     with col_b1:
-                        if status in ("pendente", "divergencia"):
-                            if st.button("✅ Certa", key=f"ct_ok_{item_id}", use_container_width=True):
-                                atualizar_item_contagem(item_id, "certa", codigo=_cod, qtd_sistema=_qtd_sis)
-                                st.session_state.contagem_div_open.discard(item_id)
-                                st.rerun()
-                        else:
-                            if st.button("↩️ Desfazer", key=f"ct_undo_{item_id}", use_container_width=True):
-                                atualizar_item_contagem(item_id, "pendente", codigo=_cod, qtd_sistema=_qtd_sis)
-                                st.rerun()
+                        if st.button("✅ Certa", key=f"ct_ok_{item_id}", use_container_width=True):
+                            atualizar_item_contagem(item_id, "certa", codigo=_cod, qtd_sistema=_qtd_sis)
+                            st.session_state.contagem_div_open.discard(item_id)
+                            st.rerun()
 
                     with col_b2:
-                        if status != "divergencia" and item_id not in st.session_state.contagem_div_open:
+                        if item_id not in st.session_state.contagem_div_open:
                             if st.button("❌ Divergência", key=f"ct_divbtn_{item_id}", use_container_width=True):
                                 st.session_state.contagem_div_open.add(item_id)
-                                st.rerun()
-                        elif status == "divergencia":
-                            if st.button("↩️ Desfazer", key=f"ct_undo_div_{item_id}", use_container_width=True):
-                                atualizar_item_contagem(item_id, "pendente", codigo=_cod, qtd_sistema=_qtd_sis)
                                 st.rerun()
                         else:
                             if st.button("Cancelar", key=f"ct_cancel_open_{item_id}", use_container_width=True):
