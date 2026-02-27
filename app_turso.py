@@ -647,25 +647,6 @@ def get_db():
             st.session_state["_synced"] = True
         except Exception:
             pass
-    # Migração: garante que lancamentos_manuais existe no remoto Turso
-    if not st.session_state.get("_schema_lancamentos"):
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS lancamentos_manuais (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    codigo TEXT NOT NULL,
-                    produto TEXT NOT NULL,
-                    categoria TEXT NOT NULL,
-                    tipo TEXT NOT NULL DEFAULT 'entrada',
-                    quantidade INTEGER NOT NULL DEFAULT 0,
-                    observacao TEXT DEFAULT '',
-                    registrado_em TEXT NOT NULL
-                )
-            """)
-            conn.execute("COMMIT")
-            st.session_state["_schema_lancamentos"] = True
-        except Exception:
-            pass
     return conn
 
 
@@ -903,6 +884,19 @@ def inserir_lancamento(codigo: str, produto: str, categoria: str, tipo: str, qua
     """Registra lançamento manual e atualiza qtd_sistema no estoque_mestre."""
     now = datetime.now(tz=_BRT).isoformat(timespec="seconds")
     conn = get_db()
+    # Cria tabela no remoto caso não exista (DDL vai junto no mesmo commit)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS lancamentos_manuais (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            tipo TEXT NOT NULL DEFAULT 'entrada',
+            quantidade INTEGER NOT NULL DEFAULT 0,
+            observacao TEXT DEFAULT '',
+            registrado_em TEXT NOT NULL
+        )
+    """)
     delta = quantidade if tipo == "entrada" else -quantidade
     existing = conn.execute(
         "SELECT qtd_sistema FROM estoque_mestre WHERE codigo = ?", [codigo]
