@@ -3975,10 +3975,28 @@ if has_mestre:
                         "categoria": str(_r["categoria"]),
                     })
 
-            if not _lc_produtos:
+            # Toggle: produto do estoque ou novo produto
+            _lc_modo_novo = st.toggle(
+                "Produto não está no estoque (digitar manualmente)",
+                key="lc_modo_novo",
+                value=False,
+            )
+
+            _lc_codigo, _lc_nome, _lc_cat = "", "", ""
+
+            if _lc_modo_novo:
+                # ── Modo manual: campos livres ─────────────────────────────
+                col_cod, col_cat2 = st.columns([1, 2])
+                with col_cod:
+                    _lc_codigo = st.text_input("Código", placeholder="Ex: 001234", key="lc_cod_manual").strip()
+                with col_cat2:
+                    _lc_cat = st.text_input("Categoria", placeholder="Ex: HERBICIDA", key="lc_cat_manual").strip()
+                _lc_nome = st.text_input("Nome do produto", placeholder="Ex: ROUNDUP 1L", key="lc_nome_manual").strip()
+
+            elif not _lc_produtos:
                 st.info("Faça o upload da planilha mestre para habilitar o autocomplete de produtos.")
             else:
-                # Selectbox com busca embutida (Streamlit filtra ao digitar)
+                # ── Modo autocomplete: selectbox filtrável ─────────────────
                 _lc_opcoes = ["— selecione um produto —"] + [p["label"] for p in _lc_produtos]
                 _lc_sel = st.selectbox(
                     "Produto",
@@ -3987,19 +4005,19 @@ if has_mestre:
                     help="Digite parte do código ou nome para filtrar",
                 )
 
-                _lc_codigo, _lc_nome, _lc_cat = "", "", ""
                 if _lc_sel and _lc_sel != "— selecione um produto —":
                     _found = next((p for p in _lc_produtos if p["label"] == _lc_sel), None)
                     if _found:
                         _lc_codigo = _found["codigo"]
                         _lc_nome   = _found["produto"]
                         _lc_cat    = _found["categoria"]
-                    # Exibe info do produto selecionado
                     _lc_row = df_view[df_view["codigo"] == _lc_codigo]
                     if not _lc_row.empty:
                         _estq_atual = int(_lc_row.iloc[0]["qtd_sistema"])
                         st.caption(f"Categoria: **{_lc_cat}** · Estoque atual: **{_estq_atual} un.**")
 
+            # ── Campos comuns (tipo, qtd, motivo) ─────────────────────────
+            if _lc_modo_novo or _lc_produtos:
                 col_tipo, col_qtd = st.columns([2, 1])
                 with col_tipo:
                     _lc_tipo = st.selectbox(
@@ -4018,7 +4036,7 @@ if has_mestre:
                     key="lc_motivo",
                 )
 
-                _lc_disabled = not bool(_lc_codigo)
+                _lc_disabled = not bool(_lc_codigo and _lc_nome)
                 if st.button(
                     "💾 Salvar lançamento",
                     key="lc_salvar",
