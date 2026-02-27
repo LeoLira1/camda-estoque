@@ -589,9 +589,9 @@ def _get_connection():
             codigo TEXT NOT NULL,
             produto TEXT NOT NULL,
             categoria TEXT NOT NULL,
-            tipo TEXT NOT NULL DEFAULT 'entrada',
-            quantidade INTEGER NOT NULL DEFAULT 0,
-            observacao TEXT DEFAULT '',
+            tipo TEXT NOT NULL,
+            quantidade INTEGER NOT NULL DEFAULT 1,
+            motivo TEXT DEFAULT '',
             registrado_em TEXT NOT NULL
         )
     """)
@@ -647,25 +647,6 @@ def get_db():
             st.session_state["_synced"] = True
         except Exception:
             pass
-    # Migração: garante que lancamentos_manuais existe no remoto Turso
-    if not st.session_state.get("_schema_lancamentos"):
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS lancamentos_manuais (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    codigo TEXT NOT NULL,
-                    produto TEXT NOT NULL,
-                    categoria TEXT NOT NULL,
-                    tipo TEXT NOT NULL DEFAULT 'entrada',
-                    quantidade INTEGER NOT NULL DEFAULT 0,
-                    observacao TEXT DEFAULT '',
-                    registrado_em TEXT NOT NULL
-                )
-            """)
-            conn.execute("COMMIT")
-            st.session_state["_schema_lancamentos"] = True
-        except Exception:
-            pass
     return conn
 
 
@@ -676,6 +657,60 @@ def sync_db():
             _get_connection().sync()
         except Exception as e:
             st.warning(f"⚠️ Sync falhou: {e}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LANÇAMENTOS MANUAIS — funções CRUD
+# ══════════════════════════════════════════════════════════════════════════════
+
+def inserir_lancamento(codigo: str, produto: str, categoria: str,
+                       tipo: str, quantidade: int, motivo: str) -> bool:
+    """Insere um lançamento manual e sincroniza. Retorna True se ok."""
+    try:
+        conn = get_db()
+        agora = datetime.now(tz=_BRT).isoformat()
+        conn.execute(
+            """INSERT INTO lancamentos_manuais
+               (codigo, produto, categoria, tipo, quantidade, motivo, registrado_em)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (codigo, produto, categoria, tipo, int(quantidade), motivo.strip(), agora),
+        )
+        conn.execute("COMMIT")
+        sync_db()
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao salvar lançamento: {e}")
+        return False
+
+
+def listar_lancamentos(limit: int = 200) -> pd.DataFrame:
+    """Retorna os últimos lançamentos manuais em ordem decrescente."""
+    try:
+        conn = get_db()
+        rows = conn.execute(
+            """SELECT id, codigo, produto, categoria, tipo, quantidade, motivo, registrado_em
+               FROM lancamentos_manuais
+               ORDER BY id DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+        cols = ["id", "codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"]
+        return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
+    except Exception:
+        return pd.DataFrame(columns=["id", "codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"])
+
+
+def excluir_lancamento(lancamento_id: int) -> bool:
+    """Remove um lançamento manual pelo id."""
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM lancamentos_manuais WHERE id = ?", (lancamento_id,))
+        conn.execute("COMMIT")
+        sync_db()
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao excluir lançamento: {e}")
+        return False
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -879,80 +914,6 @@ def get_avarias_count_abertas() -> int:
         return row[0] if row else 0
     except Exception:
         return 0
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# LANÇAMENTOS MANUAIS — CRUD
-# ══════════════════════════════════════════════════════════════════════════════
-
-_LANC_COLS = ["id", "codigo", "produto", "categoria", "tipo", "quantidade", "observacao", "registrado_em"]
-
-
-def listar_lancamentos() -> pd.DataFrame:
-    try:
-        rows = get_db().execute(
-            "SELECT id, codigo, produto, categoria, tipo, quantidade, observacao, registrado_em "
-            "FROM lancamentos_manuais ORDER BY registrado_em DESC"
-        ).fetchall()
-        return pd.DataFrame(rows, columns=_LANC_COLS)
-    except Exception:
-        return pd.DataFrame(columns=_LANC_COLS)
-
-
-def inserir_lancamento(codigo: str, produto: str, categoria: str, tipo: str, quantidade: int, observacao: str = ""):
-    """Registra lançamento manual e atualiza qtd_sistema no estoque_mestre."""
-    now = datetime.now(tz=_BRT).isoformat(timespec="seconds")
-    conn = get_db()
-    delta = quantidade if tipo == "entrada" else -quantidade
-    existing = conn.execute(
-        "SELECT qtd_sistema FROM estoque_mestre WHERE codigo = ?", [codigo]
-    ).fetchone()
-    if existing:
-        nova_qtd = max(0, existing[0] + delta)
-        conn.execute(
-            "UPDATE estoque_mestre SET qtd_sistema = ?, produto = ?, categoria = ? WHERE codigo = ?",
-            [nova_qtd, produto, categoria, codigo]
-        )
-    else:
-        qtd_ini = max(0, delta)
-        conn.execute(
-            "INSERT INTO estoque_mestre "
-            "(codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em) "
-            "VALUES (?, ?, ?, ?, 0, 0, '', 'ok', '', ?)",
-            [codigo, produto, categoria, qtd_ini, now]
-        )
-    conn.execute(
-        "INSERT INTO lancamentos_manuais (codigo, produto, categoria, tipo, quantidade, observacao, registrado_em) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        [codigo, produto, categoria, tipo, quantidade, observacao, now]
-    )
-    conn.execute("COMMIT")
-    sync_db()
-
-
-def excluir_lancamento(lancamento_id: int):
-    """Remove lançamento do log e reverte o efeito no estoque_mestre."""
-    conn = get_db()
-    row = conn.execute(
-        "SELECT codigo, produto, categoria, tipo, quantidade FROM lancamentos_manuais WHERE id = ?",
-        [lancamento_id]
-    ).fetchone()
-    if not row:
-        return
-    codigo, produto, categoria, tipo, quantidade = row
-    delta = -quantidade if tipo == "entrada" else quantidade
-    existing = conn.execute(
-        "SELECT qtd_sistema FROM estoque_mestre WHERE codigo = ?", [codigo]
-    ).fetchone()
-    if existing:
-        nova_qtd = max(0, existing[0] + delta)
-        conn.execute(
-            "UPDATE estoque_mestre SET qtd_sistema = ? WHERE codigo = ?",
-            [nova_qtd, codigo]
-        )
-    conn.execute("DELETE FROM lancamentos_manuais WHERE id = ?", [lancamento_id])
-    conn.execute("COMMIT")
-    sync_db()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2788,7 +2749,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "✍️ Lançamentos"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "✏️ Lançamentos"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -3993,154 +3954,135 @@ if has_mestre:
                         st.session_state.pop("hist_confirmar_zerar", None)
                         st.rerun()
 
+
     # ══════════════════════════════════════════════════════════════════════════
-    # TAB 12 — LANÇAMENTOS MANUAIS
+    # TAB 12 — LANÇAMENTOS MANUAIS DE ESTOQUE
     # ══════════════════════════════════════════════════════════════════════════
     with t12:
-        st.markdown("#### ✍️ Lançamentos Manuais de Estoque")
-        st.caption("Adicione ou remova produtos do estoque sem precisar re-enviar a planilha mestre.")
+        st.markdown("#### ✏️ Lançamentos Manuais de Estoque")
+        st.caption("Registre entradas e saídas avulsas sem precisar re-enviar a planilha mestre.")
 
-        # ── Montar lista de categorias disponíveis ────────────────────────────
-        cats_db = sorted(df_mestre["categoria"].dropna().unique().tolist()) if not df_mestre.empty else []
-        cats_fallback = [
-            "HERBICIDAS", "FUNGICIDAS", "INSETICIDAS", "NEMATICIDAS",
-            "ADUBOS FOLIARES", "ADUBOS QUÍMICOS", "ADUBOS CORRETIVOS",
-            "ADJUVANTES", "ADJUVANTES/ESPALHANTES ADESIVO", "ÓLEOS",
-            "SEMENTES", "SUPLEMENTO MINERAL",
-            "MEDICAMENTOS", "MEDICAMENTOS VETERINÁRIOS",
-            "VACINA AFTOSA", "VACINAS DIVERSAS/SOROS",
-            "ANTIBIOTICOS/ANTI-INFLAMATORIO", "VERMIFUGOS",
-            "MOSQUICIDA/CARRAPATICIDA/BERNI", "UNGUENTOS/POMADAS",
-            "HOMEOPATICO", "HORMONIOS LEITEIROS",
-            "TONICO MINERAL/VITAMINAS", "REPRODUCAO ANIMAL",
-            "DIETA ANIMAL", "RATICIDAS", "LONAS",
-        ]
-        cats_all = sorted(set(cats_db) | set(cats_fallback))
-
-        # ── Formulário de novo lançamento ─────────────────────────────────────
+        # ── Formulário de novo lançamento ──────────────────────────────────
         with st.expander("➕ Novo lançamento", expanded=True):
-            with st.form("form_lancamento", clear_on_submit=True):
-                fc1, fc2 = st.columns([1, 2])
-                with fc1:
-                    lanc_codigo = st.text_input(
-                        "Código do produto *",
-                        placeholder="Ex: 001234",
-                        help="Código exato do produto como aparece no sistema.",
-                    ).strip().upper()
-                with fc2:
-                    # Tenta auto-preencher nome/categoria a partir do estoque_mestre
-                    prod_hint = ""
-                    cat_hint_idx = 0
-                    if lanc_codigo and not df_mestre.empty:
-                        match = df_mestre[df_mestre["codigo"] == lanc_codigo]
-                        if not match.empty:
-                            prod_hint = match.iloc[0]["produto"]
-                            cat_hint = str(match.iloc[0]["categoria"]).strip().upper()
-                            if cat_hint in cats_all:
-                                cat_hint_idx = cats_all.index(cat_hint)
-                    lanc_produto = st.text_input(
-                        "Nome do produto *",
-                        value=prod_hint,
-                        placeholder="Ex: GLIFOSATO 480 20L",
-                    ).strip().upper()
+            # Monta lista de produtos para autocomplete
+            _lc_produtos: list[dict] = []
+            if not df_view.empty:
+                for _, _r in df_view.iterrows():
+                    _lc_produtos.append({
+                        "label": f"{_r['codigo']} — {_r['produto']}",
+                        "codigo": str(_r["codigo"]),
+                        "produto": str(_r["produto"]),
+                        "categoria": str(_r["categoria"]),
+                    })
 
-                fc3, fc4 = st.columns([2, 1])
-                with fc3:
-                    lanc_categoria = st.selectbox(
-                        "Categoria *",
-                        options=cats_all,
-                        index=cat_hint_idx,
-                    )
-                with fc4:
-                    lanc_tipo = st.radio(
-                        "Operação *",
-                        options=["entrada", "saida"],
-                        format_func=lambda x: "📥 Entrada" if x == "entrada" else "📤 Saída",
-                        horizontal=True,
-                    )
+            if not _lc_produtos:
+                st.info("Faça o upload da planilha mestre para habilitar o autocomplete de produtos.")
+            else:
+                # Selectbox com busca embutida (Streamlit filtra ao digitar)
+                _lc_opcoes = ["— selecione um produto —"] + [p["label"] for p in _lc_produtos]
+                _lc_sel = st.selectbox(
+                    "Produto",
+                    options=_lc_opcoes,
+                    key="lc_produto_sel",
+                    help="Digite parte do código ou nome para filtrar",
+                )
 
-                fc5, fc6 = st.columns([1, 2])
-                with fc5:
-                    lanc_quantidade = st.number_input(
-                        "Quantidade *",
-                        min_value=1,
-                        max_value=99999,
-                        value=1,
-                        step=1,
+                _lc_codigo, _lc_nome, _lc_cat = "", "", ""
+                if _lc_sel and _lc_sel != "— selecione um produto —":
+                    _found = next((p for p in _lc_produtos if p["label"] == _lc_sel), None)
+                    if _found:
+                        _lc_codigo = _found["codigo"]
+                        _lc_nome   = _found["produto"]
+                        _lc_cat    = _found["categoria"]
+                    # Exibe info do produto selecionado
+                    _lc_row = df_view[df_view["codigo"] == _lc_codigo]
+                    if not _lc_row.empty:
+                        _estq_atual = int(_lc_row.iloc[0]["qtd_sistema"])
+                        st.caption(f"Categoria: **{_lc_cat}** · Estoque atual: **{_estq_atual} un.**")
+
+                col_tipo, col_qtd = st.columns([2, 1])
+                with col_tipo:
+                    _lc_tipo = st.selectbox(
+                        "Tipo de movimento",
+                        options=["Entrada", "Saída", "Ajuste de inventário", "Devolução", "Perda/Quebra"],
+                        key="lc_tipo",
                     )
-                with fc6:
-                    lanc_obs = st.text_input(
-                        "Observação (opcional)",
-                        placeholder="Ex: Recebimento NF 4512, devolução cliente...",
+                with col_qtd:
+                    _lc_qtd = st.number_input(
+                        "Quantidade", min_value=1, max_value=99999, value=1, step=1, key="lc_qtd"
                     )
 
-                submitted = st.form_submit_button("💾 Salvar lançamento", type="primary", use_container_width=True)
-                if submitted:
-                    if not lanc_codigo:
-                        st.error("Código do produto é obrigatório.")
-                    elif not lanc_produto:
-                        st.error("Nome do produto é obrigatório.")
-                    else:
-                        try:
-                            inserir_lancamento(
-                                codigo=lanc_codigo,
-                                produto=lanc_produto,
-                                categoria=str(lanc_categoria),
-                                tipo=lanc_tipo,
-                                quantidade=int(lanc_quantidade),
-                                observacao=lanc_obs.strip(),
-                            )
-                            tipo_label = "Entrada" if lanc_tipo == "entrada" else "Saída"
-                            st.success(f"✅ {tipo_label} de {lanc_quantidade} un. de **{lanc_produto}** registrada com sucesso.")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"❌ Erro ao salvar: {e}")
+                _lc_motivo = st.text_input(
+                    "Motivo / observação (opcional)",
+                    placeholder="Ex: devolução de cliente, ajuste de inventário físico…",
+                    key="lc_motivo",
+                )
 
-        # ── Histórico de lançamentos ──────────────────────────────────────────
+                _lc_disabled = not bool(_lc_codigo)
+                if st.button(
+                    "💾 Salvar lançamento",
+                    key="lc_salvar",
+                    type="primary",
+                    disabled=_lc_disabled,
+                    use_container_width=True,
+                ):
+                    if inserir_lancamento(_lc_codigo, _lc_nome, _lc_cat, _lc_tipo, _lc_qtd, _lc_motivo):
+                        st.success(f"✅ Lançamento salvo: {_lc_tipo} de {_lc_qtd} un. — {_lc_nome}")
+                        st.rerun()
+
+        # ── Histórico de lançamentos ───────────────────────────────────────
         st.markdown("---")
-        st.markdown("##### 📋 Histórico de lançamentos manuais")
+        df_lc = listar_lancamentos()
 
-        df_lanc = listar_lancamentos()
-        if df_lanc.empty:
-            st.info("Nenhum lançamento manual registrado ainda.")
+        if df_lc.empty:
+            st.markdown("""
+            <div style="text-align:center;padding:30px 20px;color:rgba(255,255,255,0.3);">
+                <div style="font-size:2rem;">✏️</div>
+                <div>Nenhum lançamento registrado ainda.</div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
-            st.caption(f"{len(df_lanc)} lançamento(s) registrado(s) · Excluir reverte a quantidade no estoque.")
-            for _, lanc in df_lanc.iterrows():
-                tipo_cor  = "#22c55e" if lanc["tipo"] == "entrada" else "#f97316"
-                tipo_icon = "📥" if lanc["tipo"] == "entrada" else "📤"
-                tipo_lbl  = "ENTRADA" if lanc["tipo"] == "entrada" else "SAÍDA"
-                obs_html  = f'<span style="color:#64748b"> · {lanc["observacao"]}</span>' if lanc["observacao"] else ""
-                data_fmt  = str(lanc["registrado_em"])[:16].replace("T", " ")
+            st.markdown(f"##### {len(df_lc)} lançamento(s) registrado(s)")
+
+            _tipo_cor = {
+                "Entrada":             "#00d68f",
+                "Saída":               "#ef4444",
+                "Ajuste de inventário": "#f59e0b",
+                "Devolução":           "#60a5fa",
+                "Perda/Quebra":        "#f87171",
+            }
+
+            for _, lc in df_lc.iterrows():
+                _cor = _tipo_cor.get(str(lc["tipo"]), "#94a3b8")
+                _data_fmt = str(lc["registrado_em"])[:16].replace("T", " ")
+                _motivo_txt = f" · {lc['motivo']}" if str(lc.get("motivo", "")).strip() else ""
 
                 col_info, col_del = st.columns([6, 1])
                 with col_info:
                     st.markdown(
-                        f'<div style="padding:8px 0;border-bottom:1px solid #1e293b;">'
-                        f'<span style="color:{tipo_cor};font-weight:600;">{tipo_icon} {tipo_lbl} +{int(lanc["quantidade"])} un.</span>'
-                        f' &nbsp;·&nbsp; <span style="color:#e2e8f0;font-weight:500;">{lanc["produto"]}</span>'
-                        f' &nbsp;·&nbsp; <span style="color:#94a3b8;font-size:0.85rem;">{lanc["codigo"]}</span>'
-                        f' &nbsp;·&nbsp; <span style="color:#64748b;font-size:0.82rem;">{lanc["categoria"]}</span>'
-                        f'<br><span style="color:#475569;font-size:0.8rem;">🕐 {data_fmt}{obs_html}</span>'
-                        f'</div>',
+                        f'<div style="border-left:3px solid {_cor};padding:6px 12px;margin-bottom:4px;">'
+                        f'<span style="color:{_cor};font-weight:600;">{lc["tipo"]}</span>'
+                        f' &nbsp;·&nbsp; <b>{int(lc["quantidade"])} un.</b>'
+                        f' &nbsp;·&nbsp; {lc["produto"]}'
+                        f'<br><span style="font-size:0.75rem;color:#64748b;">'
+                        f'{_data_fmt}{_motivo_txt}</span></div>',
                         unsafe_allow_html=True,
                     )
                 with col_del:
-                    if st.button("🗑️", key=f"del_lanc_{lanc['id']}", help="Excluir e reverter estoque"):
-                        st.session_state[f"confirm_del_lanc_{lanc['id']}"] = True
+                    if st.button("🗑️", key=f"lc_del_{lc['id']}", help="Excluir este lançamento"):
+                        if excluir_lancamento(int(lc["id"])):
+                            st.rerun()
 
-                if st.session_state.get(f"confirm_del_lanc_{lanc['id']}"):
-                    st.warning(f"Confirmar exclusão de **{lanc['produto']}** ({tipo_lbl.lower()} de {int(lanc['quantidade'])} un.)? O estoque será revertido.")
-                    c_sim, c_nao = st.columns(2)
-                    with c_sim:
-                        if st.button("✅ Confirmar exclusão", key=f"sim_del_lanc_{lanc['id']}", type="primary", use_container_width=True):
-                            excluir_lancamento(int(lanc["id"]))
-                            st.session_state.pop(f"confirm_del_lanc_{lanc['id']}", None)
-                            st.success("Lançamento excluído e estoque revertido.")
-                            st.rerun()
-                    with c_nao:
-                        if st.button("✖ Cancelar", key=f"nao_del_lanc_{lanc['id']}", use_container_width=True):
-                            st.session_state.pop(f"confirm_del_lanc_{lanc['id']}", None)
-                            st.rerun()
+            # ── Exportar CSV ──────────────────────────────────────────────
+            st.markdown("---")
+            csv_lc = df_lc.drop(columns=["id"]).to_csv(index=False).encode("utf-8")
+            st.download_button(
+                "⬇️ Exportar lançamentos (.csv)",
+                data=csv_lc,
+                file_name=f"lancamentos_{datetime.now(tz=_BRT).strftime('%Y%m%d')}.csv",
+                mime="text/csv",
+                key="lc_download",
+            )
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
