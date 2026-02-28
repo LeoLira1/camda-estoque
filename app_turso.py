@@ -1203,10 +1203,24 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         return
 
     # ── 2. Enriquecer estoque com P.A. ─────────────────────────────────────
+    # Pré-computar lista de chaves do catálogo ordenada por comprimento desc
+    # (mais específico primeiro, evita match parcial errado)
+    _cat_keys = sorted(mapa_combinado.keys(), key=len, reverse=True)
+
+    def _lookup_pa(nome: str) -> str:
+        chave = nome.strip().upper()
+        # 1. Match exato
+        if chave in mapa_combinado:
+            return mapa_combinado[chave]
+        # 2. Nome do catálogo contido no nome do produto (ex: "ROUNDUP WG" em "ROUNDUP WG 540SC")
+        for cat_key in _cat_keys:
+            if cat_key in chave:
+                return mapa_combinado[cat_key]
+        return "Não identificado"
+
     registros = []
     for _, row in df_mestre.iterrows():
-        chave = str(row["produto"]).strip().upper()
-        pa = mapa_combinado.get(chave, "Não identificado")
+        pa = _lookup_pa(str(row["produto"]))
         qtd = max(float(row.get("qtd_sistema", 0) or 0), 0)
         registros.append({
             "produto": row["produto"],
