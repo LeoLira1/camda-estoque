@@ -3299,138 +3299,6 @@ if _al_val or _al_pend:
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
 
-# ── Upload Section ───────────────────────────────────────────────────────────
-with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
-
-    if not has_mestre:
-        st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
-
-    opcao_mestre = "MESTRE (carga completa)" if not has_mestre else "MESTRE (substituir tudo)"
-    opcao_parcial = "PARCIAL (atualizar contagem do dia)"
-    upload_mode = st.radio(
-        "Tipo de Upload",
-        [opcao_mestre, opcao_parcial],
-        index=0 if not has_mestre else 1,
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-    is_mestre_upload = "MESTRE" in upload_mode
-
-    if is_mestre_upload:
-        st.caption("Substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
-        data_planilha = datetime.now(tz=_BRT).date()
-    else:
-        st.caption("Atualiza apenas os produtos da planilha. Os demais permanecem inalterados.")
-        data_planilha = st.date_input(
-            "📅 Data da planilha",
-            value=datetime.now(tz=_BRT).date(),
-            max_value=datetime.now(tz=_BRT).date(),
-            help="Selecione a data a que esta planilha se refere. Use quando a planilha é de um dia anterior ao de hoje.",
-        )
-
-    uploaded = st.file_uploader("Planilha XLSX", type=["xlsx", "xls"], label_visibility="collapsed", key="upload_main")
-
-    if uploaded:
-        # Parseia UMA VEZ e guarda no session_state
-        file_id = f"{uploaded.name}_{uploaded.size}"
-        if st.session_state.processed_file != file_id:
-            ok, result, zerados = read_excel_to_records(uploaded)
-            st.session_state["_parsed_ok"] = ok
-            st.session_state["_parsed_result"] = result
-            st.session_state["_parsed_zerados"] = zerados
-            st.session_state.processed_file = file_id
-
-        ok = st.session_state.get("_parsed_ok", False)
-        result = st.session_state.get("_parsed_result")
-        zerados = st.session_state.get("_parsed_zerados", [])
-
-        if ok:
-            records = result
-            with st.expander("👁️ Preview", expanded=False):
-                df_preview = pd.DataFrame(records)
-                n_div = sum(1 for r in records if r["status"] != "ok")
-                st.caption(f"{len(records)} produtos encontrados")
-                if n_div:
-                    st.warning(f"⚠️ {n_div} divergência(s)")
-                if zerados:
-                    st.info(f"🗑️ {len(zerados)} produto(s) com estoque zerado serão removidos do mestre")
-                st.dataframe(
-                    df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
-                    hide_index=True, use_container_width=True, height=250,
-                )
-
-            if st.button("🚀 Processar", type="primary"):
-                with st.spinner("Processando..."):
-                    if is_mestre_upload:
-                        ok_up, msg = upload_mestre(records)
-                    else:
-                        ok_up, msg = upload_parcial(records, zerados)
-
-                if ok_up:
-                    st.success(msg)
-                    # Salvar dados de vendas para gráficos
-                    save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
-                    if _using_cloud:
-                        st.info("☁️ Sincronizado.")
-                    st.session_state.processed_file = None
-                    st.rerun()
-                else:
-                    st.error(msg)
-        else:
-            st.error(result)
-
-    # Admin
-    if has_mestre:
-        st.markdown("---")
-
-        # Upload de Princípios Ativos
-        st.markdown("##### 🧬 Base de Princípios Ativos")
-        pa_count = get_pa_count()
-        if pa_count > 0:
-            st.caption(f"✅ {pa_count} registros de princípios ativos carregados. A busca por princípio ativo está ativa.")
-        else:
-            st.caption("Carregue a planilha de princípios ativos para habilitar a busca por P.A. e a aba 🧬 P. Ativos.")
-
-        uploaded_pa = st.file_uploader(
-            "Planilha de Princípios Ativos (produtos_CAMDA.xlsx ou formato simples)",
-            type=["xlsx", "xls"],
-            label_visibility="collapsed", key="upload_pa"
-        )
-        if uploaded_pa:
-            pa_records = load_principios_ativos_from_excel(uploaded_pa)
-            if pa_records:
-                if st.button("🧬 Carregar Princípios Ativos", type="primary"):
-                    sync_principios_ativos(pa_records)
-                    st.success(f"✅ {len(pa_records)} registros de princípios ativos carregados!")
-                    st.rerun()
-            else:
-                st.error("Não foi possível ler a planilha. Esperado: colunas 'Produto' e 'Princípio Ativo' (ou arquivo produtos_CAMDA.xlsx com 3 abas).")
-
-        st.markdown("---")
-        _, col_sync, col_reset = st.columns([2, 1, 1])
-        with col_sync:
-            if _using_cloud and st.button("🔄 Sincronizar"):
-                sync_db()
-                st.rerun()
-        with col_reset:
-            if st.session_state.confirm_reset:
-                st.warning("Tem certeza?")
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button("Sim, limpar"):
-                        reset_db()
-                        st.session_state.confirm_reset = False
-                        st.rerun()
-                with c2:
-                    if st.button("Cancelar"):
-                        st.session_state.confirm_reset = False
-                        st.rerun()
-            else:
-                if st.button("🗑️ Limpar BD"):
-                    st.session_state.confirm_reset = True
-                    st.rerun()
-
-
 # ── Dashboard ────────────────────────────────────────────────────────────────
 if has_mestre:
     df_mestre = get_current_stock()
@@ -4666,6 +4534,138 @@ if has_mestre:
         build_principios_ativos_tab(df_mestre, df_pa)
 
 
+# ── Upload Section ───────────────────────────────────────────────────────────
+with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
+
+    if not has_mestre:
+        st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
+
+    opcao_mestre = "MESTRE (carga completa)" if not has_mestre else "MESTRE (substituir tudo)"
+    opcao_parcial = "PARCIAL (atualizar contagem do dia)"
+    upload_mode = st.radio(
+        "Tipo de Upload",
+        [opcao_mestre, opcao_parcial],
+        index=0 if not has_mestre else 1,
+        horizontal=True,
+        label_visibility="collapsed",
+    )
+    is_mestre_upload = "MESTRE" in upload_mode
+
+    if is_mestre_upload:
+        st.caption("Substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
+        data_planilha = datetime.now(tz=_BRT).date()
+    else:
+        st.caption("Atualiza apenas os produtos da planilha. Os demais permanecem inalterados.")
+        data_planilha = st.date_input(
+            "📅 Data da planilha",
+            value=datetime.now(tz=_BRT).date(),
+            max_value=datetime.now(tz=_BRT).date(),
+            help="Selecione a data a que esta planilha se refere. Use quando a planilha é de um dia anterior ao de hoje.",
+        )
+
+    uploaded = st.file_uploader("Planilha XLSX", type=["xlsx", "xls"], label_visibility="collapsed", key="upload_main")
+
+    if uploaded:
+        # Parseia UMA VEZ e guarda no session_state
+        file_id = f"{uploaded.name}_{uploaded.size}"
+        if st.session_state.processed_file != file_id:
+            ok, result, zerados = read_excel_to_records(uploaded)
+            st.session_state["_parsed_ok"] = ok
+            st.session_state["_parsed_result"] = result
+            st.session_state["_parsed_zerados"] = zerados
+            st.session_state.processed_file = file_id
+
+        ok = st.session_state.get("_parsed_ok", False)
+        result = st.session_state.get("_parsed_result")
+        zerados = st.session_state.get("_parsed_zerados", [])
+
+        if ok:
+            records = result
+            with st.expander("👁️ Preview", expanded=False):
+                df_preview = pd.DataFrame(records)
+                n_div = sum(1 for r in records if r["status"] != "ok")
+                st.caption(f"{len(records)} produtos encontrados")
+                if n_div:
+                    st.warning(f"⚠️ {n_div} divergência(s)")
+                if zerados:
+                    st.info(f"🗑️ {len(zerados)} produto(s) com estoque zerado serão removidos do mestre")
+                st.dataframe(
+                    df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
+                    hide_index=True, use_container_width=True, height=250,
+                )
+
+            if st.button("🚀 Processar", type="primary"):
+                with st.spinner("Processando..."):
+                    if is_mestre_upload:
+                        ok_up, msg = upload_mestre(records)
+                    else:
+                        ok_up, msg = upload_parcial(records, zerados)
+
+                if ok_up:
+                    st.success(msg)
+                    # Salvar dados de vendas para gráficos
+                    save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
+                    if _using_cloud:
+                        st.info("☁️ Sincronizado.")
+                    st.session_state.processed_file = None
+                    st.rerun()
+                else:
+                    st.error(msg)
+        else:
+            st.error(result)
+
+    # Admin
+    if has_mestre:
+        st.markdown("---")
+
+        # Upload de Princípios Ativos
+        st.markdown("##### 🧬 Base de Princípios Ativos")
+        pa_count = get_pa_count()
+        if pa_count > 0:
+            st.caption(f"✅ {pa_count} registros de princípios ativos carregados. A busca por princípio ativo está ativa.")
+        else:
+            st.caption("Carregue a planilha de princípios ativos para habilitar a busca por P.A. e a aba 🧬 P. Ativos.")
+
+        uploaded_pa = st.file_uploader(
+            "Planilha de Princípios Ativos (produtos_CAMDA.xlsx ou formato simples)",
+            type=["xlsx", "xls"],
+            label_visibility="collapsed", key="upload_pa"
+        )
+        if uploaded_pa:
+            pa_records = load_principios_ativos_from_excel(uploaded_pa)
+            if pa_records:
+                if st.button("🧬 Carregar Princípios Ativos", type="primary"):
+                    sync_principios_ativos(pa_records)
+                    st.success(f"✅ {len(pa_records)} registros de princípios ativos carregados!")
+                    st.rerun()
+            else:
+                st.error("Não foi possível ler a planilha. Esperado: colunas 'Produto' e 'Princípio Ativo' (ou arquivo produtos_CAMDA.xlsx com 3 abas).")
+
+        st.markdown("---")
+        _, col_sync, col_reset = st.columns([2, 1, 1])
+        with col_sync:
+            if _using_cloud and st.button("🔄 Sincronizar"):
+                sync_db()
+                st.rerun()
+        with col_reset:
+            if st.session_state.confirm_reset:
+                st.warning("Tem certeza?")
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("Sim, limpar"):
+                        reset_db()
+                        st.session_state.confirm_reset = False
+                        st.rerun()
+                with c2:
+                    if st.button("Cancelar"):
+                        st.session_state.confirm_reset = False
+                        st.rerun()
+            else:
+                if st.button("🗑️ Limpar BD"):
+                    st.session_state.confirm_reset = True
+                    st.rerun()
+
+
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
 if _using_cloud:
@@ -4677,6 +4677,6 @@ else:
 if not has_mestre:
     st.markdown(
         '<div style="text-align:center;color:#64748b;padding:60px 20px;font-size:1rem;">'
-        "Faça o upload da planilha mestre acima para começar ☝️</div>",
+        "Faça o upload da planilha mestre abaixo para começar 👇</div>",
         unsafe_allow_html=True,
     )
