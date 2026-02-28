@@ -3467,7 +3467,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "✏️ Lançamentos", "🧬 P. Ativos"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -4662,156 +4662,9 @@ if has_mestre:
 
 
     # ══════════════════════════════════════════════════════════════════════════
-    # TAB 12 — LANÇAMENTOS MANUAIS DE ESTOQUE
+    # TAB 12 — ESTOQUE POR PRINCÍPIO ATIVO
     # ══════════════════════════════════════════════════════════════════════════
     with t12:
-        st.markdown("#### ✏️ Lançamentos Manuais de Estoque")
-        st.caption("Registre entradas e saídas avulsas sem precisar re-enviar a planilha mestre.")
-
-        # ── Formulário de novo lançamento ──────────────────────────────────
-        with st.expander("➕ Novo lançamento", expanded=True):
-            # Monta lista de produtos para autocomplete
-            _lc_produtos: list[dict] = []
-            if not df_view.empty:
-                for _, _r in df_view.iterrows():
-                    _lc_produtos.append({
-                        "label": f"{_r['codigo']} — {_r['produto']}",
-                        "codigo": str(_r["codigo"]),
-                        "produto": str(_r["produto"]),
-                        "categoria": str(_r["categoria"]),
-                    })
-
-            # Toggle: produto do estoque ou novo produto
-            _lc_modo_novo = st.toggle(
-                "Produto não está no estoque (digitar manualmente)",
-                key="lc_modo_novo",
-                value=False,
-            )
-
-            _lc_codigo, _lc_nome, _lc_cat = "", "", ""
-
-            if _lc_modo_novo:
-                # ── Modo manual: campos livres ─────────────────────────────
-                col_cod, col_cat2 = st.columns([1, 2])
-                with col_cod:
-                    _lc_codigo = st.text_input("Código", placeholder="Ex: 001234", key="lc_cod_manual").strip()
-                with col_cat2:
-                    _lc_cat = st.text_input("Categoria", placeholder="Ex: HERBICIDA", key="lc_cat_manual").strip()
-                _lc_nome = st.text_input("Nome do produto", placeholder="Ex: ROUNDUP 1L", key="lc_nome_manual").strip()
-
-            elif not _lc_produtos:
-                st.info("Faça o upload da planilha mestre para habilitar o autocomplete de produtos.")
-            else:
-                # ── Modo autocomplete: selectbox filtrável ─────────────────
-                _lc_opcoes = ["— selecione um produto —"] + [p["label"] for p in _lc_produtos]
-                _lc_sel = st.selectbox(
-                    "Produto",
-                    options=_lc_opcoes,
-                    key="lc_produto_sel",
-                    help="Digite parte do código ou nome para filtrar",
-                )
-
-                if _lc_sel and _lc_sel != "— selecione um produto —":
-                    _found = next((p for p in _lc_produtos if p["label"] == _lc_sel), None)
-                    if _found:
-                        _lc_codigo = _found["codigo"]
-                        _lc_nome   = _found["produto"]
-                        _lc_cat    = _found["categoria"]
-                    _lc_row = df_view[df_view["codigo"] == _lc_codigo]
-                    if not _lc_row.empty:
-                        _estq_atual = int(_lc_row.iloc[0]["qtd_sistema"])
-                        st.caption(f"Categoria: **{_lc_cat}** · Estoque atual: **{_estq_atual} un.**")
-
-            # ── Campos comuns (tipo, qtd, motivo) ─────────────────────────
-            if _lc_modo_novo or _lc_produtos:
-                col_tipo, col_qtd = st.columns([2, 1])
-                with col_tipo:
-                    _lc_tipo = st.selectbox(
-                        "Tipo de movimento",
-                        options=["Entrada", "Saída", "Ajuste de inventário", "Devolução", "Perda/Quebra"],
-                        key="lc_tipo",
-                    )
-                with col_qtd:
-                    _lc_qtd = st.number_input(
-                        "Quantidade", min_value=1, max_value=99999, value=1, step=1, key="lc_qtd"
-                    )
-
-                _lc_motivo = st.text_input(
-                    "Motivo / observação (opcional)",
-                    placeholder="Ex: devolução de cliente, ajuste de inventário físico…",
-                    key="lc_motivo",
-                )
-
-                _lc_disabled = not bool(_lc_codigo and _lc_nome)
-                if st.button(
-                    "💾 Salvar lançamento",
-                    key="lc_salvar",
-                    type="primary",
-                    disabled=_lc_disabled,
-                    use_container_width=True,
-                ):
-                    if inserir_lancamento(_lc_codigo, _lc_nome, _lc_cat, _lc_tipo, _lc_qtd, _lc_motivo):
-                        st.success(f"✅ Lançamento salvo: {_lc_tipo} de {_lc_qtd} un. — {_lc_nome}")
-                        st.rerun()
-
-        # ── Histórico de lançamentos ───────────────────────────────────────
-        st.markdown("---")
-        df_lc = listar_lancamentos()
-
-        if df_lc.empty:
-            st.markdown("""
-            <div style="text-align:center;padding:30px 20px;color:rgba(255,255,255,0.3);">
-                <div style="font-size:2rem;">✏️</div>
-                <div>Nenhum lançamento registrado ainda.</div>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown(f"##### {len(df_lc)} lançamento(s) registrado(s)")
-
-            _tipo_cor = {
-                "Entrada":             "#00d68f",
-                "Saída":               "#ef4444",
-                "Ajuste de inventário": "#f59e0b",
-                "Devolução":           "#60a5fa",
-                "Perda/Quebra":        "#f87171",
-            }
-
-            for _, lc in df_lc.iterrows():
-                _cor = _tipo_cor.get(str(lc["tipo"]), "#94a3b8")
-                _data_fmt = str(lc["registrado_em"])[:16].replace("T", " ")
-                _motivo_txt = f" · {lc['motivo']}" if str(lc.get("motivo", "")).strip() else ""
-
-                col_info, col_del = st.columns([6, 1])
-                with col_info:
-                    st.markdown(
-                        f'<div style="border-left:3px solid {_cor};padding:6px 12px;margin-bottom:4px;">'
-                        f'<span style="color:{_cor};font-weight:600;">{lc["tipo"]}</span>'
-                        f' &nbsp;·&nbsp; <b>{int(lc["quantidade"])} un.</b>'
-                        f' &nbsp;·&nbsp; {lc["produto"]}'
-                        f'<br><span style="font-size:0.75rem;color:#64748b;">'
-                        f'{_data_fmt}{_motivo_txt}</span></div>',
-                        unsafe_allow_html=True,
-                    )
-                with col_del:
-                    if st.button("🗑️", key=f"lc_del_{lc['id']}", help="Excluir este lançamento"):
-                        if excluir_lancamento(int(lc["id"])):
-                            st.rerun()
-
-            # ── Exportar CSV ──────────────────────────────────────────────
-            st.markdown("---")
-            csv_lc = df_lc.drop(columns=["id"]).to_csv(index=False).encode("utf-8")
-            st.download_button(
-                "⬇️ Exportar lançamentos (.csv)",
-                data=csv_lc,
-                file_name=f"lancamentos_{datetime.now(tz=_BRT).strftime('%Y%m%d')}.csv",
-                mime="text/csv",
-                key="lc_download",
-            )
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # TAB 13 — ESTOQUE POR PRINCÍPIO ATIVO
-    # ══════════════════════════════════════════════════════════════════════════
-    with t13:
         st.markdown("#### 🧬 Estoque por Princípio Ativo")
         st.caption(
             "Volume total em estoque agrupado pelo ingrediente ativo de cada produto comercial. "
