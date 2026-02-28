@@ -400,8 +400,28 @@ st.markdown("""
         scrollbar-width: none;
     }
     .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
-    .stTabs [data-baseweb="tab"] { color: #7bafd4 !important; }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #7bafd4 !important; }
+    .stTabs [data-baseweb="tab-list"] { gap: 4px !important; padding: 4px 4px 0 4px !important; }
+    .stTabs [data-baseweb="tab"] {
+        color: #7bafd4 !important;
+        background: rgba(255,255,255,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 8px !important;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
+        padding: 6px 14px !important;
+        font-weight: 500 !important;
+        transition: background 0.2s, border-color 0.2s !important;
+        margin-bottom: 0 !important;
+    }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+        color: #cde8f8 !important;
+        background: rgba(123,175,212,0.16) !important;
+        border: 1px solid rgba(123,175,212,0.35) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+    }
+    .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
+    .stTabs [data-baseweb="tab-border"] { display: none !important; }
     /* ── Mobile (≤640px) ───────────────────────────────────────────────── */
     @media (max-width: 640px) {
         .block-container { padding: 0.3rem 0.3rem !important; }
@@ -411,8 +431,9 @@ st.markdown("""
         .stat-value { font-size: 0.85rem; }
         .stat-label { font-size: 0.48rem; letter-spacing: 0.5px; }
         .stTabs [data-baseweb="tab"] {
-            padding: 6px 8px !important;
+            padding: 5px 8px !important;
             font-size: 0.65rem !important;
+            border-radius: 6px !important;
         }
         .tm-tile { width: calc(33.33% - 6px); min-width: 90px; height: 58px; }
     }
