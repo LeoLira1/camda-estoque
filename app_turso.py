@@ -2479,15 +2479,16 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 # VENDAS — salvar/carregar dados de vendas para gráficos
 # ══════════════════════════════════════════════════════════════════════════════
 
-def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, is_mestre: bool = False):
+def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, is_mestre: bool = False, data_ref: str = None):
     """Salva dados de vendas no histórico para gráficos.
     - MESTRE: substitui tudo (carga completa)
     - PARCIAL: SUBSTITUI por dia — cada dia gera uma linha separada por produto.
-      Se já existe registro para (codigo, hoje) substitui qtd_vendida pelo valor mais recente.
+      Se já existe registro para (codigo, data_ref) substitui qtd_vendida pelo valor mais recente.
+    - data_ref: data no formato "YYYY-MM-DD". Se None, usa a data atual (horário Brasília).
     """
     try:
         conn = get_db()
-        hoje = datetime.now(tz=_BRT).date().isoformat()  # "YYYY-MM-DD" — chave do dia (horário Brasília)
+        hoje = data_ref if data_ref else datetime.now(tz=_BRT).date().isoformat()  # "YYYY-MM-DD" — chave do dia
 
         if is_mestre:
             conn.execute("DELETE FROM vendas_historico")
@@ -3171,8 +3172,15 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 
     if is_mestre_upload:
         st.caption("Substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
+        data_planilha = datetime.now(tz=_BRT).date()
     else:
         st.caption("Atualiza apenas os produtos da planilha. Os demais permanecem inalterados.")
+        data_planilha = st.date_input(
+            "📅 Data da planilha",
+            value=datetime.now(tz=_BRT).date(),
+            max_value=datetime.now(tz=_BRT).date(),
+            help="Selecione a data a que esta planilha se refere. Use quando a planilha é de um dia anterior ao de hoje.",
+        )
 
     uploaded = st.file_uploader("Planilha XLSX", type=["xlsx", "xls"], label_visibility="collapsed", key="upload_main")
 
@@ -3215,7 +3223,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                 if ok_up:
                     st.success(msg)
                     # Salvar dados de vendas para gráficos
-                    save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload)
+                    save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
                     if _using_cloud:
                         st.info("☁️ Sincronizado.")
                     st.session_state.processed_file = None
