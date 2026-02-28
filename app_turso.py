@@ -1334,6 +1334,9 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     # ── 8. Estado de seleção ──────────────────────────────────────────────────
     if "pa_selected" not in st.session_state:
         st.session_state["pa_selected"] = None
+    # pa_chart_ver: muda a key do widget para forçar reset da seleção interna
+    if "pa_chart_ver" not in st.session_state:
+        st.session_state["pa_chart_ver"] = 0
     pa_sel = st.session_state["pa_selected"]
     # Reset se o PA selecionado sumiu do plot atual
     if pa_sel and pa_sel not in df_plot["principio_ativo"].values:
@@ -1411,22 +1414,23 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
     # ── 10. Renderizar gráfico (com suporte a click via on_select) ────────────
     st.caption("Clique em uma barra para ver os detalhes por produto comercial")
+    _chart_key = f"pa_main_chart_v{st.session_state['pa_chart_ver']}"
     try:
         event = st.plotly_chart(
             fig, use_container_width=True,
             config={"displayModeBar": False},
             on_select="rerun",
-            key="pa_main_chart",
+            key=_chart_key,
         )
         if event and event.selection and event.selection.points:
             pt = event.selection.points[0]
             clicked_pa = pt.get("x") or pt.get("label")
             if clicked_pa:
-                if clicked_pa == st.session_state["pa_selected"]:
-                    # Segundo clique no mesmo PA → desseleciona
-                    st.session_state["pa_selected"] = None
-                else:
-                    st.session_state["pa_selected"] = clicked_pa
+                novo = None if clicked_pa == st.session_state["pa_selected"] else clicked_pa
+                st.session_state["pa_selected"] = novo
+                # Incrementa versão → nova key no próximo rerun → reset da seleção
+                # do widget, evitando que o "ghost click" dispare o toggle infinito
+                st.session_state["pa_chart_ver"] += 1
                 st.rerun()
     except TypeError:
         # Streamlit < 1.35 — sem on_select
@@ -1443,9 +1447,11 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     )
     if pa_sel_box != "— selecione —" and pa_sel_box != pa_sel:
         st.session_state["pa_selected"] = pa_sel_box
+        st.session_state["pa_chart_ver"] += 1  # reset chart para limpar seleção visual
         st.rerun()
     elif pa_sel_box == "— selecione —" and pa_sel is not None:
         st.session_state["pa_selected"] = None
+        st.session_state["pa_chart_ver"] += 1
         st.rerun()
 
     pa_sel = st.session_state["pa_selected"]
@@ -1505,6 +1511,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
             if st.button("✕ Fechar detalhe", key="pa_close_btn"):
                 st.session_state["pa_selected"] = None
+                st.session_state["pa_chart_ver"] += 1
                 st.rerun()
 
     # ── 13. Produtos sem P.A. mapeado ─────────────────────────────────────────
