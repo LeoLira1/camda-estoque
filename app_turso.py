@@ -1596,7 +1596,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             f"ℹ️ {n_nao_id} produto(s) sem mapeamento de P.A. "
             "Carregue **produtos_CAMDA.xlsx** via 'Base de Princípios Ativos' no painel lateral."
         )
-        with st.expander(f"🔍 Mapear / corrigir P.A. ({n_nao_id} sem mapeamento)", expanded=True):
+        with st.expander(f"🔍 Mapear / corrigir P.A. ({n_nao_id} sem mapeamento)", expanded=False):
             # Todos os produtos do estoque (não só os não mapeados)
             df_todos = (
                 df_enr[["produto", "categoria", "quantidade", "principio_ativo"]]
