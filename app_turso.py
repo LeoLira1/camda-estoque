@@ -3144,7 +3144,6 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
 
             # Scatter vendido vs estoque
-            st.markdown("---")
             fig_scatter = go.Figure()
             for g in df_prod["grupo"].unique():
                 dg = df_prod[df_prod["grupo"] == g]
@@ -3595,13 +3594,9 @@ if has_mestre:
         </style>
         """, unsafe_allow_html=True)
 
-        st.markdown("#### 📦 Retiradas Parciais")
-        st.caption("Produtos que aguardam segunda entrega · Prazo máximo: **3 dias**")
-
         # ── Registrar nova pendência ──
         with st.expander("➕  Registrar nova pendência", expanded=False):
             st.markdown("**📸 Fotografe ou selecione a via cega do pedido:**")
-            st.caption("No celular: toque em 'Browse files' → escolha **Câmera** para tirar foto agora")
             foto = st.file_uploader(
                 "Foto da via cega",
                 type=["jpg", "jpeg", "png", "webp"],
@@ -3627,8 +3622,6 @@ if has_mestre:
                     if st.button("✖ Cancelar", use_container_width=True, key="pend_cancelar"):
                         st.rerun()
 
-        st.divider()
-
         # ── Listar pendências ──
         pendencias = listar_pendencias()
 
@@ -3645,7 +3638,6 @@ if has_mestre:
             c1, c2 = st.columns(2)
             c1.metric("Total pendente", total_p)
             c2.metric("⚠️ Vencidas (3d+)", vencidas_p)
-            st.markdown("---")
 
             for pid, foto_b64, data_reg, obs in pendencias:
                 dias = _dias_desde(data_reg)
@@ -3687,9 +3679,6 @@ if has_mestre:
         .av-resolvido{background:rgba(0,214,143,0.15);color:#00d68f;border:1px solid #00d68f44;}
         </style>
         """, unsafe_allow_html=True)
-
-        st.markdown("#### 🔴 Avarias")
-        st.caption("Registro manual de produtos avariados · Persiste entre uploads de planilha")
 
         # ── Registrar nova avaria ──
         with st.expander("➕ Registrar nova avaria", expanded=False):
@@ -3739,8 +3728,6 @@ if has_mestre:
                                 st.success(f"✅ Avaria registrada: {row_sel['produto']} ({int(qtd_av)} un)")
                                 st.rerun()
 
-        st.divider()
-
         # ── Filtro de visualização ──
         col_f1, col_f2 = st.columns([2, 1])
         with col_f2:
@@ -3762,7 +3749,6 @@ if has_mestre:
             m1.metric("Total", len(df_av))
             m2.metric("🔴 Abertas", n_abertas)
             m3.metric("✅ Resolvidas", n_resolvidas)
-            st.markdown("---")
 
             for _, av in df_av.iterrows():
                 is_aberta = av["status"] == "aberto"
@@ -4218,7 +4204,6 @@ if has_mestre:
             '</div>',
             unsafe_allow_html=True
         )
-        st.caption("📌 Clique em qualquer dia para filtrar os eventos. Pontos coloridos indicam registros naquele dia.")
 
     with t9:
         st.markdown("""
@@ -4236,9 +4221,6 @@ if has_mestre:
         .ct-motivo{font-size:0.7rem;color:#94a3b8;margin-top:3px;}
         </style>
         """, unsafe_allow_html=True)
-
-        st.markdown("#### 📋 Contagem")
-        st.caption("Confira os produtos da última planilha parcial · Herbicidas, Inseticidas, Fungicidas, Óleos, Adjuvantes e Suplemento Mineral")
 
         df_ct = get_contagem_itens()
 
@@ -4384,11 +4366,8 @@ if has_mestre:
         </style>
         """, unsafe_allow_html=True)
 
-        st.markdown("#### 📅 Controle de Validade")
-
         # ── Upload — substitui os dados no banco ─────────────────────────────
         with st.expander("📤 Enviar nova planilha de validade", expanded=False):
-            st.caption("Substitui os dados existentes. A planilha fica salva no banco até o próximo upload.")
             uploaded_val = st.file_uploader(
                 "Planilha SIG de validade (.xlsx)",
                 type=["xlsx"],
@@ -4573,8 +4552,6 @@ if has_mestre:
     # TAB 11 — HISTÓRICO DE VENDAS
     # ══════════════════════════════════════════════════════════════════════════
     with t11:
-        st.markdown("#### 📊 Histórico de Vendas")
-
         df_dia   = get_vendas_por_dia()
         df_top   = get_top_produtos_historico(top_n=20)
         periodo  = get_periodo_vendas()
@@ -4599,8 +4576,6 @@ if has_mestre:
             k2.metric("📦 Total vendido", f"{total_unidades:,}".replace(",", "."))
             k3.metric("📈 Média/dia", f"{media_dia:.0f} un.")
             k4.metric("🏆 Melhor dia", f"{melhor_qtd} un.", melhor_dia)
-
-            st.markdown("---")
 
             # ── Gráfico de linha: unidades vendidas por dia ───────────────
             st.markdown("##### Unidades vendidas por dia")
@@ -4663,8 +4638,6 @@ if has_mestre:
                                 config={"displayModeBar": False, "staticPlot": True})
 
             # ── Botão para zerar histórico ────────────────────────────────
-            st.markdown("---")
-            st.caption("⚠️ Zerar o histórico apaga todos os dados acumulados de vendas. Use ao iniciar um novo período (ex: virada do mês).")
             if st.button("🗑️ Zerar histórico de vendas", key="hist_zerar", type="secondary"):
                 st.session_state["hist_confirmar_zerar"] = True
 
@@ -4690,11 +4663,6 @@ if has_mestre:
     # TAB 12 — ESTOQUE POR PRINCÍPIO ATIVO
     # ══════════════════════════════════════════════════════════════════════════
     with t12:
-        st.markdown("#### 🧬 Estoque por Princípio Ativo")
-        st.caption(
-            "Volume total em estoque agrupado pelo ingrediente ativo de cada produto comercial. "
-            "Carregue **produtos_CAMDA.xlsx** na raiz do projeto ou via painel lateral para ativar o mapeamento."
-        )
         build_principios_ativos_tab(df_mestre, df_pa)
 
 
