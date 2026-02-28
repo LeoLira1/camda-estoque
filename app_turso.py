@@ -3222,7 +3222,7 @@ st.markdown(f'''
 .camda-header-wrap {{ position: relative; width: 100%; margin-bottom: 0.8rem; }}
 .camda-header {{
     width: 100%; height: 220px;
-    background-image: url(https://raw.githubusercontent.com/LeoLira1/estoquecamda/main/banner.jpg);
+    background-image: url(https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/banner.jpg?v=20260228);
     background-size: cover;
     background-position: center;
     border-radius: 14px;
