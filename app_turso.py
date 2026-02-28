@@ -1594,63 +1594,76 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             f"ℹ️ {n_nao_id} produto(s) sem mapeamento de P.A. "
             "Carregue **produtos_CAMDA.xlsx** via 'Base de Princípios Ativos' no painel lateral."
         )
-        with st.expander(f"🔍 Mapear {n_nao_id} produto(s) sem P.A.", expanded=True):
+        with st.expander(f"🔍 Mapear produtos sem P.A. ({n_nao_id} pendentes)", expanded=True):
             df_nao = (
                 df_enr[df_enr["principio_ativo"] == "Não identificado"]
                 [["produto", "categoria", "quantidade"]]
                 .sort_values("produto")
                 .reset_index(drop=True)
             )
+            nomes_nao_id = df_nao["produto"].tolist()
 
             # P.A. disponíveis para sugestão (do catálogo + banco)
             pa_opcoes = sorted(set(mapa_combinado.values()))
 
-            # Sugestão automática via fuzzy para pré-preencher o selectbox
+            # Sugestão automática via fuzzy
             _cat_diag = list(_cat_ns.keys())
             def _sugerir_pa(nome: str) -> str:
                 s = _pstrip(_pnorm(str(nome)))
                 m = _gcm(s, _cat_diag, n=1, cutoff=0.0)
-                return _cat_ns[m[0]] if m else pa_opcoes[0] if pa_opcoes else ""
+                return _cat_ns[m[0]] if m else ""
 
             st.caption(
-                "Selecione o **Princípio Ativo** de cada produto abaixo e clique "
-                "**Salvar mapeamentos** — o gráfico será atualizado imediatamente."
+                "Busque o produto pelo nome, confirme ou digite o "
+                "Princípio Ativo e clique **Salvar**."
             )
 
-            selecoes = {}   # produto_upper → pa escolhido
-            for _, row in df_nao.iterrows():
-                prod    = str(row["produto"])
-                sugerido = _sugerir_pa(prod)
-                idx_sug  = pa_opcoes.index(sugerido) if sugerido in pa_opcoes else 0
-                col_nome, col_sel = st.columns([3, 3])
-                with col_nome:
-                    st.markdown(
-                        f'<div style="padding:8px 0;font-size:13px;color:#F9FAFB">'
-                        f'<b>{prod}</b>'
-                        f'<span style="color:#6B7280;font-size:11px;margin-left:8px">'
-                        f'{int(row["quantidade"])} un.</span></div>',
-                        unsafe_allow_html=True,
-                    )
-                with col_sel:
-                    pa_escolhido = st.selectbox(
-                        "P.A.",
-                        pa_opcoes,
-                        index=idx_sug,
-                        key=f"pa_map_{prod}",
-                        label_visibility="collapsed",
-                    )
-                selecoes[prod] = (pa_escolhido, str(row.get("categoria", "")))
+            # ── Seleção do produto ──────────────────────────────────────────
+            prod_sel = st.selectbox(
+                "Produto sem P.A.",
+                options=nomes_nao_id,
+                index=0,
+                key="pa_map_prod_sel",
+                placeholder="Digite para filtrar…",
+            )
 
-            if st.button("💾 Salvar mapeamentos", type="primary", use_container_width=True):
-                erros = 0
-                for prod, (pa, cat) in selecoes.items():
-                    if not upsert_principio_ativo(prod, pa, cat):
-                        erros += 1
-                if erros == 0:
-                    st.success(f"✅ {len(selecoes)} produto(s) mapeado(s)! Atualizando…")
-                    st.rerun()
+            # Dados do produto selecionado
+            _row_sel = df_nao[df_nao["produto"] == prod_sel]
+            _qtd_sel = int(_row_sel["quantidade"].iloc[0]) if not _row_sel.empty else 0
+            _cat_sel = str(_row_sel["categoria"].iloc[0]) if not _row_sel.empty else ""
+            st.caption(f"Quantidade em estoque: **{_qtd_sel} un.** — Categoria: {_cat_sel or '—'}")
+
+            # ── Princípio Ativo ─────────────────────────────────────────────
+            sugerido = _sugerir_pa(prod_sel) if prod_sel else ""
+
+            _PA_NOVO = "➕ Digitar novo P.A…"
+            pa_lista = [sugerido] + [p for p in pa_opcoes if p != sugerido] + [_PA_NOVO]
+            pa_sel = st.selectbox(
+                "Princípio Ativo",
+                options=pa_lista,
+                index=0,
+                key="pa_map_pa_sel",
+                help="Escolha da lista ou selecione '➕ Digitar novo' para informar um P.A. inédito.",
+            )
+
+            pa_final = pa_sel
+            if pa_sel == _PA_NOVO:
+                pa_final = st.text_input(
+                    "Novo Princípio Ativo",
+                    placeholder="Ex.: Glifosato + Diquat",
+                    key="pa_map_pa_novo",
+                )
+
+            # ── Botão salvar ────────────────────────────────────────────────
+            if st.button("💾 Salvar mapeamento", type="primary", use_container_width=True):
+                if prod_sel and pa_final and pa_final.strip() and pa_final != _PA_NOVO:
+                    if upsert_principio_ativo(prod_sel, pa_final.strip(), _cat_sel):
+                        st.success(f"✅ **{prod_sel}** → *{pa_final.strip()}*")
+                        st.rerun()
+                    else:
+                        st.error("Erro ao salvar. Tente novamente.")
                 else:
-                    st.error(f"❌ {erros} erro(s) ao salvar. Tente novamente.")
+                    st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
 
 
 def reset_db():
