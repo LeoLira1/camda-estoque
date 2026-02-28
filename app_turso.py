@@ -1107,6 +1107,23 @@ def sync_principios_ativos(records: list):
         pass
 
 
+def upsert_principio_ativo(produto: str, principio_ativo: str, categoria: str = "") -> bool:
+    """Insere ou atualiza o mapeamento de um único produto."""
+    try:
+        conn = get_db()
+        prod_key = produto.strip().upper()
+        conn.execute("DELETE FROM principios_ativos WHERE produto = ?", (prod_key,))
+        conn.execute(
+            "INSERT INTO principios_ativos (produto, principio_ativo, categoria) VALUES (?, ?, ?)",
+            (prod_key, principio_ativo.strip(), categoria.strip()),
+        )
+        conn.commit()
+        sync_db()
+        return True
+    except Exception:
+        return False
+
+
 def get_principios_ativos() -> pd.DataFrame:
     """Retorna DataFrame com mapeamento produto ↔ princípio ativo."""
     try:
@@ -1577,48 +1594,63 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             f"ℹ️ {n_nao_id} produto(s) sem mapeamento de P.A. "
             "Carregue **produtos_CAMDA.xlsx** via 'Base de Princípios Ativos' no painel lateral."
         )
-        with st.expander(f"🔍 Ver {n_nao_id} produto(s) sem P.A. mapeado", expanded=False):
+        with st.expander(f"🔍 Mapear {n_nao_id} produto(s) sem P.A.", expanded=True):
             df_nao = (
                 df_enr[df_enr["principio_ativo"] == "Não identificado"]
                 [["produto", "categoria", "quantidade"]]
                 .sort_values("produto")
+                .reset_index(drop=True)
             )
 
-            # Enriquecer com coluna "mais próximo no catálogo" para diagnóstico
+            # P.A. disponíveis para sugestão (do catálogo + banco)
+            pa_opcoes = sorted(set(mapa_combinado.values()))
+
+            # Sugestão automática via fuzzy para pré-preencher o selectbox
             _cat_diag = list(_cat_ns.keys())
-            def _closest(nome):
+            def _sugerir_pa(nome: str) -> str:
                 s = _pstrip(_pnorm(str(nome)))
                 m = _gcm(s, _cat_diag, n=1, cutoff=0.0)
-                if not m:
-                    return "—", 0.0
-                ratio = round(_SM(None, s, m[0]).ratio(), 2)
-                return m[0], ratio
+                return _cat_ns[m[0]] if m else pa_opcoes[0] if pa_opcoes else ""
 
-            closest_nome  = []
-            closest_score = []
-            for nome in df_nao["produto"]:
-                cn, cs = _closest(nome)
-                closest_nome.append(cn)
-                closest_score.append(cs)
-
-            df_nao = df_nao.copy()
-            df_nao["Mais próximo no catálogo"] = closest_nome
-            df_nao["Similaridade"]             = closest_score
-
-            st.dataframe(
-                df_nao.rename(columns={
-                    "produto": "Produto no estoque",
-                    "categoria": "Categoria",
-                    "quantidade": "Qtd",
-                }),
-                hide_index=True, use_container_width=True,
-            )
             st.caption(
-                f"Mapa carregado: **{len(mapa_combinado)}** produto(s). "
-                "A coluna **Similaridade** mostra o quanto o nome do estoque se "
-                "aproxima do catálogo (1.0 = idêntico). Produtos com score ≥ 0.72 "
-                "já são capturados automaticamente pelo fuzzy match."
+                "Selecione o **Princípio Ativo** de cada produto abaixo e clique "
+                "**Salvar mapeamentos** — o gráfico será atualizado imediatamente."
             )
+
+            selecoes = {}   # produto_upper → pa escolhido
+            for _, row in df_nao.iterrows():
+                prod    = str(row["produto"])
+                sugerido = _sugerir_pa(prod)
+                idx_sug  = pa_opcoes.index(sugerido) if sugerido in pa_opcoes else 0
+                col_nome, col_sel = st.columns([3, 3])
+                with col_nome:
+                    st.markdown(
+                        f'<div style="padding:8px 0;font-size:13px;color:#F9FAFB">'
+                        f'<b>{prod}</b>'
+                        f'<span style="color:#6B7280;font-size:11px;margin-left:8px">'
+                        f'{int(row["quantidade"])} un.</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                with col_sel:
+                    pa_escolhido = st.selectbox(
+                        "P.A.",
+                        pa_opcoes,
+                        index=idx_sug,
+                        key=f"pa_map_{prod}",
+                        label_visibility="collapsed",
+                    )
+                selecoes[prod] = (pa_escolhido, str(row.get("categoria", "")))
+
+            if st.button("💾 Salvar mapeamentos", type="primary", use_container_width=True):
+                erros = 0
+                for prod, (pa, cat) in selecoes.items():
+                    if not upsert_principio_ativo(prod, pa, cat):
+                        erros += 1
+                if erros == 0:
+                    st.success(f"✅ {len(selecoes)} produto(s) mapeado(s)! Atualizando…")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {erros} erro(s) ao salvar. Tente novamente.")
 
 
 def reset_db():
