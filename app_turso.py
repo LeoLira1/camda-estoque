@@ -1375,6 +1375,15 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
     df_enr = pd.DataFrame(registros)
 
+    # ── View mode: fitossanitários (agro) vs medicamentos (med) ──────────────
+    _AGRO_CATS = {"HERBICIDAS", "INSETICIDAS", "FUNGICIDAS", "NEMATICIDAS"}
+    _MED_CATS  = {"MEDICAMENTOS", "MEDICAMENTOS VETERINÁRIOS", "MEDICAMENTOS VETERINARIOS"}
+    if "pa_view" not in st.session_state:
+        st.session_state["pa_view"] = "agro"
+    pa_view = st.session_state["pa_view"]
+    _cat_col = df_enr["categoria"].str.upper().str.strip()
+    df_enr_view = df_enr[_cat_col.isin(_AGRO_CATS if pa_view == "agro" else _MED_CATS)].copy()
+
     # ── 3. Agregar por P.A. ─────────────────────────────────────────────────
     df_agg = (
         df_enr.groupby("principio_ativo")
@@ -1399,14 +1408,43 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     df_id = df_agg[df_agg["principio_ativo"] != "Não identificado"]
     n_nao_id = int((df_enr["principio_ativo"] == "Não identificado").sum())
 
+    # ── Agregar visão filtrada por categoria ─────────────────────────────────
+    def _agg_enr(df_src: pd.DataFrame) -> pd.DataFrame:
+        if df_src.empty:
+            return pd.DataFrame(
+                columns=["principio_ativo", "total", "total_litros", "total_kg", "n_produtos", "n_sem_vol"]
+            )
+        df_a = (
+            df_src.groupby("principio_ativo")
+            .agg(
+                total=("quantidade", "sum"),
+                total_litros=("volume_litros", lambda x: x.sum(min_count=1)),
+                total_kg=("volume_kg", lambda x: x.sum(min_count=1)),
+                n_produtos=("produto", "count"),
+                n_sem_vol=("has_vol", lambda x: (~x).sum()),
+            )
+            .reset_index()
+        )
+        df_a["_sk"] = df_a.apply(
+            lambda r: r["total_litros"] if pd.notna(r["total_litros"]) and r["total_litros"] > 0
+                      else (r["total_kg"] if pd.notna(r["total_kg"]) and r["total_kg"] > 0 else r["total"]),
+            axis=1,
+        )
+        return df_a.sort_values("_sk", ascending=False).drop(columns=["_sk"])
+
+    df_id_view = _agg_enr(df_enr_view)
+    df_id_view = df_id_view[df_id_view["principio_ativo"] != "Não identificado"]
+    n_nao_id_view = int((df_enr_view["principio_ativo"] == "Não identificado").sum())
+
     total_pa    = int(df_id.shape[0])
     total_prods = int(df_enr["produto"].nunique())
     total_vol   = float(df_id["total"].sum())
     total_litros_geral = float(df_id["total_litros"].sum(skipna=True))
     total_kg_geral = float(df_id["total_kg"].sum(skipna=True))
 
-    maior_vol_row  = df_id.sort_values(["total_litros", "total_kg", "total"], ascending=[False, False, False], na_position="last").head(1)
-    mais_marcas_row = df_id.sort_values("n_produtos", ascending=False).head(1)
+    # KPIs calculados sobre a visão filtrada
+    maior_vol_row  = df_id_view.sort_values(["total_litros", "total_kg", "total"], ascending=[False, False, False], na_position="last").head(1)
+    mais_marcas_row = df_id_view.sort_values("n_produtos", ascending=False).head(1)
     maior_vol_txt = (
         _fmt_volume(
             maior_vol_row["total_litros"].iloc[0],
@@ -1434,31 +1472,69 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     </div>
     """, unsafe_allow_html=True)
 
-    # ── 5. KPI cards ─────────────────────────────────────────────────────────
-    st.markdown(f"""
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px 18px">
-        <div style="font-size:11px;color:#6B7280;margin-bottom:6px">Princípios Ativos</div>
-        <div style="font-size:22px;font-weight:800;color:#00E5A0">{total_pa}</div>
-      </div>
-      <div style="background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px 18px">
-        <div style="font-size:11px;color:#6B7280;margin-bottom:6px">Produtos Comerciais</div>
-        <div style="font-size:22px;font-weight:800;color:#00C4FF">{total_prods}</div>
-      </div>
-      <div style="background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px 18px">
-        <div style="font-size:11px;color:#6B7280;margin-bottom:6px">Maior Volume</div>
-        <div style="font-size:18px;font-weight:800;color:#FFD166">{maior_vol_txt}</div>
-        <div style="font-size:10px;color:#6B7280;margin-top:2px;overflow:hidden;
-                    text-overflow:ellipsis;white-space:nowrap" title="{maior_vol_pa}">{maior_vol_pa}</div>
-      </div>
-      <div style="background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px 18px">
-        <div style="font-size:11px;color:#6B7280;margin-bottom:6px">Mais Marcas</div>
-        <div style="font-size:18px;font-weight:800;color:#A78BFA">{mais_marcas_txt}</div>
-        <div style="font-size:10px;color:#6B7280;margin-top:2px;overflow:hidden;
-                    text-overflow:ellipsis;white-space:nowrap" title="{mais_marcas_pa}">{mais_marcas_pa}</div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # ── 5. Cards de visão (clicáveis) + KPIs ─────────────────────────────────
+    _sel_agro = pa_view == "agro"
+    _sel_med  = pa_view == "med"
+    _agro_border = "#00E5A0" if _sel_agro else "#1F2937"
+    _med_border  = "#00C4FF" if _sel_med  else "#1F2937"
+    _agro_bg = "#0A2118" if _sel_agro else "#111827"
+    _med_bg  = "#091C25" if _sel_med  else "#111827"
+
+    _c1, _c2, _c3, _c4 = st.columns(4)
+    with _c1:
+        st.markdown(f"""
+        <div style="background:{_agro_bg};border:2px solid {_agro_border};border-radius:12px;
+                    padding:14px 18px;margin-bottom:6px">
+          <div style="font-size:10px;color:#6B7280;margin-bottom:8px;font-weight:600;
+                      letter-spacing:0.5px;text-transform:uppercase">Fitossanitários</div>
+          <div style="font-size:13px;font-weight:800;color:#00E5A0;line-height:1.8">
+            Herbicidas<br>Inseticidas<br>Fungicidas
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("✓ Visão atual" if _sel_agro else "📊 Ver gráfico",
+                     key="btn_view_agro", use_container_width=True,
+                     type="primary" if _sel_agro else "secondary"):
+            st.session_state["pa_view"] = "agro"
+            st.session_state["pa_selected"] = None
+            st.session_state["pa_chart_ver"] = st.session_state.get("pa_chart_ver", 0) + 1
+            st.rerun()
+    with _c2:
+        st.markdown(f"""
+        <div style="background:{_med_bg};border:2px solid {_med_border};border-radius:12px;
+                    padding:14px 18px;margin-bottom:6px">
+          <div style="font-size:10px;color:#6B7280;margin-bottom:8px;font-weight:600;
+                      letter-spacing:0.5px;text-transform:uppercase">Veterinários</div>
+          <div style="font-size:22px;font-weight:800;color:#00C4FF">
+            Medicamentos
+          </div>
+        </div>
+        """, unsafe_allow_html=True)
+        if st.button("✓ Visão atual" if _sel_med else "📊 Ver gráfico",
+                     key="btn_view_med", use_container_width=True,
+                     type="primary" if _sel_med else "secondary"):
+            st.session_state["pa_view"] = "med"
+            st.session_state["pa_selected"] = None
+            st.session_state["pa_chart_ver"] = st.session_state.get("pa_chart_ver", 0) + 1
+            st.rerun()
+    with _c3:
+        st.markdown(f"""
+        <div style="background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px 18px">
+          <div style="font-size:11px;color:#6B7280;margin-bottom:6px">Maior Volume</div>
+          <div style="font-size:18px;font-weight:800;color:#FFD166">{maior_vol_txt}</div>
+          <div style="font-size:10px;color:#6B7280;margin-top:2px;overflow:hidden;
+                      text-overflow:ellipsis;white-space:nowrap" title="{maior_vol_pa}">{maior_vol_pa}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with _c4:
+        st.markdown(f"""
+        <div style="background:#111827;border:1px solid #1F2937;border-radius:12px;padding:14px 18px">
+          <div style="font-size:11px;color:#6B7280;margin-bottom:6px">Mais Marcas</div>
+          <div style="font-size:18px;font-weight:800;color:#A78BFA">{mais_marcas_txt}</div>
+          <div style="font-size:10px;color:#6B7280;margin-top:2px;overflow:hidden;
+                      text-overflow:ellipsis;white-space:nowrap" title="{mais_marcas_pa}">{mais_marcas_pa}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # ── 6. Controles ─────────────────────────────────────────────────────────
     col_type, _ = st.columns([2, 4])
@@ -1470,16 +1546,17 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     top_n = 20
 
     # ── 7. Preparar dados do gráfico ─────────────────────────────────────────
-    df_plot = df_id.head(top_n).copy()
+    df_plot = df_id_view.head(top_n).copy()
 
     if df_plot.empty:
+        _view_label = "Herbicidas/Inseticidas/Fungicidas" if pa_view == "agro" else "Medicamentos"
         st.warning(
-            f"Nenhum produto do estoque foi reconhecido no catálogo de P.A. "
-            f"({n_nao_id} produto(s) sem correspondência)."
+            f"Nenhum produto da categoria **{_view_label}** foi reconhecido no catálogo de P.A. "
+            f"({n_nao_id_view} produto(s) sem correspondência nesta visão)."
         )
         with st.expander("🔍 Diagnóstico — produtos do estoque sem P.A. mapeado", expanded=True):
             df_nao_id_diag = (
-                df_enr[df_enr["principio_ativo"] == "Não identificado"]
+                df_enr_view[df_enr_view["principio_ativo"] == "Não identificado"]
                 [["produto", "categoria", "quantidade"]]
                 .sort_values("produto")
             )
@@ -1506,8 +1583,8 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     if "pa_chart_ver" not in st.session_state:
         st.session_state["pa_chart_ver"] = 0
     pa_sel = st.session_state["pa_selected"]
-    # Reset apenas se o PA não existe mais nos dados — não pelo limite top_n
-    if pa_sel and pa_sel not in df_id["principio_ativo"].values:
+    # Reset apenas se o PA não existe mais nos dados da visão atual — não pelo limite top_n
+    if pa_sel and pa_sel not in df_id_view["principio_ativo"].values:
         st.session_state["pa_selected"] = None
         pa_sel = None
 
@@ -1635,7 +1712,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     # ── 11. Selectbox de drill-down (complementar ao click) ───────────────────
     # Usa key dinâmica (pa_chart_ver) para que o widget redefina seu valor
     # sempre que o gráfico muda pa_sel via click — evita dessincronia.
-    opcoes_pa = ["— selecione —"] + sorted(df_id["principio_ativo"].tolist())
+    opcoes_pa = ["— selecione —"] + sorted(df_id_view["principio_ativo"].tolist())
     idx_atual = opcoes_pa.index(pa_sel) if pa_sel in opcoes_pa else 0
     pa_sel_box = st.selectbox(
         "Ou selecione um princípio ativo:",
