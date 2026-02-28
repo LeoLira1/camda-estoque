@@ -1642,11 +1642,11 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 _kg_emb = r.get("kg_emb")
                 _vol_k = r.get("volume_kg")
                 if pd.notna(_vol_l) and _vol_l is not None:
-                    _lit_fmt = f"{_lit_emb:g}".rstrip("0").rstrip(".")
+                    _lit_fmt = str(int(_lit_emb)) if _lit_emb == int(_lit_emb) else f"{_lit_emb:.3f}".rstrip("0")
                     _vol_fmt = f"{int(_vol_l):,}".replace(",", ".")
                     _vol_str = f"{int(r['quantidade'])} un × {_lit_fmt}L = {_vol_fmt}L"
                 elif pd.notna(_vol_k) and _vol_k is not None:
-                    _kg_fmt = f"{_kg_emb:g}".rstrip("0").rstrip(".")
+                    _kg_fmt = str(int(_kg_emb)) if _kg_emb == int(_kg_emb) else f"{_kg_emb:.3f}".rstrip("0")
                     _vk_fmt = f"{int(_vol_k):,}".replace(",", ".") if _vol_k >= 1 else f"{_vol_k:.1f}"
                     _vol_str = f"{int(r['quantidade'])} un × {_kg_fmt}kg = {_vk_fmt}kg"
                 else:
