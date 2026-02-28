@@ -2683,13 +2683,17 @@ def get_vendas_historico() -> pd.DataFrame:
     """Retorna vendas ACUMULADAS por produto (soma de todos os dias)."""
     try:
         rows = get_db().execute("""
-            SELECT codigo, produto, grupo,
-                   SUM(qtd_vendida)  AS qtd_vendida,
-                   MAX(qtd_estoque)  AS qtd_estoque,
-                   MAX(data_upload)  AS data_upload
-              FROM vendas_historico
-             GROUP BY codigo
-             ORDER BY SUM(qtd_vendida) DESC
+            SELECT v.codigo, v.produto, v.grupo,
+                   SUM(v.qtd_vendida)  AS qtd_vendida,
+                   (SELECT v2.qtd_estoque
+                      FROM vendas_historico v2
+                     WHERE v2.codigo = v.codigo
+                     ORDER BY v2.data_upload DESC
+                     LIMIT 1)          AS qtd_estoque,
+                   MAX(v.data_upload)  AS data_upload
+              FROM vendas_historico v
+             GROUP BY v.codigo
+             ORDER BY SUM(v.qtd_vendida) DESC
         """).fetchall()
         if rows:
             return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "qtd_vendida", "qtd_estoque", "data_upload"])
