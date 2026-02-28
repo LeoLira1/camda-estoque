@@ -1363,8 +1363,15 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             n_sem_vol=("has_vol", lambda x: (~x).sum()),
         )
         .reset_index()
-        .sort_values(["total_litros", "total_kg", "total"], ascending=[False, False, False], na_position="last")
     )
+    # Chave de ordenação unificada: usa litros se disponível, senão kg, senão unidades
+    # — garante que produtos só-kg entrem no ranking entre os de litros equivalente
+    df_agg["_sort_key"] = df_agg.apply(
+        lambda r: r["total_litros"] if pd.notna(r["total_litros"]) and r["total_litros"] > 0
+                  else (r["total_kg"] if pd.notna(r["total_kg"]) and r["total_kg"] > 0 else r["total"]),
+        axis=1,
+    )
+    df_agg = df_agg.sort_values("_sort_key", ascending=False).drop(columns=["_sort_key"])
 
     df_id = df_agg[df_agg["principio_ativo"] != "Não identificado"]
     n_nao_id = int((df_enr["principio_ativo"] == "Não identificado").sum())
@@ -1497,8 +1504,8 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             for pa, c in zip(pa_list, cores)
         ]
         _y_vals = [
-            v if pd.notna(v) else 0
-            for v in df_plot["total_litros"]
+            v if pd.notna(v) and v > 0 else (k if pd.notna(k) and k > 0 else 0)
+            for v, k in zip(df_plot["total_litros"], df_plot["total_kg"])
         ]
         _text_vals = [
             _fmt_volume(v, k, u)
@@ -1532,7 +1539,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             yaxis=dict(
                 gridcolor="#1F2937", showgrid=True, gridwidth=1,
                 tickfont=dict(size=11, color="#6B7280"),
-                title=dict(text="Volume (L)", font=dict(size=11, color="#6B7280")),
+                title=dict(text="Volume (L / kg)", font=dict(size=11, color="#6B7280")),
             ),
             showlegend=False,
             bargap=0.3,
