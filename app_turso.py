@@ -6,6 +6,7 @@ import os
 import base64
 import io
 import unicodedata
+from difflib import get_close_matches as _gcm, SequenceMatcher as _SM
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date, timezone
@@ -1263,6 +1264,10 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             for ck in _cat_ns_keys:
                 if chave_s in ck:
                     return _cat_ns[ck]
+        # 6. Fuzzy (difflib — stdlib): captura typos e variações de grafia
+        m = _gcm(chave_s, list(_cat_ns.keys()), n=1, cutoff=0.72)
+        if m:
+            return _cat_ns[m[0]]
         return "Não identificado"
 
     registros = []
@@ -1578,11 +1583,42 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 [["produto", "categoria", "quantidade"]]
                 .sort_values("produto")
             )
+
+            # Enriquecer com coluna "mais próximo no catálogo" para diagnóstico
+            _cat_diag = list(_cat_ns.keys())
+            def _closest(nome):
+                s = _pstrip(_pnorm(str(nome)))
+                m = _gcm(s, _cat_diag, n=1, cutoff=0.0)
+                if not m:
+                    return "—", 0.0
+                ratio = round(_SM(None, s, m[0]).ratio(), 2)
+                return m[0], ratio
+
+            closest_nome  = []
+            closest_score = []
+            for nome in df_nao["produto"]:
+                cn, cs = _closest(nome)
+                closest_nome.append(cn)
+                closest_score.append(cs)
+
+            df_nao = df_nao.copy()
+            df_nao["Mais próximo no catálogo"] = closest_nome
+            df_nao["Similaridade"]             = closest_score
+
             st.dataframe(
-                df_nao.rename(columns={"produto": "Produto", "categoria": "Categoria", "quantidade": "Qtd"}),
+                df_nao.rename(columns={
+                    "produto": "Produto no estoque",
+                    "categoria": "Categoria",
+                    "quantidade": "Qtd",
+                }),
                 hide_index=True, use_container_width=True,
             )
-            st.caption(f"Mapa carregado: {len(mapa_combinado)} produto(s).")
+            st.caption(
+                f"Mapa carregado: **{len(mapa_combinado)}** produto(s). "
+                "A coluna **Similaridade** mostra o quanto o nome do estoque se "
+                "aproxima do catálogo (1.0 = idêntico). Produtos com score ≥ 0.72 "
+                "já são capturados automaticamente pelo fuzzy match."
+            )
 
 
 def reset_db():
