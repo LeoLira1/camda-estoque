@@ -1459,47 +1459,49 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             for i, (_, r) in enumerate(df_drill.iterrows()):
                 pct = (r["quantidade"] / total_drill * 100) if total_drill > 0 else 0
                 cor = _PA_PALETTE[i % len(_PA_PALETTE)]
-                mini_bars += f"""
-                <div style="margin-bottom:10px">
-                  <div style="display:flex;justify-content:space-between;
-                              font-size:12px;margin-bottom:4px">
-                    <span style="color:#F9FAFB">{r['produto']}</span>
-                    <span style="color:{cor};font-weight:700">{int(r['quantidade'])} un.</span>
-                  </div>
-                  <div style="background:#1F2937;border-radius:4px;height:8px;overflow:hidden">
-                    <div style="width:{pct:.1f}%;height:100%;background:{cor};
-                                border-radius:4px;transition:width 0.5s ease"></div>
-                  </div>
-                </div>"""
+                # Sem indentação: Markdown trata 4+ espaços como bloco de código
+                mini_bars += (
+                    f'<div style="margin-bottom:10px">'
+                    f'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'
+                    f'<span style="color:#F9FAFB">{r["produto"]}</span>'
+                    f'<span style="color:{cor};font-weight:700">{int(r["quantidade"])} un.</span>'
+                    f'</div>'
+                    f'<div style="background:#1F2937;border-radius:4px;height:8px;overflow:hidden">'
+                    f'<div style="width:{pct:.1f}%;height:100%;background:{cor};'
+                    f'border-radius:4px;transition:width 0.5s ease"></div>'
+                    f'</div>'
+                    f'</div>'
+                )
 
             n_d = len(df_drill)
             plural = "s" if n_d != 1 else ""
-            st.markdown(f"""
-            <div style="background:#111827;border:1px solid #00E5A0;border-radius:16px;
-                        padding:20px;margin-top:8px;animation:_paFadeIn 0.25s ease">
-              <div style="display:flex;align-items:flex-start;
-                          justify-content:space-between;margin-bottom:16px">
-                <div>
-                  <div style="font-size:15px;font-weight:700;color:#00E5A0">🧬 {pa_sel}</div>
-                  <div style="font-size:12px;color:#6B7280;margin-top:2px">
-                    {n_d} produto{plural} comerci{'ais' if n_d != 1 else 'al'}
-                  </div>
-                </div>
-              </div>
-              {mini_bars}
-              <div style="display:flex;justify-content:flex-end;padding-top:12px;
-                          border-top:1px solid #1F2937;font-size:14px;font-weight:700">
-                <span style="color:#6B7280;margin-right:8px">Total:</span>
-                <span style="color:#FFD166">{int(total_drill)} un.</span>
-              </div>
-            </div>
-            <style>
-              @keyframes _paFadeIn {{
-                from {{ opacity:0; transform:translateY(8px) }}
-                to   {{ opacity:1; transform:translateY(0) }}
-              }}
-            </style>
-            """, unsafe_allow_html=True)
+            html_painel = (
+                '<div style="background:#111827;border:1px solid #00E5A0;border-radius:16px;'
+                'padding:20px;margin-top:8px;animation:_paFadeIn 0.25s ease">'
+                '<div style="display:flex;align-items:flex-start;'
+                'justify-content:space-between;margin-bottom:16px">'
+                '<div>'
+                f'<div style="font-size:15px;font-weight:700;color:#00E5A0">🧬 {pa_sel}</div>'
+                f'<div style="font-size:12px;color:#6B7280;margin-top:2px">'
+                f'{n_d} produto{plural} comerci{"ais" if n_d != 1 else "al"}'
+                '</div>'
+                '</div>'
+                '</div>'
+                + mini_bars +
+                '<div style="display:flex;justify-content:flex-end;padding-top:12px;'
+                'border-top:1px solid #1F2937;font-size:14px;font-weight:700">'
+                '<span style="color:#6B7280;margin-right:8px">Total:</span>'
+                f'<span style="color:#FFD166">{int(total_drill)} un.</span>'
+                '</div>'
+                '</div>'
+                '<style>'
+                '@keyframes _paFadeIn{'
+                'from{opacity:0;transform:translateY(8px)}'
+                'to{opacity:1;transform:translateY(0)}'
+                '}'
+                '</style>'
+            )
+            st.markdown(html_painel, unsafe_allow_html=True)
 
             if st.button("✕ Fechar detalhe", key="pa_close_btn"):
                 st.session_state["pa_selected"] = None
