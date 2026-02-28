@@ -1197,6 +1197,22 @@ _PA_PALETTE = [
 ]
 
 
+def extrair_litros(nome_produto: str):
+    """Extrai o volume em litros a partir do nome do produto.
+
+    Suporta padrões como: 5L, 20L, 200L, 1L, 500ML, 250ML, 1,5L, etc.
+    Retorna float com o volume em litros, ou None se não encontrado.
+    """
+    nome = str(nome_produto).upper()
+    ml = re.search(r'(\d+(?:[.,]\d+)?)\s*ML\b', nome)
+    if ml:
+        return float(ml.group(1).replace(',', '.')) / 1000
+    litros = re.search(r'(\d+(?:[.,]\d+)?)\s*L\b', nome)
+    if litros:
+        return float(litros.group(1).replace(',', '.'))
+    return None
+
+
 def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     """Constrói a aba Princípios Ativos — visual fiel ao componente React."""
     if df_mestre.empty:
@@ -1291,10 +1307,14 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     for _, row in df_mestre.iterrows():
         pa = _lookup_pa(str(row["produto"]))
         qtd = max(float(row.get("qtd_sistema", 0) or 0), 0)
+        litros_emb = extrair_litros(str(row["produto"]))
+        vol_litros = qtd * litros_emb if litros_emb is not None else None
         registros.append({
             "produto": row["produto"],
             "principio_ativo": pa,
             "quantidade": qtd,
+            "litros_emb": litros_emb,
+            "volume_litros": vol_litros,
             "categoria": row.get("categoria", ""),
         })
 
@@ -1303,9 +1323,14 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     # ── 3. Agregar por P.A. ─────────────────────────────────────────────────
     df_agg = (
         df_enr.groupby("principio_ativo")
-        .agg(total=("quantidade", "sum"), n_produtos=("produto", "count"))
+        .agg(
+            total=("quantidade", "sum"),
+            total_litros=("volume_litros", lambda x: x.sum(min_count=1)),
+            n_produtos=("produto", "count"),
+            n_sem_litros=("volume_litros", lambda x: x.isna().sum()),
+        )
         .reset_index()
-        .sort_values("total", ascending=False)
+        .sort_values(["total_litros", "total"], ascending=[False, False], na_position="last")
     )
 
     df_id = df_agg[df_agg["principio_ativo"] != "Não identificado"]
@@ -1314,10 +1339,16 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     total_pa    = int(df_id.shape[0])
     total_prods = int(df_enr["produto"].nunique())
     total_vol   = float(df_id["total"].sum())
+    total_litros_geral = float(df_id["total_litros"].sum(skipna=True))
 
-    maior_vol_row  = df_id.head(1)
+    maior_vol_row  = df_id.sort_values("total_litros", ascending=False, na_position="last").head(1)
     mais_marcas_row = df_id.sort_values("n_produtos", ascending=False).head(1)
-    maior_vol_txt  = f"{int(maior_vol_row['total'].iloc[0])} un."  if not maior_vol_row.empty  else "—"
+    _mv_litros = maior_vol_row["total_litros"].iloc[0] if not maior_vol_row.empty else None
+    maior_vol_txt  = (
+        f"{int(_mv_litros):,} L".replace(",", ".") if not maior_vol_row.empty and pd.notna(_mv_litros)
+        else f"{int(maior_vol_row['total'].iloc[0])} un.*" if not maior_vol_row.empty
+        else "—"
+    )
     maior_vol_pa   = maior_vol_row["principio_ativo"].iloc[0]      if not maior_vol_row.empty  else "—"
     mais_marcas_txt = f"{int(mais_marcas_row['n_produtos'].iloc[0])} prod." if not mais_marcas_row.empty else "—"
     mais_marcas_pa  = mais_marcas_row["principio_ativo"].iloc[0]   if not mais_marcas_row.empty else "—"
@@ -1332,7 +1363,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
           Princípios Ativos em Estoque
         </div>
         <div style="font-size:12px;color:#6B7280;margin-top:2px">
-          {total_pa} princípios · {total_prods} produtos comerciais · {int(total_vol)} un. total
+          {total_pa} princípios · {total_prods} produtos comerciais · {f"{int(total_litros_geral):,} L".replace(",", ".") if total_litros_geral > 0 else f"{int(total_vol)} un."} total
         </div>
       </div>
     </div>
@@ -1430,16 +1461,31 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             "#FFD166" if pa == pa_sel else (c if pa_sel is None else _rgba(c, 0.35))
             for pa, c in zip(pa_list, cores)
         ]
+        _y_vals = [
+            v if pd.notna(v) else 0
+            for v in df_plot["total_litros"]
+        ]
+        _text_vals = [
+            f"{int(v):,} L".replace(",", ".") if pd.notna(v) else f"{int(u)} un.*"
+            for v, u in zip(df_plot["total_litros"], df_plot["total"])
+        ]
+        _hover_custom = list(zip(
+            df_plot["n_produtos"].tolist(),
+            [
+                f"{int(v):,} L".replace(",", ".") if pd.notna(v) else f"{int(u)} un.*"
+                for v, u in zip(df_plot["total_litros"], df_plot["total"])
+            ],
+        ))
         fig = go.Figure(go.Bar(
             x=pa_list,
-            y=df_plot["total"].tolist(),
+            y=_y_vals,
             marker_color=bar_colors,
             marker_line_width=0,
-            text=[f"{int(v)}" for v in df_plot["total"]],
+            text=_text_vals,
             textposition="outside",
             textfont=dict(size=10, color="#F9FAFB"),
-            hovertemplate="<b>%{x}</b><br>Total: %{y} un.<br>Produtos: %{customdata}<extra></extra>",
-            customdata=df_plot["n_produtos"].tolist(),
+            hovertemplate="<b>%{x}</b><br>Volume: %{customdata[1]}<br>Produtos: %{customdata[0]}<extra></extra>",
+            customdata=_hover_custom,
         ))
         fig.update_layout(
             paper_bgcolor="#111827",
@@ -1454,7 +1500,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             yaxis=dict(
                 gridcolor="#1F2937", showgrid=True, gridwidth=1,
                 tickfont=dict(size=11, color="#6B7280"),
-                title=dict(text="Volume (un.)", font=dict(size=11, color="#6B7280")),
+                title=dict(text="Volume (L)", font=dict(size=11, color="#6B7280")),
             ),
             showlegend=False,
             bargap=0.3,
@@ -1464,16 +1510,25 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         pie_line_colors = ["#FFD166" if pa == pa_sel else "rgba(0,0,0,0)" for pa in pa_list]
         pie_line_widths = [3 if pa == pa_sel else 0 for pa in pa_list]
         pie_opacities   = [1.0 if pa_sel is None or pa == pa_sel else 0.3 for pa in pa_list]
+        _pie_vals = [
+            v if pd.notna(v) else u
+            for v, u in zip(df_plot["total_litros"], df_plot["total"])
+        ]
+        _pie_hover = [
+            f"{int(v):,} L".replace(",", ".") if pd.notna(v) else f"{int(u)} un.*"
+            for v, u in zip(df_plot["total_litros"], df_plot["total"])
+        ]
         fig = go.Figure(go.Pie(
             labels=pa_list,
-            values=df_plot["total"].tolist(),
+            values=_pie_vals,
             marker=dict(
                 colors=[_rgba(c, o) for c, o in zip(cores, pie_opacities)],
                 line=dict(color=pie_line_colors, width=pie_line_widths),
             ),
             textinfo="label+percent",
             textfont=dict(size=10),
-            hovertemplate="<b>%{label}</b><br>%{value} un. (%{percent})<extra></extra>",
+            hovertemplate="<b>%{label}</b><br>%{customdata} (%{percent})<extra></extra>",
+            customdata=_pie_hover,
             hole=0.35,
             sort=False,
         ))
@@ -1510,6 +1565,13 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         # Streamlit < 1.35 — sem on_select
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
+    _n_fallback = int(df_plot["n_sem_litros"].sum())
+    if _n_fallback > 0:
+        st.caption(
+            f"\\* {_n_fallback} produto(s) sem volume (L) identificável no nome — "
+            "exibido em unidades. Inclua o tamanho da embalagem no nome (ex: 5L, 20L, 500ML)."
+        )
+
     # ── 11. Selectbox de drill-down (complementar ao click) ───────────────────
     # Usa key dinâmica (pa_chart_ver) para que o widget redefina seu valor
     # sempre que o gráfico muda pa_sel via click — evita dessincronia.
@@ -1537,16 +1599,25 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         df_drill = df_enr[df_enr["principio_ativo"] == pa_sel].sort_values("quantidade", ascending=False)
         if not df_drill.empty:
             total_drill = float(df_drill["quantidade"].sum())
+            total_drill_litros = float(df_drill["volume_litros"].sum(skipna=True))
             mini_bars = ""
             for i, (_, r) in enumerate(df_drill.iterrows()):
                 pct = (r["quantidade"] / total_drill * 100) if total_drill > 0 else 0
                 cor = _PA_PALETTE[i % len(_PA_PALETTE)]
+                _lit_emb = r.get("litros_emb")
+                _vol_l = r.get("volume_litros")
+                if pd.notna(_vol_l) and _vol_l is not None:
+                    _lit_fmt = f"{_lit_emb:g}".rstrip("0").rstrip(".")
+                    _vol_fmt = f"{int(_vol_l):,}".replace(",", ".")
+                    _vol_str = f"{int(r['quantidade'])} un × {_lit_fmt}L = {_vol_fmt}L"
+                else:
+                    _vol_str = f"{int(r['quantidade'])} un.*"
                 # Sem indentação: Markdown trata 4+ espaços como bloco de código
                 mini_bars += (
                     f'<div style="margin-bottom:10px">'
                     f'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'
                     f'<span style="color:#F9FAFB">{r["produto"]}</span>'
-                    f'<span style="color:{cor};font-weight:700">{int(r["quantidade"])} un.</span>'
+                    f'<span style="color:{cor};font-weight:700">{_vol_str}</span>'
                     f'</div>'
                     f'<div style="background:#1F2937;border-radius:4px;height:8px;overflow:hidden">'
                     f'<div style="width:{pct:.1f}%;height:100%;background:{cor};'
@@ -1557,6 +1628,10 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
             n_d = len(df_drill)
             plural = "s" if n_d != 1 else ""
+            _total_txt = (
+                f"{int(total_drill_litros):,} L".replace(",", ".") if total_drill_litros > 0
+                else f"{int(total_drill)} un.*"
+            )
             html_painel = (
                 '<div style="background:#111827;border:1px solid #00E5A0;border-radius:16px;'
                 'padding:20px;margin-top:8px;animation:_paFadeIn 0.25s ease">'
@@ -1573,7 +1648,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 '<div style="display:flex;justify-content:flex-end;padding-top:12px;'
                 'border-top:1px solid #1F2937;font-size:14px;font-weight:700">'
                 '<span style="color:#6B7280;margin-right:8px">Total:</span>'
-                f'<span style="color:#FFD166">{int(total_drill)} un.</span>'
+                f'<span style="color:#FFD166">{_total_txt}</span>'
                 '</div>'
                 '</div>'
                 '<style>'
