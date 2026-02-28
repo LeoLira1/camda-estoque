@@ -1511,13 +1511,15 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     # ── 11. Selectbox de drill-down (complementar ao click) ───────────────────
+    # Usa key dinâmica (pa_chart_ver) para que o widget redefina seu valor
+    # sempre que o gráfico muda pa_sel via click — evita dessincronia.
     opcoes_pa = ["— selecione —"] + sorted(df_id["principio_ativo"].tolist())
     idx_atual = opcoes_pa.index(pa_sel) if pa_sel in opcoes_pa else 0
     pa_sel_box = st.selectbox(
         "Ou selecione um princípio ativo:",
         opcoes_pa,
         index=idx_atual,
-        key="pa_drilldown_sel",
+        key=f"pa_drilldown_sel_{st.session_state['pa_chart_ver']}",
     )
     if pa_sel_box != "— selecione —" and pa_sel_box != pa_sel:
         st.session_state["pa_selected"] = pa_sel_box
@@ -1594,14 +1596,15 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             f"ℹ️ {n_nao_id} produto(s) sem mapeamento de P.A. "
             "Carregue **produtos_CAMDA.xlsx** via 'Base de Princípios Ativos' no painel lateral."
         )
-        with st.expander(f"🔍 Mapear produtos sem P.A. ({n_nao_id} pendentes)", expanded=True):
-            df_nao = (
-                df_enr[df_enr["principio_ativo"] == "Não identificado"]
-                [["produto", "categoria", "quantidade"]]
+        with st.expander(f"🔍 Mapear / corrigir P.A. ({n_nao_id} sem mapeamento)", expanded=True):
+            # Todos os produtos do estoque (não só os não mapeados)
+            df_todos = (
+                df_enr[["produto", "categoria", "quantidade", "principio_ativo"]]
                 .sort_values("produto")
+                .drop_duplicates("produto")
                 .reset_index(drop=True)
             )
-            nomes_nao_id = df_nao["produto"].tolist()
+            nomes_todos = df_todos["produto"].tolist()
 
             # P.A. disponíveis para sugestão (do catálogo + banco)
             pa_opcoes = sorted(set(mapa_combinado.values()))
@@ -1614,40 +1617,52 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 return _cat_ns[m[0]] if m else ""
 
             st.caption(
-                "Busque o produto pelo nome, confirme ou digite o "
-                "Princípio Ativo e clique **Salvar**."
+                "Busque **qualquer produto** — inclusive os já mapeados para corrigir. "
+                f"**{n_nao_id}** ainda sem P.A."
             )
 
             # ── Seleção do produto ──────────────────────────────────────────
-            prod_sel = st.selectbox(
-                "Produto sem P.A.",
-                options=nomes_nao_id,
+            prod_map_sel = st.selectbox(
+                "Produto",
+                options=nomes_todos,
                 index=0,
                 key="pa_map_prod_sel",
                 placeholder="Digite para filtrar…",
             )
 
             # Dados do produto selecionado
-            _row_sel = df_nao[df_nao["produto"] == prod_sel]
+            _row_sel = df_todos[df_todos["produto"] == prod_map_sel]
             _qtd_sel = int(_row_sel["quantidade"].iloc[0]) if not _row_sel.empty else 0
             _cat_sel = str(_row_sel["categoria"].iloc[0]) if not _row_sel.empty else ""
-            st.caption(f"Quantidade em estoque: **{_qtd_sel} un.** — Categoria: {_cat_sel or '—'}")
+            _pa_atual = str(_row_sel["principio_ativo"].iloc[0]) if not _row_sel.empty else ""
+            _ja_mapeado = _pa_atual and _pa_atual != "Não identificado"
+            if _ja_mapeado:
+                st.caption(
+                    f"Qtd: **{_qtd_sel} un.** — "
+                    f"P.A. atual: ✅ *{_pa_atual}* — clique Salvar para corrigir."
+                )
+            else:
+                st.caption(f"Qtd: **{_qtd_sel} un.** — Sem P.A. mapeado.")
 
             # ── Princípio Ativo ─────────────────────────────────────────────
-            sugerido = _sugerir_pa(prod_sel) if prod_sel else ""
+            # Pré-seleciona: P.A. atual se já mapeado, senão melhor sugestão fuzzy
+            _default_pa = _pa_atual if _ja_mapeado else _sugerir_pa(prod_map_sel or "")
 
             _PA_NOVO = "➕ Digitar novo P.A…"
-            pa_lista = [sugerido] + [p for p in pa_opcoes if p != sugerido] + [_PA_NOVO]
-            pa_sel = st.selectbox(
+            pa_lista = (
+                [_default_pa] + [p for p in pa_opcoes if p != _default_pa] + [_PA_NOVO]
+                if _default_pa else pa_opcoes + [_PA_NOVO]
+            )
+            pa_map_sel = st.selectbox(
                 "Princípio Ativo",
                 options=pa_lista,
                 index=0,
-                key="pa_map_pa_sel",
+                key=f"pa_map_pa_sel_{prod_map_sel}",
                 help="Escolha da lista ou selecione '➕ Digitar novo' para informar um P.A. inédito.",
             )
 
-            pa_final = pa_sel
-            if pa_sel == _PA_NOVO:
+            pa_final = pa_map_sel
+            if pa_map_sel == _PA_NOVO:
                 pa_final = st.text_input(
                     "Novo Princípio Ativo",
                     placeholder="Ex.: Glifosato + Diquat",
@@ -1656,9 +1671,9 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
             # ── Botão salvar ────────────────────────────────────────────────
             if st.button("💾 Salvar mapeamento", type="primary", use_container_width=True):
-                if prod_sel and pa_final and pa_final.strip() and pa_final != _PA_NOVO:
-                    if upsert_principio_ativo(prod_sel, pa_final.strip(), _cat_sel):
-                        st.success(f"✅ **{prod_sel}** → *{pa_final.strip()}*")
+                if prod_map_sel and pa_final and pa_final.strip() and pa_final != _PA_NOVO:
+                    if upsert_principio_ativo(prod_map_sel, pa_final.strip(), _cat_sel):
+                        st.success(f"✅ **{prod_map_sel}** → *{pa_final.strip()}*")
                         st.rerun()
                     else:
                         st.error("Erro ao salvar. Tente novamente.")
