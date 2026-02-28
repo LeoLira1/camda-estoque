@@ -1277,7 +1277,29 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     df_plot = df_plot.head(top_n)
 
     if df_plot.empty:
-        st.info("Sem dados para exibir.")
+        n_nao_id = int((df_enr["principio_ativo"] == "Não identificado").sum())
+        st.warning(
+            f"Nenhum produto do estoque foi reconhecido no catálogo de P.A. "
+            f"({n_nao_id} produto(s) sem correspondência)."
+        )
+        with st.expander("🔍 Diagnóstico — produtos do estoque sem P.A. mapeado", expanded=True):
+            df_nao_id = (
+                df_enr[df_enr["principio_ativo"] == "Não identificado"]
+                [["produto", "categoria", "quantidade"]]
+                .sort_values("produto")
+            )
+            st.caption(
+                f"Mapa carregado: **{len(mapa_combinado)} produto(s)** do catálogo. "
+                "Verifique se os nomes abaixo coincidem com os da planilha **produtos_CAMDA.xlsx**."
+            )
+            st.dataframe(
+                df_nao_id.rename(columns={"produto": "Produto no Estoque", "categoria": "Categoria", "quantidade": "Qtd"}),
+                hide_index=True,
+                use_container_width=True,
+            )
+            if mapa_combinado:
+                sample = sorted(mapa_combinado.keys())[:10]
+                st.caption(f"Exemplos de nomes no catálogo: `{'` · `'.join(sample)}`")
         return
 
     cores = [_PA_PALETTE[i % len(_PA_PALETTE)] for i in range(len(df_plot))]
