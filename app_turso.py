@@ -1025,10 +1025,46 @@ def get_historico_uploads() -> pd.DataFrame:
 _PA_COLS = ["produto", "principio_ativo", "categoria"]
 
 
-def load_principios_ativos_from_excel(filepath: str) -> list:
-    """Lê o Excel de princípios ativos e retorna lista de dicts."""
+def load_principios_ativos_from_excel(filepath) -> list:
+    """
+    Lê o Excel de princípios ativos e retorna lista de dicts.
+    Suporta dois formatos:
+      - Formato simples (única aba): colunas Produto, Princípio Ativo[, Categoria]
+      - Formato produtos_CAMDA.xlsx (3 abas): Herbicidas / Inseticidas e Acaricidas / Fungicidas
+    """
     try:
-        df = pd.read_excel(filepath, header=0)
+        xls = pd.ExcelFile(filepath)
+        abas_camda = {"Herbicidas", "Inseticidas e Acaricidas", "Fungicidas"}
+        abas_presentes = set(xls.sheet_names)
+
+        # ── Formato multi-aba (produtos_CAMDA.xlsx) ──────────────────────────
+        if abas_camda & abas_presentes:
+            records = []
+            for aba in ["Herbicidas", "Inseticidas e Acaricidas", "Fungicidas"]:
+                if aba not in abas_presentes:
+                    continue
+                df = pd.read_excel(xls, sheet_name=aba)
+                col_prod = col_pa = col_cat = None
+                for c in df.columns:
+                    cu = str(c).strip().upper()
+                    if cu == "PRODUTO":
+                        col_prod = c
+                    elif "PRINC" in cu or "ATIVO" in cu:
+                        col_pa = c
+                    elif "CATEG" in cu:
+                        col_cat = c
+                if not col_prod or not col_pa:
+                    continue
+                for _, row in df.iterrows():
+                    prod = str(row.get(col_prod, "")).strip()
+                    pa = str(row.get(col_pa, "")).strip()
+                    cat = str(row.get(col_cat, "")).strip() if col_cat else aba
+                    if prod and pa and prod.upper() not in ("NAN", "NONE") and pa.upper() not in ("NAN", "NONE"):
+                        records.append({"produto": prod, "principio_ativo": pa, "categoria": cat})
+            return records
+
+        # ── Formato simples (aba única) ──────────────────────────────────────
+        df = pd.read_excel(xls, header=0)
         col_prod = col_pa = col_cat = None
         for c in df.columns:
             cu = str(c).strip().upper()
@@ -2906,10 +2942,11 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         if pa_count > 0:
             st.caption(f"✅ {pa_count} registros de princípios ativos carregados. A busca por princípio ativo está ativa.")
         else:
-            st.caption("Carregue a planilha de princípios ativos para habilitar a busca por P.A.")
+            st.caption("Carregue a planilha de princípios ativos para habilitar a busca por P.A. e a aba 🧬 P. Ativos.")
 
         uploaded_pa = st.file_uploader(
-            "Planilha de Princípios Ativos", type=["xlsx", "xls"],
+            "Planilha de Princípios Ativos (produtos_CAMDA.xlsx ou formato simples)",
+            type=["xlsx", "xls"],
             label_visibility="collapsed", key="upload_pa"
         )
         if uploaded_pa:
@@ -2920,7 +2957,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     st.success(f"✅ {len(pa_records)} registros de princípios ativos carregados!")
                     st.rerun()
             else:
-                st.error("Não foi possível ler a planilha. Verifique se tem colunas 'Produto' e 'Princípio Ativo'.")
+                st.error("Não foi possível ler a planilha. Esperado: colunas 'Produto' e 'Princípio Ativo' (ou arquivo produtos_CAMDA.xlsx com 3 abas).")
 
         st.markdown("---")
         _, col_sync, col_reset = st.columns([2, 1, 1])
