@@ -1403,8 +1403,8 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             key="pa_chart_type", horizontal=True, label_visibility="collapsed",
         )
     with col_n:
-        top_n = st.selectbox("Top", [5, 10, 15, 20], index=1, key="pa_top_n",
-                             label_visibility="collapsed")
+        top_n = st.radio("Top", [5, 10, 15, 20], index=1, key="pa_top_n",
+                         horizontal=True, label_visibility="collapsed")
 
     # ── 7. Preparar dados do gráfico ─────────────────────────────────────────
     df_plot = df_id.head(top_n).copy()
