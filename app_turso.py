@@ -1094,6 +1094,264 @@ def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
     return set(df_pa.loc[mask, "produto"].str.upper())
 
 
+@st.cache_data(ttl=3600)
+def carregar_mapa_produtos_camda() -> dict:
+    """
+    Lê produtos_CAMDA.xlsx (abas Herbicidas, Inseticidas e Acaricidas, Fungicidas)
+    e retorna dict {NOME_PRODUTO_UPPER: principio_ativo}.
+    """
+    caminho = "produtos_CAMDA.xlsx"
+    if not os.path.exists(caminho):
+        return {}
+    try:
+        xls = pd.ExcelFile(caminho)
+        frames = []
+        for aba in ["Herbicidas", "Inseticidas e Acaricidas", "Fungicidas"]:
+            if aba not in xls.sheet_names:
+                continue
+            df = pd.read_excel(xls, sheet_name=aba)
+            col_prod, col_pa = None, None
+            for c in df.columns:
+                cu = str(c).strip().upper()
+                if cu == "PRODUTO":
+                    col_prod = c
+                elif "PRINC" in cu or "ATIVO" in cu:
+                    col_pa = c
+            if col_prod and col_pa:
+                frames.append(
+                    df[[col_prod, col_pa]].rename(
+                        columns={col_prod: "Produto", col_pa: "Principio_Ativo"}
+                    )
+                )
+        if not frames:
+            return {}
+        catalogo = pd.concat(frames, ignore_index=True)
+        return {
+            str(r["Produto"]).strip().upper(): str(r["Principio_Ativo"]).strip()
+            for _, r in catalogo.iterrows()
+            if str(r["Produto"]).strip().upper() not in ("NAN", "NONE", "")
+            and str(r["Principio_Ativo"]).strip().upper() not in ("NAN", "NONE", "")
+        }
+    except Exception:
+        return {}
+
+
+_PA_PALETTE = [
+    "#00E5A0", "#00C4FF", "#FF6B35", "#FFD166", "#A78BFA",
+    "#F472B6", "#34D399", "#FB923C", "#60A5FA", "#E879F9",
+    "#FBBF24", "#2DD4BF",
+]
+
+
+def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
+    """Constrói a aba Princípios Ativos com gráficos de estoque por P.A."""
+    if df_mestre.empty:
+        st.info("Carregue o estoque mestre para visualizar os dados por princípio ativo.")
+        return
+
+    # ── 1. Montar mapa produto → principio_ativo ────────────────────────────
+    # Prioridade: (1) banco de dados df_pa, (2) produtos_CAMDA.xlsx
+    mapa_db: dict = {}
+    if not df_pa.empty:
+        for _, row in df_pa.iterrows():
+            mapa_db[str(row["produto"]).strip().upper()] = str(row["principio_ativo"]).strip()
+
+    mapa_excel = carregar_mapa_produtos_camda()
+    mapa_combinado = {**mapa_excel, **mapa_db}  # DB tem prioridade
+
+    if not mapa_combinado:
+        st.warning(
+            "Nenhum mapeamento de princípios ativos encontrado. "
+            "Coloque **produtos_CAMDA.xlsx** na raiz do projeto "
+            "ou faça upload via '🧬 Base de Princípios Ativos' no painel lateral."
+        )
+        return
+
+    # ── 2. Enriquecer estoque com P.A. ─────────────────────────────────────
+    registros = []
+    for _, row in df_mestre.iterrows():
+        chave = str(row["produto"]).strip().upper()
+        pa = mapa_combinado.get(chave, "Não identificado")
+        qtd = max(float(row.get("qtd_sistema", 0) or 0), 0)
+        registros.append({
+            "produto": row["produto"],
+            "principio_ativo": pa,
+            "quantidade": qtd,
+            "categoria": row.get("categoria", ""),
+        })
+
+    df_enr = pd.DataFrame(registros)
+
+    # ── 3. Agregar por P.A. ─────────────────────────────────────────────────
+    df_agg = (
+        df_enr.groupby("principio_ativo")
+        .agg(total=("quantidade", "sum"), n_produtos=("produto", "count"))
+        .reset_index()
+        .sort_values("total", ascending=False)
+    )
+
+    df_id = df_agg[df_agg["principio_ativo"] != "Não identificado"]
+    total_pa = int(df_id.shape[0])
+    total_mapeados = int(df_enr[df_enr["principio_ativo"] != "Não identificado"]["produto"].nunique())
+    maior_vol_row = df_id.head(1)
+    maior_vol = (
+        f"{maior_vol_row['principio_ativo'].iloc[0]} ({int(maior_vol_row['total'].iloc[0])} un.)"
+        if not maior_vol_row.empty else "—"
+    )
+    mais_marcas_row = df_id.sort_values("n_produtos", ascending=False).head(1)
+    mais_marcas = (
+        f"{mais_marcas_row['principio_ativo'].iloc[0]} ({int(mais_marcas_row['n_produtos'].iloc[0])} prod.)"
+        if not mais_marcas_row.empty else "—"
+    )
+
+    # ── 4. KPI cards ────────────────────────────────────────────────────────
+    st.markdown(f"""
+    <div class="stat-row">
+        <div class="stat-card">
+            <div class="stat-value">{total_pa}</div>
+            <div class="stat-label">Princípios Ativos</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{total_mapeados}</div>
+            <div class="stat-label">Produtos Mapeados</div>
+        </div>
+        <div class="stat-card" style="flex:2">
+            <div class="stat-value" style="font-size:0.85rem">{maior_vol}</div>
+            <div class="stat-label">Maior Volume em Estoque</div>
+        </div>
+        <div class="stat-card" style="flex:2">
+            <div class="stat-value" style="font-size:0.85rem">{mais_marcas}</div>
+            <div class="stat-label">Mais Marcas Comerciais</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── 5. Controles ────────────────────────────────────────────────────────
+    col_n, col_chart, col_filter = st.columns([1, 1, 2])
+    with col_n:
+        top_n = st.selectbox("Top N", [5, 10, 15, 20], index=1, key="pa_top_n")
+    with col_chart:
+        chart_type = st.radio("Gráfico", ["Barras", "Pizza"], key="pa_chart_type", horizontal=True)
+    with col_filter:
+        show_nao_id = st.checkbox("Incluir 'Não identificado'", value=False, key="pa_show_nao_id")
+
+    # ── 6. Filtrar e preparar dados do gráfico ─────────────────────────────
+    df_plot = df_agg.copy()
+    if not show_nao_id:
+        df_plot = df_plot[df_plot["principio_ativo"] != "Não identificado"]
+    df_plot = df_plot.head(top_n)
+
+    if df_plot.empty:
+        st.info("Sem dados para exibir.")
+        return
+
+    cores = [_PA_PALETTE[i % len(_PA_PALETTE)] for i in range(len(df_plot))]
+
+    # ── 7. Gráfico principal ────────────────────────────────────────────────
+    if chart_type == "Barras":
+        fig = go.Figure(go.Bar(
+            x=df_plot["total"],
+            y=df_plot["principio_ativo"],
+            orientation="h",
+            marker_color=cores,
+            text=[f"{int(v)} un." for v in df_plot["total"]],
+            textposition="outside",
+            hovertemplate="<b>%{y}</b><br>Total: %{x} un.<br>Produtos: %{customdata}<extra></extra>",
+            customdata=df_plot["n_produtos"],
+        ))
+        fig.update_layout(
+            paper_bgcolor="#0B0F1A",
+            plot_bgcolor="#111827",
+            font=dict(color="#F9FAFB", size=12),
+            height=max(350, top_n * 42),
+            margin=dict(l=10, r=90, t=30, b=10),
+            xaxis=dict(
+                gridcolor="#1F2937",
+                title="Quantidade em estoque (un.)",
+                showgrid=True,
+                color="#6B7280",
+            ),
+            yaxis=dict(
+                gridcolor="#1F2937",
+                autorange="reversed",
+                tickfont=dict(size=11),
+                color="#F9FAFB",
+            ),
+            showlegend=False,
+        )
+    else:
+        fig = go.Figure(go.Pie(
+            labels=df_plot["principio_ativo"],
+            values=df_plot["total"],
+            marker_colors=cores,
+            textinfo="label+percent",
+            hovertemplate="<b>%{label}</b><br>%{value} un. (%{percent})<extra></extra>",
+            hole=0.35,
+        ))
+        fig.update_layout(
+            paper_bgcolor="#0B0F1A",
+            font=dict(color="#F9FAFB", size=12),
+            height=500,
+            margin=dict(l=10, r=10, t=30, b=30),
+            legend=dict(bgcolor="#111827", bordercolor="#1F2937", font=dict(size=10)),
+        )
+
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    # ── 8. Drill-down ───────────────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("##### Detalhar por Princípio Ativo")
+
+    opcoes_pa = ["— selecione —"] + sorted(df_id["principio_ativo"].tolist())
+    pa_sel = st.selectbox(
+        "Princípio ativo",
+        opcoes_pa,
+        key="pa_drilldown_sel",
+        label_visibility="collapsed",
+    )
+
+    if pa_sel and pa_sel != "— selecione —":
+        df_drill = df_enr[df_enr["principio_ativo"] == pa_sel].sort_values("quantidade", ascending=False)
+        if df_drill.empty:
+            st.info("Nenhum produto encontrado para este princípio ativo.")
+        else:
+            cores_drill = [_PA_PALETTE[i % len(_PA_PALETTE)] for i in range(len(df_drill))]
+            fig_drill = go.Figure(go.Bar(
+                x=df_drill["quantidade"],
+                y=df_drill["produto"],
+                orientation="h",
+                marker_color=cores_drill,
+                text=[f"{int(v)}" for v in df_drill["quantidade"]],
+                textposition="outside",
+                hovertemplate="<b>%{y}</b><br>%{x} un.<extra></extra>",
+            ))
+            fig_drill.update_layout(
+                paper_bgcolor="#111827",
+                plot_bgcolor="#1A2235",
+                font=dict(color="#F9FAFB", size=11),
+                height=max(200, len(df_drill) * 38 + 70),
+                margin=dict(l=10, r=60, t=50, b=10),
+                xaxis=dict(gridcolor="#1F2937", title="un.", color="#6B7280"),
+                yaxis=dict(gridcolor="#1F2937", autorange="reversed", color="#F9FAFB"),
+                showlegend=False,
+                title=dict(
+                    text=f"🧬 {pa_sel} — {len(df_drill)} produto(s) · {int(df_drill['quantidade'].sum())} un. total",
+                    font=dict(size=13, color="#00E5A0"),
+                    x=0,
+                ),
+            )
+            st.plotly_chart(fig_drill, use_container_width=True, config={"displayModeBar": False})
+
+    # ── 9. Nota sobre não identificados ────────────────────────────────────
+    n_nao_id = int((df_enr["principio_ativo"] == "Não identificado").sum())
+    if n_nao_id > 0:
+        st.caption(
+            f"ℹ️ {n_nao_id} produto(s) sem mapeamento de P.A. "
+            "Coloque **produtos_CAMDA.xlsx** na raiz do projeto "
+            "ou atualize a base de princípios ativos no painel lateral."
+        )
+
+
 def reset_db():
     try:
         conn = get_db()
@@ -2749,7 +3007,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "✏️ Lançamentos"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "✏️ Lançamentos", "🧬 P. Ativos"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -4089,6 +4347,17 @@ if has_mestre:
                 mime="text/csv",
                 key="lc_download",
             )
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 13 — ESTOQUE POR PRINCÍPIO ATIVO
+    # ══════════════════════════════════════════════════════════════════════════
+    with t13:
+        st.markdown("#### 🧬 Estoque por Princípio Ativo")
+        st.caption(
+            "Volume total em estoque agrupado pelo ingrediente ativo de cada produto comercial. "
+            "Carregue **produtos_CAMDA.xlsx** na raiz do projeto ou via painel lateral para ativar o mapeamento."
+        )
+        build_principios_ativos_tab(df_mestre, df_pa)
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
