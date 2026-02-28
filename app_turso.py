@@ -1412,8 +1412,8 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     if "pa_chart_ver" not in st.session_state:
         st.session_state["pa_chart_ver"] = 0
     pa_sel = st.session_state["pa_selected"]
-    # Reset se o PA selecionado sumiu do plot atual
-    if pa_sel and pa_sel not in df_plot["principio_ativo"].values:
+    # Reset apenas se o PA não existe mais nos dados — não pelo limite top_n
+    if pa_sel and pa_sel not in df_id["principio_ativo"].values:
         st.session_state["pa_selected"] = None
         pa_sel = None
 
