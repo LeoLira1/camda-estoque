@@ -400,6 +400,8 @@ st.markdown("""
         scrollbar-width: none;
     }
     .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
+    .stTabs [data-baseweb="tab"] { color: #3b82f6 !important; }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] { color: #3b82f6 !important; }
     /* ── Mobile (≤640px) ───────────────────────────────────────────────── */
     @media (max-width: 640px) {
         .block-container { padding: 0.3rem 0.3rem !important; }
