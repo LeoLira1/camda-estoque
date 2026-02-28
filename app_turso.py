@@ -1130,7 +1130,6 @@ def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
     return set(df_pa.loc[mask, "produto"].str.upper())
 
 
-@st.cache_data(ttl=3600)
 def carregar_mapa_produtos_camda() -> dict:
     """
     Lê produtos_CAMDA.xlsx (abas Herbicidas, Inseticidas e Acaricidas, Fungicidas)
@@ -1378,14 +1377,19 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             )
             st.plotly_chart(fig_drill, use_container_width=True, config={"displayModeBar": False})
 
-    # ── 9. Nota sobre não identificados ────────────────────────────────────
+    # ── 9. Nota e diagnóstico de não identificados ──────────────────────────
     n_nao_id = int((df_enr["principio_ativo"] == "Não identificado").sum())
     if n_nao_id > 0:
         st.caption(
             f"ℹ️ {n_nao_id} produto(s) sem mapeamento de P.A. "
-            "Coloque **produtos_CAMDA.xlsx** na raiz do projeto "
-            "ou atualize a base de princípios ativos no painel lateral."
+            "Carregue **produtos_CAMDA.xlsx** via 'Base de Princípios Ativos' no painel lateral."
         )
+        with st.expander(f"🔍 Ver {n_nao_id} produto(s) sem P.A. mapeado", expanded=False):
+            df_nao_id = df_enr[df_enr["principio_ativo"] == "Não identificado"][["produto", "categoria", "quantidade"]].sort_values("produto")
+            st.dataframe(df_nao_id.rename(columns={"produto": "Produto", "categoria": "Categoria", "quantidade": "Qtd Sistema"}),
+                         hide_index=True, use_container_width=True)
+            n_mapa = len(mapa_combinado)
+            st.caption(f"Mapa carregado: {n_mapa} produto(s). Verifique se os nomes acima coincidem com os da planilha de P.A.")
 
 
 def reset_db():
