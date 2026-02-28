@@ -1438,15 +1438,13 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     """, unsafe_allow_html=True)
 
     # ── 6. Controles ─────────────────────────────────────────────────────────
-    col_type, col_n, _ = st.columns([2, 1, 3])
+    col_type, _ = st.columns([2, 4])
     with col_type:
         chart_type = st.radio(
             "Tipo", ["⬛ Barras", "🔵 Pizza"],
             key="pa_chart_type", horizontal=True, label_visibility="collapsed",
         )
-    with col_n:
-        top_n = st.radio("Top", [5, 10, 15, 20], index=1, key="pa_top_n",
-                         horizontal=True, label_visibility="collapsed")
+    top_n = 20
 
     # ── 7. Preparar dados do gráfico ─────────────────────────────────────────
     df_plot = df_id.head(top_n).copy()
