@@ -1282,7 +1282,7 @@ def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
     """Retorna set de nomes de produtos que contêm o princípio ativo buscado."""
     if df_pa.empty:
         return set()
-    mask = df_pa["principio_ativo"].str.contains(search_term, case=False, na=False)
+    mask = df_pa["principio_ativo"].str.contains(search_term, case=False, na=False, regex=False)
     return set(df_pa.loc[mask, "produto"].str.upper())
 
 
@@ -3428,8 +3428,8 @@ if has_mestre:
     if search_term:
         # Busca padrão por nome/código
         mask_nome_cod = (
-            df_view["produto"].str.contains(search_term, case=False, na=False)
-            | df_view["codigo"].str.contains(search_term, case=False, na=False)
+            df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
+            | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
         )
 
         # Busca por princípio ativo
@@ -3441,7 +3441,7 @@ if has_mestre:
                 n_pa = mask_pa.sum()
                 if n_pa > 0 and not mask_nome_cod.any():
                     # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
-                    pa_found = df_pa[df_pa["principio_ativo"].str.contains(search_term, case=False, na=False)]["principio_ativo"].unique()
+                    pa_found = df_pa[df_pa["principio_ativo"].str.contains(search_term, case=False, na=False, regex=False)]["principio_ativo"].unique()
                     pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
                 elif n_pa > 0:
                     pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
@@ -3674,8 +3674,8 @@ if has_mestre:
                 df_filtrado_av = df_estoque_av
                 if busca_av:
                     df_filtrado_av = df_estoque_av[
-                        df_estoque_av["produto"].str.contains(busca_av, case=False, na=False)
-                        | df_estoque_av["codigo"].str.contains(busca_av, case=False, na=False)
+                        df_estoque_av["produto"].str.contains(busca_av, case=False, na=False, regex=False)
+                        | df_estoque_av["codigo"].str.contains(busca_av, case=False, na=False, regex=False)
                     ]
 
                 if df_filtrado_av.empty:
