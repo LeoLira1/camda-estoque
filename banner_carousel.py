@@ -393,32 +393,33 @@ def gerar_html_banner(slides: list) -> str:
         dots_html += f'<div class="dot {"active" if i == 0 else ""}"></div>'
 
     return f"""
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
+  *{{box-sizing:border-box}}
   .camda-banner{{position:relative;overflow:hidden;border-radius:16px;height:230px;margin-bottom:8px}}
   .slide{{position:absolute;inset:0;opacity:0;transition:opacity 1.3s ease;will-change:opacity}}
   .slide.active{{opacity:1;position:relative;height:230px}}
-  .slide img{{width:100%;height:230px;object-fit:cover;display:block}}
+  .slide img{{width:100%;height:230px;object-fit:cover;object-position:center 40%;display:block}}
   .slide.active img{{animation:kb 6s ease-out both}}
   @keyframes kb{{from{{transform:scale(1.07)}}to{{transform:scale(1)}}}}
-  .overlay{{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.88) 0%,rgba(0,0,0,.2) 55%,rgba(0,0,0,.05) 100%)}}
+  .overlay{{position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.88) 0%,rgba(0,0,0,.18) 55%,rgba(0,0,0,.04) 100%)}}
   .slide-content{{position:absolute;bottom:0;left:0;right:0;padding:14px 16px 18px}}
-  .slide-tag{{display:inline-block;font-family:'DM Sans',sans-serif;font-size:9px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;border-radius:100px;padding:3px 8px;margin-bottom:6px;opacity:0;transform:translateY(6px);transition:opacity .5s .35s ease,transform .5s .35s ease}}
-  .slide-title{{font-family:'Syne',sans-serif;font-size:19px;font-weight:800;line-height:1.15;letter-spacing:-.3px;color:#fff;opacity:0;transform:translateY(10px);transition:opacity .5s .5s ease,transform .5s .5s ease}}
-  .slide-sub{{font-family:'DM Sans',sans-serif;font-size:11px;color:rgba(255,255,255,.6);margin-top:4px;opacity:0;transform:translateY(6px);transition:opacity .5s .65s ease,transform .5s .65s ease}}
-  .slide-link{{font-size:10px;font-weight:600;margin-top:5px;opacity:0;transform:translateY(6px);transition:opacity .5s .78s ease,transform .5s .78s ease}}
+  .slide-tag{{display:inline-block;font-family:'Inter',sans-serif;font-size:9px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;border-radius:100px;padding:3px 8px;margin-bottom:6px;opacity:0;transform:translateY(6px);transition:opacity .5s .35s ease,transform .5s .35s ease}}
+  .slide-title{{font-family:'Inter',sans-serif;font-size:18px;font-weight:800;line-height:1.2;letter-spacing:-.2px;color:#fff;opacity:0;transform:translateY(10px);transition:opacity .5s .5s ease,transform .5s .5s ease}}
+  .slide-sub{{font-family:'Inter',sans-serif;font-size:11px;font-weight:400;color:rgba(255,255,255,.6);margin-top:4px;opacity:0;transform:translateY(6px);transition:opacity .5s .65s ease,transform .5s .65s ease}}
+  .slide-link{{font-family:'Inter',sans-serif;font-size:10px;font-weight:600;margin-top:5px;opacity:0;transform:translateY(6px);transition:opacity .5s .78s ease,transform .5s .78s ease}}
   .slide.active .slide-tag,.slide.active .slide-title,.slide.active .slide-sub,.slide.active .slide-link{{opacity:1;transform:translateY(0)}}
   .clima-card{{position:absolute;top:14px;right:14px;background:rgba(0,0,0,.5);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.12);border-radius:14px;padding:10px 13px;text-align:right;opacity:0;transform:translateY(-8px);transition:opacity .6s .4s ease,transform .6s .4s ease}}
   .slide.active .clima-card{{opacity:1;transform:translateY(0)}}
-  .clima-big{{font-family:'Syne',sans-serif;font-size:34px;font-weight:800;line-height:1;color:#fff}}
-  .clima-desc{{font-size:10px;color:rgba(255,255,255,.6);margin-top:2px}}
-  .clima-row{{display:flex;gap:8px;margin-top:4px;font-size:9px;color:rgba(255,255,255,.5)}}
+  .clima-big{{font-family:'Inter',sans-serif;font-size:34px;font-weight:800;line-height:1;color:#fff;letter-spacing:-1px}}
+  .clima-desc{{font-size:10px;font-family:'Inter',sans-serif;color:rgba(255,255,255,.6);margin-top:2px}}
+  .clima-row{{display:flex;gap:8px;margin-top:4px;font-size:9px;font-family:'Inter',sans-serif;color:rgba(255,255,255,.5)}}
   .preco-cards{{position:absolute;top:14px;right:14px;display:flex;flex-direction:column;gap:5px;opacity:0;transform:translateX(10px);transition:opacity .6s .4s ease,transform .6s .4s ease}}
   .slide.active .preco-cards{{opacity:1;transform:translateX(0)}}
   .preco-pill{{background:rgba(0,0,0,.55);backdrop-filter:blur(12px);border:1px solid rgba(45,255,122,.2);border-radius:10px;padding:7px 11px;text-align:right}}
-  .preco-nome{{font-size:9px;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px}}
-  .preco-val{{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:#2dff7a;line-height:1.1}}
-  .preco-var{{font-size:9px;font-weight:600}}
+  .preco-nome{{font-size:9px;font-family:'Inter',sans-serif;color:rgba(255,255,255,.5);text-transform:uppercase;letter-spacing:.5px}}
+  .preco-val{{font-family:'Inter',sans-serif;font-size:17px;font-weight:800;color:#2dff7a;line-height:1.1;letter-spacing:-.5px}}
+  .preco-var{{font-size:9px;font-family:'Inter',sans-serif;font-weight:600}}
   .camda-dots{{position:absolute;bottom:10px;right:12px;display:flex;gap:4px;z-index:10}}
   .dot{{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.3);transition:all .4s ease}}
   .dot.active{{width:18px;border-radius:3px;background:#2dff7a;box-shadow:0 0 8px rgba(45,255,122,.7)}}
