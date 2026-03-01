@@ -565,7 +565,7 @@ _RE_SOBRA_SHORT = re.compile(r"^s\.?\s+(\d+)\s*(.*)")
 _RE_FALTA_MID = re.compile(r"falt\w*\s+(?:de\s+)?(\d+)")
 _RE_SOBRA_MID = re.compile(r"(?:sobr|pass)\w*\s+(\d+)")
 _RE_ONLY_NUMBER = re.compile(r"^\d+([.,]\d+)?$")
-_RE_COD_PROD = re.compile(r"^(\d+)\s*-\s*(.+)$")
+_RE_COD_PROD = re.compile(r"^([A-Za-z]{0,2}\d+)\s*-\s*(.+)$")
 _RE_SPACES = re.compile(r"\s+")
 _RE_DIGITS = re.compile(r"\d+")
 _RE_ALPHA = re.compile(r"[a-zA-Z]")
@@ -3455,10 +3455,12 @@ if has_mestre:
     df_view = df_mestre
     pa_match_info = ""
     if search_term:
-        # Busca padrão por nome/código (literal, sem regex)
+        # Busca padrão por nome/código
+        # Código: startswith para evitar que "227579" retorne "US227579" ou "AUTO_US227579..."
+        _st_up = search_term.upper()
         mask_nome_cod = (
             df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
-            | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
+            | df_view["codigo"].str.upper().str.startswith(_st_up)
         )
 
         # Busca por princípio ativo usando o mesmo match multi-etapa da aba 🧬
