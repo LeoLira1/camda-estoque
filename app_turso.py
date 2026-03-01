@@ -3455,13 +3455,12 @@ if has_mestre:
     df_view = df_mestre
     pa_match_info = ""
     if search_term:
-        # Busca padrão por nome/código
-        # Código: startswith para evitar que "227579" retorne "US227579" ou "AUTO_US227579..."
-        _st_up = search_term.upper()
+        # Busca padrão por nome/código (contém), excluindo registros AUTO_
+        # AUTO_ são artefatos de import mal-parseado e não devem poluir a busca
         mask_nome_cod = (
             df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
-            | df_view["codigo"].str.upper().str.startswith(_st_up)
-        )
+            | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
+        ) & ~df_view["codigo"].str.startswith("AUTO_")
 
         # Busca por princípio ativo usando o mesmo match multi-etapa da aba 🧬
         mask_pa = pd.Series([False] * len(df_view), index=df_view.index)
@@ -4798,6 +4797,30 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
             "Use quando um código foi importado errado e precisa ser removido. "
             "Não afeta vendas, lançamentos nem nenhuma outra tabela."
         )
+
+        # Detecta e lista registros AUTO_ (artefatos de import mal-parseado)
+        _auto_rows = get_db().execute(
+            "SELECT codigo, produto, qtd_sistema FROM estoque_mestre WHERE codigo LIKE 'AUTO_%' ORDER BY produto"
+        ).fetchall()
+        if _auto_rows:
+            st.warning(
+                f"⚠️ **{len(_auto_rows)} registro(s) com código AUTO_ detectado(s)** — "
+                "são artefatos de importação mal-parseada e podem causar duplicatas na busca."
+            )
+            for _ar in _auto_rows:
+                _ar_cod, _ar_prod, _ar_qty = _ar
+                _ar_col1, _ar_col2 = st.columns([5, 1])
+                with _ar_col1:
+                    st.code(f"{_ar_cod}  →  {_ar_prod}  ({_ar_qty} un.)", language=None)
+                with _ar_col2:
+                    if st.button("Excluir", key=f"del_auto_{_ar_cod}", type="primary"):
+                        ok, msg = excluir_produto_mestre(_ar_cod)
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+                        st.rerun()
+            st.markdown("---")
 
         cod_excluir = st.text_input(
             "Código a excluir", placeholder="Ex: 227579", key="input_excluir_codigo"
