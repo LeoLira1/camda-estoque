@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date, timezone
 from PIL import Image
-from banner_carousel import render_banner
+from banner_carousel import buscar_noticias
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
 _BRT = timezone(timedelta(hours=-3))
@@ -3297,8 +3297,102 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 
-# ── Banner carrossel inteligente (substitui header estático) ──────────────────
-render_banner()
+# ── Header banner + clima ──────────────────────────────────────────────────
+_wd_dash = get_weather_forecast_quirinopolis()
+_now_dash = datetime.now(tz=_BRT)
+_dia_abr_dash = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"][_now_dash.weekday()]
+_hora_dash = _now_dash.strftime("%H:%M")
+
+if _wd_dash:
+    _cur_d = _wd_dash["current"]
+    _wtemp_d = round(_cur_d["temperature_2m"])
+    _wcode_d = int(_cur_d["weathercode"])
+    _humid_d = round(_cur_d.get("relative_humidity_2m", 0))
+    _vento_d = round(_cur_d.get("wind_speed_10m", 0))
+    _c = _wcode_d
+    if _c == 0:                      _wemoji_d, _wdesc_d = "☀️", "Céu limpo"
+    elif _c in (1,2):                _wemoji_d, _wdesc_d = "🌤️", "Poucas nuvens"
+    elif _c == 3:                    _wemoji_d, _wdesc_d = "☁️", "Nublado"
+    elif _c in (45,48):              _wemoji_d, _wdesc_d = "🌫️", "Névoa"
+    elif _c in (51,53,55):           _wemoji_d, _wdesc_d = "🌦️", "Chuvisco"
+    elif _c in (61,63,65,80,81,82):  _wemoji_d, _wdesc_d = "🌧️", "Chuva"
+    elif _c in (95,96,99):           _wemoji_d, _wdesc_d = "⛈️", "Tempestade"
+    elif _c in (71,73,75,77):        _wemoji_d, _wdesc_d = "❄️", "Neve"
+    else:                            _wemoji_d, _wdesc_d = "🌡️", ""
+    _whtml = f"""<div class="wco">
+  <div style="font-size:0.58rem;color:rgba(255,255,255,0.55);margin-bottom:6px;letter-spacing:0.3px;">{_dia_abr_dash} · {_hora_dash}</div>
+  <div style="font-size:2.4rem;line-height:1;filter:drop-shadow(0 4px 10px rgba(0,0,0,0.4));">{_wemoji_d}</div>
+  <div style="font-size:2.1rem;font-weight:700;line-height:1.1;letter-spacing:-1px;margin-top:5px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">{_wtemp_d}°</div>
+  <div style="font-size:0.7rem;color:rgba(255,255,255,0.9);margin-top:5px;font-weight:500;text-shadow:0 1px 4px rgba(0,0,0,0.5);">{_wdesc_d}</div>
+  <div style="font-size:0.58rem;color:rgba(255,255,255,0.6);margin-top:2px;text-shadow:0 1px 4px rgba(0,0,0,0.4);">Quirinópolis, GO</div>
+  <div style="display:flex;justify-content:center;gap:7px;font-size:0.6rem;color:rgba(255,255,255,0.8);
+              margin-top:8px;background:rgba(0,0,0,0.18);border-radius:10px;padding:5px 8px;">
+    <span>💧 {_humid_d}%</span><span style="opacity:0.3;">|</span><span>💨 {_vento_d}km/h</span>
+  </div>
+</div>"""
+else:
+    _whtml = ""
+
+st.markdown(f'''
+<style>
+.camda-header-wrap {{ position: relative; width: 100%; margin-bottom: 0.8rem; }}
+.camda-header {{
+    width: 100%; height: 220px;
+    background-image: url(https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/banner.jpg?v=20260228);
+    background-size: cover;
+    background-position: center;
+    border-radius: 14px;
+    overflow: hidden;
+}}
+.wco {{
+    position: absolute; top: 12px; right: 16px;
+    color: #fff; font-family: Outfit,sans-serif;
+    border-radius: 18px; padding: 12px 15px 11px;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    text-align: center; min-width: 128px;
+}}
+@media (max-width: 640px) {{
+    .camda-header {{ height: 140px; }}
+    .wco {{ top: 6px; right: 6px; padding: 8px 10px 8px; border-radius: 14px; min-width: 100px; }}
+    .wco > div:nth-child(2) {{ font-size: 1.6rem !important; }}
+    .wco > div:nth-child(3) {{ font-size: 1.4rem !important; }}
+}}
+</style>
+<div class="camda-header-wrap">
+  <div class="camda-header"></div>
+  {_whtml}
+</div>
+''', unsafe_allow_html=True)
+
+# ── Notícias agrícolas ────────────────────────────────────────────────────────
+_noticias_dash = buscar_noticias()
+if _noticias_dash:
+    _tipo_cfg = {
+        "noticias": ("📰", "#0a84ff", "Agro"),
+        "alerta":   ("⚠️", "#ff9f0a", "Alerta"),
+        "manejo":   ("🌱", "#2dff7a", "Manejo"),
+    }
+    _pills_html = ""
+    for _n in _noticias_dash[:4]:
+        _ico, _cor, _label = _tipo_cfg.get(_n["tipo"], ("📰", "#0a84ff", "Agro"))
+        _pills_html += (
+            f'<a href="{_n["link"]}" target="_blank" style="text-decoration:none;">'
+            f'<div style="display:inline-flex;align-items:center;gap:6px;'
+            f'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);'
+            f'border-radius:10px;padding:7px 12px;font-size:0.75rem;color:#e8eaf0;'
+            f'white-space:nowrap;overflow:hidden;max-width:300px;">'
+            f'<span style="font-size:0.65rem;font-weight:600;color:{_cor};'
+            f'background:rgba(255,255,255,0.08);border-radius:6px;padding:2px 6px;flex-shrink:0;">'
+            f'{_ico} {_label}</span>'
+            f'<span style="overflow:hidden;text-overflow:ellipsis;">{_n["titulo"]}</span>'
+            f'</div></a>'
+        )
+    st.markdown(
+        f'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:0.8rem;">{_pills_html}</div>',
+        unsafe_allow_html=True
+    )
 
 # ── Alertas automáticos (abaixo do clima) ────────────────────────────────────
 if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != datetime.now(tz=_BRT).date().isoformat():
