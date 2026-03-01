@@ -1108,77 +1108,24 @@ def deletar_avaria(avaria_id: int):
         st.error(f"❌ Erro ao deletar avaria: {e}")
 
 
-def detectar_codigos_duplicados() -> list:
+def excluir_produto_mestre(codigo: str) -> tuple:
     """
-    Detecta pares de códigos onde um é versão numérica do outro (ex: '227579' e 'US227579').
-    Retorna lista de dicts com 'codigo_numerico', 'codigo_prefixado', 'produto', 'qtd_numerico', 'qtd_prefixado'.
-    """
-    try:
-        conn = get_db()
-        rows = conn.execute(
-            "SELECT codigo, produto, qtd_sistema FROM estoque_mestre ORDER BY codigo"
-        ).fetchall()
-
-        # Monta dicionário {codigo: (produto, qtd)}
-        todos = {r[0]: (r[1], r[2]) for r in rows}
-
-        duplicatas = []
-        vistos = set()
-        for codigo in list(todos.keys()):
-            if codigo in vistos:
-                continue
-            # Verifica se é puramente numérico
-            if codigo.isdigit():
-                # Procura algum código que TERMINA com esse número mas tem prefixo de letras
-                for outro in todos:
-                    if outro in vistos:
-                        continue
-                    if outro != codigo and outro.endswith(codigo) and not outro.isdigit():
-                        duplicatas.append({
-                            "codigo_numerico": codigo,
-                            "codigo_prefixado": outro,
-                            "produto": todos[outro][0],
-                            "qtd_numerico": todos[codigo][1],
-                            "qtd_prefixado": todos[outro][1],
-                        })
-                        vistos.add(codigo)
-                        vistos.add(outro)
-                        break
-        return duplicatas
-    except Exception:
-        return []
-
-
-def mesclar_codigos(codigo_remover: str, codigo_manter: str, qtd_correta: int | None = None) -> tuple:
-    """
-    Mescla dois códigos: migra referências de codigo_remover para codigo_manter
-    em todas as tabelas, opcionalmente corrige a quantidade, depois remove codigo_remover.
+    Remove um produto do estoque mestre pelo código exato.
+    Não afeta nenhuma outra tabela (vendas, lançamentos, etc.).
     """
     try:
         conn = get_db()
-
-        # Migra referências nas tabelas filhas
-        for tabela in ("reposicao_loja", "lancamentos_manuais", "contagem_itens", "avarias"):
-            conn.execute(
-                f"UPDATE {tabela} SET codigo = ? WHERE codigo = ?",
-                (codigo_manter, codigo_remover),
-            )
-
-        # Corrige quantidade se informada
-        if qtd_correta is not None:
-            conn.execute(
-                "UPDATE estoque_mestre SET qtd_sistema = ?, diferenca = qtd_fisica - ? WHERE codigo = ?",
-                (qtd_correta, qtd_correta, codigo_manter),
-            )
-
-        # Remove o código duplicado
-        conn.execute("DELETE FROM estoque_mestre WHERE codigo = ?", (codigo_remover,))
-
+        row = conn.execute(
+            "SELECT produto, qtd_sistema FROM estoque_mestre WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        if not row:
+            return (False, f"Código '{codigo}' não encontrado no mestre.")
+        conn.execute("DELETE FROM estoque_mestre WHERE codigo = ?", (codigo,))
         conn.commit()
         sync_db()
-        return (True, f"✅ Código '{codigo_remover}' mesclado em '{codigo_manter}' com sucesso.")
+        return (True, f"✅ Registro '{codigo} — {row[0]}' ({row[1]} un.) removido do mestre.")
     except Exception as e:
-        return (False, f"❌ Erro ao mesclar: {e}")
+        return (False, f"❌ Erro ao excluir: {e}")
 
 
 def get_avarias_count_abertas() -> int:
@@ -4842,59 +4789,52 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
             else:
                 st.error("Não foi possível ler a planilha. Esperado: colunas 'Produto' e 'Princípio Ativo' (ou arquivo produtos_CAMDA.xlsx com 3 abas).")
 
-        # ── Corrigir códigos duplicados ──────────────────────────────────
+        # ── Excluir registro fantasma do mestre ──────────────────────────
         st.markdown("---")
-        st.markdown("##### 🔧 Corrigir Códigos Duplicados")
-        st.caption("Detecta produtos cadastrados com dois códigos diferentes (ex: 227579 e US227579) e permite mesclar em um único registro.")
+        st.markdown("##### 🗑️ Excluir Registro do Mestre")
+        st.caption(
+            "Use quando um código foi importado errado e precisa ser removido. "
+            "Não afeta vendas, lançamentos nem nenhuma outra tabela."
+        )
 
-        duplicatas = detectar_codigos_duplicados()
-        if not duplicatas:
-            st.success("Nenhuma duplicata detectada.")
-        else:
-            st.warning(f"{len(duplicatas)} duplicata(s) encontrada(s).")
-            for i, dup in enumerate(duplicatas):
-                with st.expander(f"⚠️ {dup['produto']} — `{dup['codigo_numerico']}` ({dup['qtd_numerico']} un.) × `{dup['codigo_prefixado']}` ({dup['qtd_prefixado']} un.)", expanded=True):
-                    st.markdown(
-                        f"**Código a remover:** `{dup['codigo_numerico']}` · {dup['qtd_numerico']} un.  \n"
-                        f"**Código a manter:** `{dup['codigo_prefixado']}` · {dup['qtd_prefixado']} un."
-                    )
-                    qtd_key = f"qtd_merge_{i}"
-                    confirm_key = f"confirm_merge_{i}"
-                    if qtd_key not in st.session_state:
-                        st.session_state[qtd_key] = dup["qtd_numerico"]
-                    if confirm_key not in st.session_state:
-                        st.session_state[confirm_key] = False
+        cod_excluir = st.text_input(
+            "Código a excluir", placeholder="Ex: 227579", key="input_excluir_codigo"
+        ).strip()
 
-                    qtd_correta = st.number_input(
-                        "Quantidade correta a manter", min_value=0,
-                        value=st.session_state[qtd_key], key=f"ni_merge_{i}"
-                    )
+        if cod_excluir:
+            row_exc = get_db().execute(
+                "SELECT produto, qtd_sistema FROM estoque_mestre WHERE codigo = ?",
+                (cod_excluir,),
+            ).fetchone()
+            if row_exc:
+                st.warning(
+                    f"Encontrado: **{row_exc[0]}** · código `{cod_excluir}` · {row_exc[1]} un.  \n"
+                    "Essa ação remove apenas este registro do mestre. Nenhum dado de venda ou lançamento é alterado."
+                )
+                if "confirm_excluir" not in st.session_state:
+                    st.session_state.confirm_excluir = False
 
-                    if not st.session_state[confirm_key]:
-                        if st.button(f"🔀 Mesclar e corrigir quantidade", key=f"btn_merge_{i}", type="primary"):
-                            st.session_state[confirm_key] = True
-                            st.session_state[qtd_key] = qtd_correta
+                if not st.session_state.confirm_excluir:
+                    if st.button("🗑️ Excluir este registro", type="primary", key="btn_excluir"):
+                        st.session_state.confirm_excluir = True
+                        st.rerun()
+                else:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Sim, excluir", type="primary", key="btn_confirm_excluir"):
+                            ok, msg = excluir_produto_mestre(cod_excluir)
+                            st.session_state.confirm_excluir = False
+                            if ok:
+                                st.success(msg)
+                            else:
+                                st.error(msg)
                             st.rerun()
-                    else:
-                        st.warning(f"Confirma? Remove `{dup['codigo_numerico']}`, mantém `{dup['codigo_prefixado']}` com {st.session_state[qtd_key]} un.")
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            if st.button("Sim, mesclar", key=f"btn_confirm_{i}", type="primary"):
-                                ok, msg = mesclar_codigos(
-                                    dup["codigo_numerico"],
-                                    dup["codigo_prefixado"],
-                                    qtd_correta=st.session_state[qtd_key],
-                                )
-                                st.session_state[confirm_key] = False
-                                if ok:
-                                    st.success(msg)
-                                else:
-                                    st.error(msg)
-                                st.rerun()
-                        with c2:
-                            if st.button("Cancelar", key=f"btn_cancel_{i}"):
-                                st.session_state[confirm_key] = False
-                                st.rerun()
+                    with c2:
+                        if st.button("Cancelar", key="btn_cancel_excluir"):
+                            st.session_state.confirm_excluir = False
+                            st.rerun()
+            else:
+                st.info(f"Código `{cod_excluir}` não encontrado no mestre.")
 
         st.markdown("---")
         _, col_sync, col_reset = st.columns([2, 1, 1])
