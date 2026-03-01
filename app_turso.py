@@ -337,8 +337,8 @@ if not st.session_state.authenticated:
 # ── CSS ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;500;700;900&display=swap');
-    .stApp { background: #0a0f1a; color: #e0e6ed; font-family: 'Outfit', sans-serif; }
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;500;700;900&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
+    .stApp { background: #0a0f1a; color: #e0e6ed; font-family: 'DM Sans', 'Outfit', sans-serif; }
     #MainMenu, footer, header { visibility: hidden; }
     .block-container { padding: 0.5rem 0.8rem !important; max-width: 100% !important; }
     .main-title {
@@ -437,7 +437,121 @@ st.markdown("""
         }
         .tm-tile { width: calc(33.33% - 6px); min-width: 90px; height: 58px; }
     }
+    /* ── Syne em números grandes ──────────────────────────────────────── */
+    .stat-value {
+        font-family: 'Syne', 'JetBrains Mono', monospace !important;
+    }
+    /* ── cardPop — entrada cascata nos tiles do Mapa Estoque ─────────── */
+    @keyframes cardPop {
+        from { opacity: 0; transform: scale(0.85) translateY(10px); }
+        to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+    .tm-tile {
+        animation: cardPop 0.4s ease both;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .tm-tile:hover {
+        transform: translateY(-4px) scale(1.02) !important;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+        z-index: 1;
+    }
+    .tm-tile:nth-child(1)  { animation-delay: 0.03s; }
+    .tm-tile:nth-child(2)  { animation-delay: 0.06s; }
+    .tm-tile:nth-child(3)  { animation-delay: 0.09s; }
+    .tm-tile:nth-child(4)  { animation-delay: 0.12s; }
+    .tm-tile:nth-child(5)  { animation-delay: 0.15s; }
+    .tm-tile:nth-child(6)  { animation-delay: 0.18s; }
+    .tm-tile:nth-child(7)  { animation-delay: 0.21s; }
+    .tm-tile:nth-child(8)  { animation-delay: 0.24s; }
+    .tm-tile:nth-child(9)  { animation-delay: 0.27s; }
+    .tm-tile:nth-child(10) { animation-delay: 0.30s; }
+    .tm-tile:nth-child(11) { animation-delay: 0.33s; }
+    .tm-tile:nth-child(12) { animation-delay: 0.36s; }
+    .tm-tile:nth-child(13) { animation-delay: 0.39s; }
+    .tm-tile:nth-child(14) { animation-delay: 0.42s; }
+    .tm-tile:nth-child(15) { animation-delay: 0.45s; }
+    .tm-tile:nth-child(16) { animation-delay: 0.48s; }
+    .tm-tile:nth-child(17) { animation-delay: 0.51s; }
+    .tm-tile:nth-child(18) { animation-delay: 0.54s; }
+    .tm-tile:nth-child(19) { animation-delay: 0.57s; }
+    .tm-tile:nth-child(20) { animation-delay: 0.60s; }
+    /* ── Transição suave entre abas ───────────────────────────────────── */
+    @keyframes tabFadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    [data-baseweb="tab-panel"] {
+        animation: tabFadeIn 0.3s ease both;
+    }
+    /* ── Search input glow ao focar ───────────────────────────────────── */
+    .stTextInput input:focus {
+        border-color: rgba(45,255,122,0.5) !important;
+        box-shadow: 0 0 0 3px rgba(45,255,122,0.1) !important;
+        transition: all 0.2s ease;
+    }
+    /* ── Hover nos cards stat-card ────────────────────────────────────── */
+    .stat-card {
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+    /* ── Hover nos itens Repor na Loja ────────────────────────────────── */
+    .repor-item {
+        transition: background 0.2s ease, transform 0.15s ease;
+    }
+    .repor-item:hover {
+        background: #1a2438 !important;
+        transform: translateX(4px);
+    }
+    /* ── Glow pulsante no header banner ──────────────────────────────── */
+    @keyframes glowPulse {
+        0%, 100% { box-shadow: 0 0 20px rgba(45,255,122,0.15); }
+        50%       { box-shadow: 0 0 40px rgba(45,255,122,0.40); }
+    }
+    .camda-header {
+        animation: glowPulse 3s ease-in-out infinite;
+    }
+    /* ── Respeitar prefers-reduced-motion ─────────────────────────────── */
+    @media (prefers-reduced-motion: reduce) {
+        * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+    }
 </style>
+""", unsafe_allow_html=True)
+
+# ── Injetar JS: contadores animados nos KPI metrics ──────────────────────────
+st.markdown("""
+<script>
+(function() {
+  function animateCounters() {
+    var metrics = document.querySelectorAll('[data-testid="metric-value"]');
+    metrics.forEach(function(el) {
+      var raw = el.textContent.trim();
+      var num = parseInt(raw.replace(/\\D/g, ''), 10);
+      if (isNaN(num) || num === 0) return;
+      var duration = 1200;
+      var start = performance.now();
+      var suffix = raw.replace(/[\\d,\\.]/g, '').trim();
+      function step(now) {
+        var progress = Math.min((now - start) / duration, 1);
+        var ease = progress === 1 ? 1 : 1 - Math.pow(2, -10 * progress);
+        el.textContent = Math.round(ease * num) + (suffix ? ' ' + suffix : '');
+        if (progress < 1) requestAnimationFrame(step);
+        else el.textContent = raw;
+      }
+      requestAnimationFrame(step);
+    });
+  }
+  var observer = new MutationObserver(function() {
+    if (document.querySelector('[data-testid="metric-value"]')) {
+      observer.disconnect();
+      animateCounters();
+    }
+  });
+  observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
 """, unsafe_allow_html=True)
 
 
@@ -2822,8 +2936,9 @@ def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
 _PLOTLY_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="Outfit, sans-serif", color="#e0e6ed", size=11),
+    font=dict(family="DM Sans, Outfit, sans-serif", color="#e0e6ed", size=11),
     margin=dict(l=10, r=10, t=40, b=10),
+    transition=dict(duration=800, easing="cubic-in-out"),
 )
 
 _DEFAULT_LEGEND = dict(
@@ -3418,7 +3533,7 @@ if has_mestre:
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
                     st.markdown(
-                        f'<div style="background:#111827;border:1px solid #1e293b;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
+                        f'<div class="repor-item" style="background:#111827;border:1px solid #1e293b;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;">'
                         f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
                         f'<span style="color:#3b82f6;font-size:0.6rem;font-family:monospace;">{tempo}</span></div>'
