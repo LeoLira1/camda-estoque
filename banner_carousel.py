@@ -78,33 +78,49 @@ def _banner_dir_tem_imagens() -> bool:
 
 # ── Funções de dados ──────────────────────────────────────────────────────────
 
+def _wcode_desc(code: int) -> str:
+    """Converte código WMO para descrição em português."""
+    if code == 0:             return "Céu limpo"
+    if code in (1, 2):        return "Poucas nuvens"
+    if code == 3:             return "Nublado"
+    if code in (45, 48):      return "Névoa"
+    if code in (51, 53, 55):  return "Chuvisco"
+    if code in (61, 63, 65):  return "Chuva"
+    if code in (80, 81, 82):  return "Pancadas de chuva"
+    if code in (95, 96, 99):  return "Tempestade"
+    if code in (71, 73, 75):  return "Neve"
+    return "Parcialmente nublado"
+
+
 @st.cache_data(ttl=600)
 def buscar_clima() -> dict:
-    """Busca clima atual de Quirinópolis via OpenWeatherMap. Usa fallback mockado em caso de erro."""
+    """Busca clima atual de Quirinópolis via Open-Meteo (gratuito, sem chave)."""
     try:
-        import requests
-        key = st.secrets.get("OPENWEATHER_API_KEY", "")
-        if not key:
-            raise ValueError("Chave OpenWeatherMap não configurada")
+        import urllib.request, json
         url = (
-            "https://api.openweathermap.org/data/2.5/weather"
-            f"?q=Quirinopolis,BR&appid={key}&units=metric&lang=pt_br"
+            "https://api.open-meteo.com/v1/forecast"
+            "?latitude=-18.45&longitude=-50.45"
+            "&current=temperature_2m,weathercode,relative_humidity_2m,wind_speed_10m"
+            "&daily=temperature_2m_max,temperature_2m_min"
+            "&timezone=America%2FSao_Paulo"
+            "&forecast_days=1"
         )
-        d = requests.get(url, timeout=5).json()
+        with urllib.request.urlopen(url, timeout=5) as r:
+            d = json.loads(r.read())
+        cur  = d["current"]
+        code = int(cur["weathercode"])
         return {
-            "temp":    round(d["main"]["temp"]),
-            "desc":    d["weather"][0]["description"].capitalize(),
-            "umidade": d["main"]["humidity"],
-            "vento":   round(d["wind"]["speed"] * 3.6),
-            "min":     round(d["main"]["temp_min"]),
-            "max":     round(d["main"]["temp_max"]),
-            "icone":   d["weather"][0]["icon"],
+            "temp":    round(cur["temperature_2m"]),
+            "desc":    _wcode_desc(code),
+            "umidade": round(cur.get("relative_humidity_2m", 65)),
+            "vento":   round(cur.get("wind_speed_10m", 8)),
+            "min":     round(d["daily"]["temperature_2m_min"][0]),
+            "max":     round(d["daily"]["temperature_2m_max"][0]),
         }
     except Exception:
         return {
             "temp": 29, "desc": "Parcialmente nublado",
             "umidade": 65, "vento": 8, "min": 22, "max": 33,
-            "icone": "02d",
         }
 
 
