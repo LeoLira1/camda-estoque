@@ -1108,6 +1108,35 @@ def deletar_avaria(avaria_id: int):
         st.error(f"❌ Erro ao deletar avaria: {e}")
 
 
+def ajustar_qtd_manual(codigo: str, nova_qtd: int) -> tuple:
+    """Atualiza qtd_sistema de um produto manualmente, recalculando diferenca/status."""
+    try:
+        conn = get_db()
+        row = conn.execute(
+            "SELECT produto, qtd_fisica, nota, status FROM estoque_mestre WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        if not row:
+            return (False, f"Código '{codigo}' não encontrado no mestre.")
+        produto, qtd_fisica, nota, status_atual = row
+        qtd_fisica = qtd_fisica if qtd_fisica is not None else nova_qtd
+        diferenca = qtd_fisica - nova_qtd
+        if diferenca < 0:
+            novo_status = "falta"
+        elif diferenca > 0:
+            novo_status = "sobra"
+        else:
+            novo_status = "ok"
+        conn.execute(
+            "UPDATE estoque_mestre SET qtd_sistema = ?, diferenca = ?, status = ? WHERE codigo = ?",
+            (nova_qtd, diferenca, novo_status, codigo),
+        )
+        conn.commit()
+        sync_db()
+        return (True, f"✅ {produto} ({codigo}) → {nova_qtd} un. salvo.")
+    except Exception as e:
+        return (False, f"❌ Erro ao ajustar: {e}")
+
+
 def excluir_produto_mestre(codigo: str) -> tuple:
     """
     Remove um produto do estoque mestre pelo código exato.
@@ -2735,9 +2764,10 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
             prods.append(
                 f'<div class="tm-tile" style="background:{bg};color:{txt};'
-                f'border:1px solid rgba(0,0,0,0.1);{border}">'
+                f'border:1px solid rgba(0,0,0,0.1);{border}" title="{r["codigo"]} — {r["produto"]}">'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
                 f'<div class="tm-info">{info}</div>'
+                f'<div style="font-size:0.5rem;opacity:0.65;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{r["codigo"]}</div>'
                 f'{av_html}'
                 f'</div>'
             )
@@ -4792,35 +4822,39 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 
         # ── Excluir registro fantasma do mestre ──────────────────────────
         st.markdown("---")
+        st.markdown("##### ✏️ Ajuste Manual de Quantidade")
+        st.caption("Pesquise o código, informe a quantidade real e salve. As vendas continuam descontando normalmente.")
+
+        cod_ajuste = st.text_input(
+            "Código do produto", placeholder="Ex: US227579", key="input_ajuste_codigo"
+        ).strip()
+
+        if cod_ajuste:
+            row_aj = get_db().execute(
+                "SELECT produto, qtd_sistema, qtd_fisica FROM estoque_mestre WHERE codigo = ?",
+                (cod_ajuste,),
+            ).fetchone()
+            if row_aj:
+                st.info(f"**{row_aj[0]}** · código `{cod_ajuste}` · quantidade atual: **{row_aj[1]} un.**")
+                nova_qtd = st.number_input(
+                    "Nova quantidade", min_value=0, value=int(row_aj[1]), step=1, key="input_nova_qtd"
+                )
+                if st.button("💾 Salvar quantidade", type="primary", key="btn_salvar_qtd"):
+                    ok, msg = ajustar_qtd_manual(cod_ajuste, int(nova_qtd))
+                    if ok:
+                        st.success(msg)
+                    else:
+                        st.error(msg)
+                    st.rerun()
+            else:
+                st.warning(f"Código `{cod_ajuste}` não encontrado no mestre.")
+
+        st.markdown("---")
         st.markdown("##### 🗑️ Excluir Registro do Mestre")
         st.caption(
             "Use quando um código foi importado errado e precisa ser removido. "
             "Não afeta vendas, lançamentos nem nenhuma outra tabela."
         )
-
-        # Detecta e lista registros AUTO_ (artefatos de import mal-parseado)
-        _auto_rows = get_db().execute(
-            "SELECT codigo, produto, qtd_sistema FROM estoque_mestre WHERE codigo LIKE 'AUTO_%' ORDER BY produto"
-        ).fetchall()
-        if _auto_rows:
-            st.warning(
-                f"⚠️ **{len(_auto_rows)} registro(s) com código AUTO_ detectado(s)** — "
-                "são artefatos de importação mal-parseada e podem causar duplicatas na busca."
-            )
-            for _ar in _auto_rows:
-                _ar_cod, _ar_prod, _ar_qty = _ar
-                _ar_col1, _ar_col2 = st.columns([5, 1])
-                with _ar_col1:
-                    st.code(f"{_ar_cod}  →  {_ar_prod}  ({_ar_qty} un.)", language=None)
-                with _ar_col2:
-                    if st.button("Excluir", key=f"del_auto_{_ar_cod}", type="primary"):
-                        ok, msg = excluir_produto_mestre(_ar_cod)
-                        if ok:
-                            st.success(msg)
-                        else:
-                            st.error(msg)
-                        st.rerun()
-            st.markdown("---")
 
         cod_excluir = st.text_input(
             "Código a excluir", placeholder="Ex: 227579", key="input_excluir_codigo"
