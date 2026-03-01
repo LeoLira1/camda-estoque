@@ -565,7 +565,7 @@ _RE_SOBRA_SHORT = re.compile(r"^s\.?\s+(\d+)\s*(.*)")
 _RE_FALTA_MID = re.compile(r"falt\w*\s+(?:de\s+)?(\d+)")
 _RE_SOBRA_MID = re.compile(r"(?:sobr|pass)\w*\s+(\d+)")
 _RE_ONLY_NUMBER = re.compile(r"^\d+([.,]\d+)?$")
-_RE_COD_PROD = re.compile(r"^(\d+)\s*-\s*(.+)$")
+_RE_COD_PROD = re.compile(r"^([A-Za-z]{0,2}\d+)\s*-\s*(.+)$")
 _RE_SPACES = re.compile(r"\s+")
 _RE_DIGITS = re.compile(r"\d+")
 _RE_ALPHA = re.compile(r"[a-zA-Z]")
@@ -1106,6 +1106,26 @@ def deletar_avaria(avaria_id: int):
         sync_db()
     except Exception as e:
         st.error(f"❌ Erro ao deletar avaria: {e}")
+
+
+def excluir_produto_mestre(codigo: str) -> tuple:
+    """
+    Remove um produto do estoque mestre pelo código exato.
+    Não afeta nenhuma outra tabela (vendas, lançamentos, etc.).
+    """
+    try:
+        conn = get_db()
+        row = conn.execute(
+            "SELECT produto, qtd_sistema FROM estoque_mestre WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        if not row:
+            return (False, f"Código '{codigo}' não encontrado no mestre.")
+        conn.execute("DELETE FROM estoque_mestre WHERE codigo = ?", (codigo,))
+        conn.commit()
+        sync_db()
+        return (True, f"✅ Registro '{codigo} — {row[0]}' ({row[1]} un.) removido do mestre.")
+    except Exception as e:
+        return (False, f"❌ Erro ao excluir: {e}")
 
 
 def get_avarias_count_abertas() -> int:
@@ -3435,10 +3455,12 @@ if has_mestre:
     df_view = df_mestre
     pa_match_info = ""
     if search_term:
-        # Busca padrão por nome/código (literal, sem regex)
+        # Busca padrão por nome/código
+        # Código: startswith para evitar que "227579" retorne "US227579" ou "AUTO_US227579..."
+        _st_up = search_term.upper()
         mask_nome_cod = (
             df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
-            | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
+            | df_view["codigo"].str.upper().str.startswith(_st_up)
         )
 
         # Busca por princípio ativo usando o mesmo match multi-etapa da aba 🧬
@@ -4768,6 +4790,53 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     st.rerun()
             else:
                 st.error("Não foi possível ler a planilha. Esperado: colunas 'Produto' e 'Princípio Ativo' (ou arquivo produtos_CAMDA.xlsx com 3 abas).")
+
+        # ── Excluir registro fantasma do mestre ──────────────────────────
+        st.markdown("---")
+        st.markdown("##### 🗑️ Excluir Registro do Mestre")
+        st.caption(
+            "Use quando um código foi importado errado e precisa ser removido. "
+            "Não afeta vendas, lançamentos nem nenhuma outra tabela."
+        )
+
+        cod_excluir = st.text_input(
+            "Código a excluir", placeholder="Ex: 227579", key="input_excluir_codigo"
+        ).strip()
+
+        if cod_excluir:
+            row_exc = get_db().execute(
+                "SELECT produto, qtd_sistema FROM estoque_mestre WHERE codigo = ?",
+                (cod_excluir,),
+            ).fetchone()
+            if row_exc:
+                st.warning(
+                    f"Encontrado: **{row_exc[0]}** · código `{cod_excluir}` · {row_exc[1]} un.  \n"
+                    "Essa ação remove apenas este registro do mestre. Nenhum dado de venda ou lançamento é alterado."
+                )
+                if "confirm_excluir" not in st.session_state:
+                    st.session_state.confirm_excluir = False
+
+                if not st.session_state.confirm_excluir:
+                    if st.button("🗑️ Excluir este registro", type="primary", key="btn_excluir"):
+                        st.session_state.confirm_excluir = True
+                        st.rerun()
+                else:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Sim, excluir", type="primary", key="btn_confirm_excluir"):
+                            ok, msg = excluir_produto_mestre(cod_excluir)
+                            st.session_state.confirm_excluir = False
+                            if ok:
+                                st.success(msg)
+                            else:
+                                st.error(msg)
+                            st.rerun()
+                    with c2:
+                        if st.button("Cancelar", key="btn_cancel_excluir"):
+                            st.session_state.confirm_excluir = False
+                            st.rerun()
+            else:
+                st.info(f"Código `{cod_excluir}` não encontrado no mestre.")
 
         st.markdown("---")
         _, col_sync, col_reset = st.columns([2, 1, 1])
