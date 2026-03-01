@@ -78,33 +78,49 @@ def _banner_dir_tem_imagens() -> bool:
 
 # ── Funções de dados ──────────────────────────────────────────────────────────
 
+def _wcode_desc(code: int) -> str:
+    """Converte código WMO para descrição em português."""
+    if code == 0:             return "Céu limpo"
+    if code in (1, 2):        return "Poucas nuvens"
+    if code == 3:             return "Nublado"
+    if code in (45, 48):      return "Névoa"
+    if code in (51, 53, 55):  return "Chuvisco"
+    if code in (61, 63, 65):  return "Chuva"
+    if code in (80, 81, 82):  return "Pancadas de chuva"
+    if code in (95, 96, 99):  return "Tempestade"
+    if code in (71, 73, 75):  return "Neve"
+    return "Parcialmente nublado"
+
+
 @st.cache_data(ttl=600)
 def buscar_clima() -> dict:
-    """Busca clima atual de Quirinópolis via OpenWeatherMap. Usa fallback mockado em caso de erro."""
+    """Busca clima atual de Quirinópolis via Open-Meteo (gratuito, sem chave)."""
     try:
-        import requests
-        key = st.secrets.get("OPENWEATHER_API_KEY", "")
-        if not key:
-            raise ValueError("Chave OpenWeatherMap não configurada")
+        import urllib.request, json
         url = (
-            "https://api.openweathermap.org/data/2.5/weather"
-            f"?q=Quirinopolis,BR&appid={key}&units=metric&lang=pt_br"
+            "https://api.open-meteo.com/v1/forecast"
+            "?latitude=-18.45&longitude=-50.45"
+            "&current=temperature_2m,weathercode,relative_humidity_2m,wind_speed_10m"
+            "&daily=temperature_2m_max,temperature_2m_min"
+            "&timezone=America%2FSao_Paulo"
+            "&forecast_days=1"
         )
-        d = requests.get(url, timeout=5).json()
+        with urllib.request.urlopen(url, timeout=5) as r:
+            d = json.loads(r.read())
+        cur  = d["current"]
+        code = int(cur["weathercode"])
         return {
-            "temp":    round(d["main"]["temp"]),
-            "desc":    d["weather"][0]["description"].capitalize(),
-            "umidade": d["main"]["humidity"],
-            "vento":   round(d["wind"]["speed"] * 3.6),
-            "min":     round(d["main"]["temp_min"]),
-            "max":     round(d["main"]["temp_max"]),
-            "icone":   d["weather"][0]["icon"],
+            "temp":    round(cur["temperature_2m"]),
+            "desc":    _wcode_desc(code),
+            "umidade": round(cur.get("relative_humidity_2m", 65)),
+            "vento":   round(cur.get("wind_speed_10m", 8)),
+            "min":     round(d["daily"]["temperature_2m_min"][0]),
+            "max":     round(d["daily"]["temperature_2m_max"][0]),
         }
     except Exception:
         return {
             "temp": 29, "desc": "Parcialmente nublado",
             "umidade": 65, "vento": 8, "min": 22, "max": 33,
-            "icone": "02d",
         }
 
 
@@ -303,39 +319,40 @@ def gerar_html_banner(slides: list) -> str:
         clicavel = "cursor:pointer;" if s["link"] != "#" else ""
         onclick  = f"window.open('{s['link']}','_blank')" if s["link"] != "#" else ""
 
-        # Card especial para clima
+        # Card especial para clima (HTML inline, sem indentação profunda)
         card_extra = ""
         if s["tipo"] == "clima":
-            card_extra = f"""
-            <div class="clima-card">
-              <div style="font-size:28px;line-height:1">☀️</div>
-              <div class="clima-big">{s['clima_temp']}°</div>
-              <div class="clima-desc">{s['clima_desc']}</div>
-              <div class="clima-row">
-                <span>💧 {s['clima_umidade']}%</span>
-                <span>💨 {s['clima_vento']}km/h</span>
-              </div>
-              <div class="clima-row" style="margin-top:3px">
-                <span>↓{s['clima_min']}°</span>
-                <span>↑{s['clima_max']}°</span>
-              </div>
-            </div>"""
+            card_extra = (
+                f'<div class="clima-card">'
+                f'<div style="font-size:28px;line-height:1">☀️</div>'
+                f'<div class="clima-big">{s["clima_temp"]}°</div>'
+                f'<div class="clima-desc">{s["clima_desc"]}</div>'
+                f'<div class="clima-row">'
+                f'<span>💧 {s["clima_umidade"]}%</span>'
+                f'<span>💨 {s["clima_vento"]}km/h</span>'
+                f'</div>'
+                f'<div class="clima-row" style="margin-top:3px">'
+                f'<span>↓{s["clima_min"]}°</span>'
+                f'<span>↑{s["clima_max"]}°</span>'
+                f'</div>'
+                f'</div>'
+            )
 
         # Card especial para preços
         if s["tipo"] == "precos":
-            card_extra = f"""
-            <div class="preco-cards">
-              <div class="preco-pill">
-                <div class="preco-nome">Soja SC 60kg</div>
-                <div class="preco-val">{s['soja_val']}</div>
-                <div class="preco-var" style="color:{s['soja_cor']}">{s['soja_var']}</div>
-              </div>
-              <div class="preco-pill">
-                <div class="preco-nome">Milho SC 60kg</div>
-                <div class="preco-val">{s['milho_val']}</div>
-                <div class="preco-var" style="color:{s['milho_cor']}">{s['milho_var']}</div>
-              </div>
-            </div>"""
+            card_extra = (
+                f'<div class="preco-cards">'
+                f'<div class="preco-pill">'
+                f'<div class="preco-nome">Soja SC 60kg</div>'
+                f'<div class="preco-val">{s["soja_val"]}</div>'
+                f'<div class="preco-var" style="color:{s["soja_cor"]}">{s["soja_var"]}</div>'
+                f'</div>'
+                f'<div class="preco-pill">'
+                f'<div class="preco-nome">Milho SC 60kg</div>'
+                f'<div class="preco-val">{s["milho_val"]}</div>'
+                f'<div class="preco-var" style="color:{s["milho_cor"]}">{s["milho_var"]}</div>'
+                f'</div></div>'
+            )
 
         link_text = ""
         if s["tipo"] == "noticias":
@@ -358,18 +375,21 @@ def gerar_html_banner(slides: list) -> str:
             '<div style="width:100%;height:230px;background:linear-gradient(135deg,#1a3a2a,#0d2b1a)"></div>'
         )
 
-        slides_html += f"""
-        <div class="slide {ativo}" style="{clicavel}" onclick="{onclick}">
-          {img_tag}
-          <div class="overlay"></div>
-          {card_extra}
-          <div class="slide-content">
-            <div class="slide-tag" style="color:{s['cor']};background:{s['bg']};border:1px solid {s['border']}">{s['tag']}</div>
-            <div class="slide-title">{s['titulo']}</div>
-            <div class="slide-sub">{s['sub']}</div>
-            {link_html}
-          </div>
-        </div>"""
+        # Acumula sem indentação — evita que o parser Markdown do Streamlit
+        # trate linhas com 4+ espaços como bloco <pre>
+        slides_html += (
+            f'<div class="slide {ativo}" style="{clicavel}" onclick="{onclick}">'
+            f'{img_tag}'
+            f'<div class="overlay"></div>'
+            f'{card_extra}'
+            f'<div class="slide-content">'
+            f'<div class="slide-tag" style="color:{s["cor"]};background:{s["bg"]};border:1px solid {s["border"]}">{s["tag"]}</div>'
+            f'<div class="slide-title">{s["titulo"]}</div>'
+            f'<div class="slide-sub">{s["sub"]}</div>'
+            f'{link_html}'
+            f'</div>'
+            f'</div>'
+        )
         dots_html += f'<div class="dot {"active" if i == 0 else ""}"></div>'
 
     return f"""
@@ -447,10 +467,13 @@ def gerar_html_banner(slides: list) -> str:
 def render_banner() -> None:
     """
     Ponto de entrada único para renderizar o carrossel no dashboard Streamlit.
+    Usa st.components.v1.html() para suporte pleno a CSS + JavaScript.
     Se a pasta assets/banner/ não existir ou estiver vazia, não exibe nada (sem erro).
     """
     if not _banner_dir_tem_imagens():
         return
+
+    import streamlit.components.v1 as components
 
     clima    = buscar_clima()
     noticias = buscar_noticias()
@@ -460,4 +483,10 @@ def render_banner() -> None:
     html   = gerar_html_banner(slides)
 
     if html:
-        st.markdown(html, unsafe_allow_html=True)
+        # Envolve num documento HTML completo para o iframe do components.html()
+        # A cor de fundo (#0e1117) corresponde ao tema escuro padrão do Streamlit
+        components.html(
+            f'<style>html,body{{margin:0;padding:0;background:#0e1117;overflow:hidden}}</style>{html}',
+            height=246,
+            scrolling=False,
+        )
