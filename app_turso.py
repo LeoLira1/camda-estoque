@@ -2735,9 +2735,10 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
             prods.append(
                 f'<div class="tm-tile" style="background:{bg};color:{txt};'
-                f'border:1px solid rgba(0,0,0,0.1);{border}">'
+                f'border:1px solid rgba(0,0,0,0.1);{border}" title="{r["codigo"]} — {r["produto"]}">'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
                 f'<div class="tm-info">{info}</div>'
+                f'<div style="font-size:0.5rem;opacity:0.65;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{r["codigo"]}</div>'
                 f'{av_html}'
                 f'</div>'
             )
