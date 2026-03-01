@@ -570,6 +570,67 @@ _RE_SPACES = re.compile(r"\s+")
 _RE_DIGITS = re.compile(r"\d+")
 _RE_ALPHA = re.compile(r"[a-zA-Z]")
 _RE_NON_ALNUM = re.compile(r"[^A-Z0-9]")
+_RE_PA_SIZE = re.compile(
+    r'\b\d+[\.,]?\d*\s*'
+    r'(?:L|ML|KG|G|GR|SC|T|MG|WG|WP|SL|EC|CS|GD|OD|SE|FS|EW|ME|TG|WDG|ZC|DC|ULV)\b',
+    re.IGNORECASE,
+)
+
+
+def _pacc(s: str) -> str:
+    """Remove diacríticos: Ó→O, Ã→A, Ç→C, etc."""
+    return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn')
+
+
+def _pnorm(s: str) -> str:
+    """Upper + strip + sem acentos."""
+    return _pacc(s.strip().upper())
+
+
+def _pstrip(s: str) -> str:
+    """Remove sufixos de tamanho/formulação e espaços extras."""
+    return re.sub(r'\s+', ' ', _RE_PA_SIZE.sub('', s)).strip()
+
+
+def _build_pa_lookup(mapa: dict) -> tuple:
+    """Constrói índices para busca multi-etapa de princípio ativo por nome de produto."""
+    cat_n = {_pnorm(k): v for k, v in mapa.items()}
+    cat_ns = {_pstrip(_pnorm(k)): v for k, v in mapa.items()}
+    cat_n_keys = sorted(cat_n.keys(), key=len, reverse=True)
+    cat_ns_keys = sorted(cat_ns.keys(), key=len, reverse=True)
+    return mapa, cat_n, cat_ns, cat_n_keys, cat_ns_keys
+
+
+def _lookup_pa_from_index(nome: str, mapa: dict, cat_n: dict, cat_ns: dict,
+                          cat_n_keys: list, cat_ns_keys: list) -> str:
+    """Retorna o princípio ativo para um nome de produto usando match multi-etapa."""
+    chave = nome.strip().upper()
+    chave_n = _pnorm(chave)
+    chave_s = _pstrip(chave_n)
+    if chave in mapa:
+        return mapa[chave]
+    if chave_n in cat_n:
+        return cat_n[chave_n]
+    for ck in cat_n_keys:
+        if ck in chave_n:
+            return cat_n[ck]
+    if chave_s in cat_ns:
+        return cat_ns[chave_s]
+    for ck in cat_ns_keys:
+        if ck in chave_s:
+            return cat_ns[ck]
+    if len(chave_s) >= 5:
+        for ck in cat_n_keys:
+            if chave_n in ck:
+                return cat_n[ck]
+        for ck in cat_ns_keys:
+            if chave_s in ck:
+                return cat_ns[ck]
+    m = _gcm(chave_s, list(cat_ns.keys()), n=1, cutoff=0.72)
+    if m:
+        return cat_ns[m[0]]
+    return ""
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DATABASE — conexão + init de tabelas UMA VEZ SÓ
@@ -1401,71 +1462,12 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         return
 
     # ── 2. Enriquecer estoque com P.A. (match multi-etapa) ──────────────────
-    # Regex para sufixos de embalagem: 5L, 20KG, 200WG, 10GR, 500ML, etc.
-    _SIZE_RE = re.compile(
-        r'\b\d+[\.,]?\d*\s*'
-        r'(?:L|ML|KG|G|GR|SC|T|MG|WG|WP|SL|EC|CS|GD|OD|SE|FS|EW|ME|TG|WDG|ZC|DC|ULV)\b',
-        re.IGNORECASE,
-    )
-
-    def _pacc(s: str) -> str:
-        """Remove diacríticos: Ó→O, Ã→A, Ç→C, etc."""
-        return ''.join(
-            c for c in unicodedata.normalize('NFD', s)
-            if unicodedata.category(c) != 'Mn'
-        )
-
-    def _pnorm(s: str) -> str:
-        """Upper + strip + sem acentos."""
-        return _pacc(s.strip().upper())
-
-    def _pstrip(s: str) -> str:
-        """Remove sufixos de tamanho/formulação e espaços extras."""
-        return re.sub(r'\s+', ' ', _SIZE_RE.sub('', s)).strip()
-
-    # Índices derivados do catálogo — sorted por comprimento desc. (match mais
-    # específico primeiro)
-    _cat_keys    = sorted(mapa_combinado.keys(), key=len, reverse=True)
-    _cat_n       = {_pnorm(k): v for k, v in mapa_combinado.items()}
-    _cat_n_keys  = sorted(_cat_n.keys(), key=len, reverse=True)
-    _cat_ns      = {_pstrip(_pnorm(k)): v for k, v in mapa_combinado.items()}
-    _cat_ns_keys = sorted(_cat_ns.keys(), key=len, reverse=True)
+    _idx = _build_pa_lookup(mapa_combinado)
+    _cat_n, _cat_ns, _cat_n_keys, _cat_ns_keys = _idx[1], _idx[2], _idx[3], _idx[4]
 
     def _lookup_pa(nome: str) -> str:
-        chave   = nome.strip().upper()
-        chave_n = _pnorm(chave)           # sem acentos
-        chave_s = _pstrip(chave_n)        # sem acentos + sem tamanho
-
-        # 1. Exato
-        if chave in mapa_combinado:
-            return mapa_combinado[chave]
-        # 2. Exato sem acentos
-        if chave_n in _cat_n:
-            return _cat_n[chave_n]
-        # 3. Substring: chave-catálogo ⊂ nome-produto (sem acentos)
-        for ck in _cat_n_keys:
-            if ck in chave_n:
-                return _cat_n[ck]
-        # 4. Sem sufixo de embalagem (5L, 20KG, WG…) — exato + substring
-        if chave_s in _cat_ns:
-            return _cat_ns[chave_s]
-        for ck in _cat_ns_keys:
-            if ck in chave_s:
-                return _cat_ns[ck]
-        # 5. Substring inversa: nome-produto ⊂ chave-catálogo
-        #    (cobre abreviações; mín. 5 chars para evitar falsos-positivos)
-        if len(chave_s) >= 5:
-            for ck in _cat_n_keys:
-                if chave_n in ck:
-                    return _cat_n[ck]
-            for ck in _cat_ns_keys:
-                if chave_s in ck:
-                    return _cat_ns[ck]
-        # 6. Fuzzy (difflib — stdlib): captura typos e variações de grafia
-        m = _gcm(chave_s, list(_cat_ns.keys()), n=1, cutoff=0.72)
-        if m:
-            return _cat_ns[m[0]]
-        return "Não identificado"
+        pa = _lookup_pa_from_index(nome, *_idx)
+        return pa if pa else "Não identificado"
 
     registros = []
     for _, row in df_mestre.iterrows():
@@ -3418,7 +3420,14 @@ has_mestre = stock_count > 0
 if has_mestre:
     df_mestre = get_current_stock()
     df_pa = get_principios_ativos()
-    has_pa = not df_pa.empty
+
+    # Combina dados de P.A. do banco com o catálogo Excel (mesma lógica da aba 🧬)
+    _mapa_excel_search = carregar_mapa_produtos_camda()
+    _mapa_db_search: dict = {}
+    for _, _r in df_pa.iterrows():
+        _mapa_db_search[str(_r["produto"]).strip().upper()] = str(_r["principio_ativo"]).strip()
+    _mapa_pa_search = {**_mapa_excel_search, **_mapa_db_search}
+    has_pa = bool(_mapa_pa_search)
 
     search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
     search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed")
@@ -3426,29 +3435,33 @@ if has_mestre:
     df_view = df_mestre
     pa_match_info = ""
     if search_term:
-        # Busca padrão por nome/código
+        # Busca padrão por nome/código (literal, sem regex)
         mask_nome_cod = (
             df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
             | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
         )
 
-        # Busca por princípio ativo
+        # Busca por princípio ativo usando o mesmo match multi-etapa da aba 🧬
+        mask_pa = pd.Series([False] * len(df_view), index=df_view.index)
         if has_pa:
-            pa_produtos = search_by_principio_ativo(search_term, df_pa)
-            if pa_produtos:
-                mask_pa = df_view["produto"].str.upper().isin(pa_produtos)
-                mask = mask_nome_cod | mask_pa
-                n_pa = mask_pa.sum()
-                if n_pa > 0 and not mask_nome_cod.any():
-                    # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
-                    pa_found = df_pa[df_pa["principio_ativo"].str.contains(search_term, case=False, na=False, regex=False)]["principio_ativo"].unique()
-                    pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
-                elif n_pa > 0:
-                    pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
-            else:
-                mask = mask_nome_cod
-        else:
-            mask = mask_nome_cod
+            _idx_search = _build_pa_lookup(_mapa_pa_search)
+            _term_up = search_term.upper()
+            mask_pa = df_view["produto"].apply(
+                lambda x: _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
+            )
+
+        mask = mask_nome_cod | mask_pa
+        n_pa = int((mask_pa & ~mask_nome_cod).sum())
+        if n_pa > 0 and not mask_nome_cod.any():
+            # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
+            pa_found = sorted({
+                _lookup_pa_from_index(str(x), *_idx_search)
+                for x in df_view.loc[mask_pa, "produto"]
+                if _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
+            })
+            pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
+        elif n_pa > 0:
+            pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
 
         df_view = df_view[mask]
 
