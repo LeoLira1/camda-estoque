@@ -11,7 +11,6 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date, timezone
 from PIL import Image
-from banner_carousel import buscar_noticias
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
 _BRT = timezone(timedelta(hours=-3))
@@ -3365,34 +3364,6 @@ st.markdown(f'''
   {_whtml}
 </div>
 ''', unsafe_allow_html=True)
-
-# ── Notícias agrícolas ────────────────────────────────────────────────────────
-_noticias_dash = buscar_noticias()
-if _noticias_dash:
-    _tipo_cfg = {
-        "noticias": ("📰", "#0a84ff", "Agro"),
-        "alerta":   ("⚠️", "#ff9f0a", "Alerta"),
-        "manejo":   ("🌱", "#2dff7a", "Manejo"),
-    }
-    _pills_html = ""
-    for _n in _noticias_dash[:4]:
-        _ico, _cor, _label = _tipo_cfg.get(_n["tipo"], ("📰", "#0a84ff", "Agro"))
-        _pills_html += (
-            f'<a href="{_n["link"]}" target="_blank" style="text-decoration:none;">'
-            f'<div style="display:inline-flex;align-items:center;gap:6px;'
-            f'background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);'
-            f'border-radius:10px;padding:7px 12px;font-size:0.75rem;color:#e8eaf0;'
-            f'white-space:nowrap;overflow:hidden;max-width:300px;">'
-            f'<span style="font-size:0.65rem;font-weight:600;color:{_cor};'
-            f'background:rgba(255,255,255,0.08);border-radius:6px;padding:2px 6px;flex-shrink:0;">'
-            f'{_ico} {_label}</span>'
-            f'<span style="overflow:hidden;text-overflow:ellipsis;">{_n["titulo"]}</span>'
-            f'</div></a>'
-        )
-    st.markdown(
-        f'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:0.8rem;">{_pills_html}</div>',
-        unsafe_allow_html=True
-    )
 
 # ── Alertas automáticos (abaixo do clima) ────────────────────────────────────
 if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != datetime.now(tz=_BRT).date().isoformat():
