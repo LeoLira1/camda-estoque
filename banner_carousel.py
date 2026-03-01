@@ -423,21 +423,18 @@ def gerar_html_banner(slides: list) -> str:
   .camda-dots{{position:absolute;bottom:10px;right:12px;display:flex;gap:4px;z-index:10}}
   .dot{{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.3);transition:all .4s ease}}
   .dot.active{{width:18px;border-radius:3px;background:#2dff7a;box-shadow:0 0 8px rgba(45,255,122,.7)}}
-  .camda-pbar{{position:absolute;bottom:0;left:0;height:3px;background:linear-gradient(90deg,#2dff7a,#0a84ff);width:0%;z-index:10;border-radius:0 3px 3px 0;box-shadow:0 0 8px rgba(45,255,122,.4)}}
 </style>
 
 <div class="camda-banner">
   {slides_html}
   <div class="camda-dots">{dots_html}</div>
-  <div class="camda-pbar" id="camda_pb"></div>
 </div>
 
 <script>
 (function(){{
   const slides=[...document.querySelectorAll('.slide')];
   const dots=[...document.querySelectorAll('.dot')];
-  const pb=document.getElementById('camda_pb');
-  let cur=0,st,raf,dur=5500;
+  let cur=0,timer,dur=20000;
   function goTo(n){{
     slides[cur].classList.remove('active');
     dots[cur].classList.remove('active');
@@ -447,15 +444,8 @@ def gerar_html_banner(slides: list) -> str:
     run();
   }}
   function run(){{
-    cancelAnimationFrame(raf);
-    pb.style.transition='none';pb.style.width='0%';
-    st=performance.now();
-    (function tick(now){{
-      const p=Math.min((now-st)/dur,1);
-      pb.style.width=(p*100)+'%';
-      if(p<1)raf=requestAnimationFrame(tick);
-      else goTo(cur+1);
-    }})(performance.now());
+    clearTimeout(timer);
+    timer=setTimeout(()=>goTo(cur+1),dur);
   }}
   run();
 }})();
