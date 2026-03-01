@@ -4,3 +4,5 @@ openpyxl>=3.1.0
 libsql>=0.0.3
 python-dotenv>=1.0.0
 plotly
+feedparser>=6.0.0
+requests>=2.28.0
