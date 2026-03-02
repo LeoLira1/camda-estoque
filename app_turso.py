@@ -455,6 +455,13 @@ st.markdown("""
         box-shadow: 0 8px 30px rgba(0,0,0,0.4);
         z-index: 1;
     }
+    .tm-cod {
+        display: none;
+        font-size: 0.5rem; opacity: 0.75;
+        margin-top: 2px; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap;
+    }
+    .tm-tile:hover .tm-cod { display: block; }
     .tm-tile:nth-child(1)  { animation-delay: 0.03s; }
     .tm-tile:nth-child(2)  { animation-delay: 0.06s; }
     .tm-tile:nth-child(3)  { animation-delay: 0.09s; }
@@ -2767,7 +2774,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 f'border:1px solid rgba(0,0,0,0.1);{border}" title="{r["codigo"]} — {r["produto"]}">'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
                 f'<div class="tm-info">{info}</div>'
-                f'<div style="font-size:0.5rem;opacity:0.65;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{r["codigo"]}</div>'
+                f'<div class="tm-cod">{r["codigo"]}</div>'
                 f'{av_html}'
                 f'</div>'
             )
