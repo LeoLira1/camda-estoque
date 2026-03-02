@@ -2374,6 +2374,87 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
     return (True, records, zerados) if records else (False, "Nenhum dado válido na planilha de vendas.", [])
 
 
+def parse_parcial_estoque(df_raw: pd.DataFrame) -> tuple:
+    """Parser para planilha de estoque parcial do TOTVS BI (mini mestre).
+    Atualiza apenas qtd_sistema dos produtos presentes. Não mexe em vendas."""
+    header_idx = _find_header(
+        df_raw,
+        lambda vals: "PRODUTO" in vals and any("QUANTIDADE" in v for v in vals),
+    )
+    if header_idx is None:
+        return (False, "Cabeçalho não encontrado. Preciso de colunas 'Produto' e 'QUANTIDADE'.")
+
+    df = df_raw.iloc[header_idx + 1:].copy()
+    raw_cols = df_raw.iloc[header_idx].tolist()
+    df.columns = [str(c).strip() if c is not None else f"col_{i}" for i, c in enumerate(raw_cols)]
+
+    col_map = {}
+    for c in df.columns:
+        cu = c.upper().strip()
+        if cu in ("CÓDIGO", "CODIGO", "COD", "CÓDIGO") and "codigo" not in col_map:
+            col_map["codigo"] = c
+        elif cu == "PRODUTO" and "produto" not in col_map:
+            col_map["produto"] = c
+        elif "QUANTIDADE" in cu and "qtd" not in col_map:
+            col_map["qtd"] = c
+        elif "CUSTO" in cu and "nota" not in col_map:
+            col_map["nota"] = c
+
+    if "produto" not in col_map or "qtd" not in col_map:
+        return (False, f"Colunas: {list(df.columns)} — falta 'Produto' ou 'QUANTIDADE'.")
+
+    col_cod = col_map.get("codigo")
+    col_prod = col_map["produto"]
+    col_qtd = col_map["qtd"]
+    col_nota = col_map.get("nota")
+
+    records = []
+    for _, row in df.iterrows():
+        produto = str(row.get(col_prod, "")).strip()
+        if not produto or produto.upper() in ("NAN", "NONE", "SUM", "ROLLUP", "TOTAL", "PRODUTO"):
+            continue
+
+        try:
+            raw_val = row.get(col_qtd)
+            if pd.isna(raw_val):
+                continue
+            qtd_sistema = int(float(raw_val))
+            if qtd_sistema < 0:
+                continue
+        except (ValueError, TypeError):
+            continue
+
+        codigo = ""
+        if col_cod:
+            codigo = str(row.get(col_cod, "")).strip()
+            if codigo.upper() in ("NAN", "NONE", ""):
+                codigo = ""
+        if not codigo:
+            codigo = "AUTO_" + _RE_NON_ALNUM.sub("", produto.upper())[:20]
+
+        nota_raw = ""
+        if col_nota:
+            nv = str(row.get(col_nota, "")).strip()
+            if nv.upper() not in ("NAN", "NONE", "") and not _RE_ONLY_NUMBER.match(nv):
+                nota_raw = nv
+
+        categoria = classify_product(produto)
+        qtd_fisica, diferenca, obs, status = parse_annotation(nota_raw, qtd_sistema)
+
+        records.append({
+            "codigo": codigo,
+            "produto": produto,
+            "categoria": categoria,
+            "qtd_sistema": qtd_sistema,
+            "qtd_fisica": qtd_fisica,
+            "diferenca": diferenca,
+            "nota": obs,
+            "status": status,
+        })
+
+    return (True, records) if records else (False, "Nenhum dado válido na planilha de estoque parcial.")
+
+
 def read_excel_to_records(uploaded_file) -> tuple:
     try:
         df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
@@ -2523,6 +2604,80 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
             parts.append(f"{n_div} divergências")
         if n_repo:
             parts.append(f"🏪 {n_repo} para repor na loja")
+        return (True, " · ".join(parts))
+    except Exception as e:
+        return (False, f"❌ Erro: {e}")
+
+
+def upload_parcial_estoque(records: list) -> tuple:
+    """Mini mestre — atualiza apenas quantidades dos produtos da planilha.
+    Não mexe em vendas, reposição, nem remove produtos ausentes."""
+    try:
+        conn = get_db()
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+
+        existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
+
+        novos_data, update_data, update_nota_data = [], [], []
+        for r in records:
+            if r["codigo"] in existing:
+                if r["nota"]:
+                    # Tem anotação: atualiza nota também
+                    update_nota_data.append((
+                        r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                        r["nota"], r["status"], now, r["codigo"],
+                    ))
+                else:
+                    # Sem anotação: não toca na nota existente no banco
+                    update_data.append((
+                        r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                        r["status"], now, r["codigo"],
+                    ))
+            else:
+                novos_data.append((
+                    r["codigo"], r["produto"], r["categoria"],
+                    r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                    r["nota"], r["status"], now, now,
+                ))
+
+        if update_data:
+            conn.executemany("""
+                UPDATE estoque_mestre SET
+                    qtd_sistema=?, qtd_fisica=?, diferenca=?, status=?, ultima_contagem=?
+                WHERE codigo=?
+            """, update_data)
+
+        if update_nota_data:
+            conn.executemany("""
+                UPDATE estoque_mestre SET
+                    qtd_sistema=?, qtd_fisica=?, diferenca=?, nota=?, status=?, ultima_contagem=?
+                WHERE codigo=?
+            """, update_nota_data)
+
+        if novos_data:
+            conn.executemany("""
+                INSERT INTO estoque_mestre
+                    (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, novos_data)
+
+        n_atualizados = len(update_data) + len(update_nota_data)
+        n_div = sum(1 for r in records if r["status"] != "ok")
+        conn.execute("""
+            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, [now, "PARCIAL_ESTOQUE", "", len(records), len(novos_data), n_atualizados, n_div])
+
+        conn.commit()
+        sync_db()
+
+        parts = [f"✅ Parcial Estoque: {len(records)} produtos"]
+        if n_atualizados:
+            parts.append(f"{n_atualizados} atualizados")
+        if novos_data:
+            parts.append(f"{len(novos_data)} novos")
+        if n_div:
+            parts.append(f"{n_div} divergências")
         return (True, " · ".join(parts))
     except Exception as e:
         return (False, f"❌ Erro: {e}")
@@ -4767,18 +4922,23 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
             st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
 
         opcao_mestre = "MESTRE (carga completa)" if not has_mestre else "MESTRE (substituir tudo)"
-        opcao_parcial = "PARCIAL (atualizar contagem do dia)"
+        opcao_parcial_vendas = "Parcial (vendas)"
+        opcao_parcial_estoque = "Parcial (estoque)"
         upload_mode = st.radio(
             "Tipo de Upload",
-            [opcao_mestre, opcao_parcial],
+            [opcao_mestre, opcao_parcial_vendas, opcao_parcial_estoque],
             index=0 if not has_mestre else 1,
             horizontal=True,
             label_visibility="collapsed",
         )
         is_mestre_upload = "MESTRE" in upload_mode
+        is_parcial_estoque = upload_mode == opcao_parcial_estoque
 
         if is_mestre_upload:
-            st.caption("Substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
+            st.warning("⚠️ Este upload **substitui todo o estoque**. Use para carga inicial ou recomeçar do zero.")
+            data_planilha = datetime.now(tz=_BRT).date()
+        elif is_parcial_estoque:
+            st.info("Atualiza apenas a quantidade dos produtos da planilha. Não mexe em vendas, observações nem reposição.")
             data_planilha = datetime.now(tz=_BRT).date()
         else:
             st.caption("Atualiza apenas os produtos da planilha. Os demais permanecem inalterados.")
@@ -4793,9 +4953,18 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 
         if uploaded:
             # Parseia UMA VEZ e guarda no session_state
-            file_id = f"{uploaded.name}_{uploaded.size}"
+            # Inclui upload_mode no file_id para re-parsear se o tipo mudar
+            file_id = f"{uploaded.name}_{uploaded.size}_{upload_mode}"
             if st.session_state.processed_file != file_id:
-                ok, result, zerados = read_excel_to_records(uploaded)
+                if is_parcial_estoque:
+                    try:
+                        df_raw = pd.read_excel(uploaded, sheet_name=0, header=None)
+                        ok, result = parse_parcial_estoque(df_raw)
+                        zerados = []
+                    except Exception as e:
+                        ok, result, zerados = False, f"Erro ao ler arquivo: {e}", []
+                else:
+                    ok, result, zerados = read_excel_to_records(uploaded)
                 st.session_state["_parsed_ok"] = ok
                 st.session_state["_parsed_result"] = result
                 st.session_state["_parsed_zerados"] = zerados
@@ -4824,13 +4993,16 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     with st.spinner("Processando..."):
                         if is_mestre_upload:
                             ok_up, msg = upload_mestre(records)
+                        elif is_parcial_estoque:
+                            ok_up, msg = upload_parcial_estoque(records)
                         else:
                             ok_up, msg = upload_parcial(records, zerados)
 
                     if ok_up:
                         st.success(msg)
-                        # Salvar dados de vendas para gráficos
-                        save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
+                        # Salvar dados de vendas para gráficos (apenas Mestre e Parcial vendas)
+                        if not is_parcial_estoque:
+                            save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
                         if _using_cloud:
                             st.info("☁️ Sincronizado.")
                         st.session_state.processed_file = None
