@@ -2949,7 +2949,28 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             f'<div class="tm-wrap">{"".join(prods)}</div></div>'
         )
 
-    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>'
+    touch_js = (
+        '<div id="tm-touch-tip" style="display:none;position:fixed;bottom:20px;left:50%;'
+        'transform:translateX(-50%);background:#1e293b;color:#e2e8f0;padding:10px 16px;'
+        'border-radius:10px;font-size:0.85rem;font-weight:600;max-width:88vw;text-align:center;'
+        'z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,0.55);border:1px solid #334155;'
+        'pointer-events:none;"></div>'
+        '<script>'
+        '(function(){'
+        'var tip=document.getElementById("tm-touch-tip"),h;'
+        'document.addEventListener("touchstart",function(e){'
+        'var tile=e.target.closest(".tm-tile");'
+        'clearTimeout(h);'
+        'if(tile){'
+        'var lbl=tile.getAttribute("title")||"";'
+        'if(lbl){tip.textContent=lbl;tip.style.display="block";'
+        'h=setTimeout(function(){tip.style.display="none";},3000);}}'
+        'else{tip.style.display="none";}'
+        '},{passive:true});'
+        '})();'
+        '</script>'
+    )
+    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>{touch_js}'
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3706,7 +3727,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📝 Log", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos"])
+    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -3784,13 +3805,6 @@ if has_mestre:
     with t4:
         df_vendas = get_vendas_historico()
         build_vendas_tab(df_vendas)
-
-    with t5:
-        df_hist = get_historico_uploads()
-        if df_hist.empty:
-            st.info("Nenhum upload registrado.")
-        else:
-            st.dataframe(df_hist, hide_index=True, use_container_width=True)
 
     with t6:
         # ── CSS da aba ──
