@@ -82,6 +82,8 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 if "login_error" not in st.session_state:
     st.session_state.login_error = False
+if "admin_unlocked" not in st.session_state:
+    st.session_state.admin_unlocked = False
 
 # ── Weather gradient helper (usada na tela de login e no dashboard) ───────────
 def _wcode_bg_gradient(code, alpha=1.0):
@@ -661,6 +663,10 @@ TURSO_DATABASE_URL = _get_secret("TURSO_DATABASE_URL")
 TURSO_AUTH_TOKEN = _get_secret("TURSO_AUTH_TOKEN")
 LOCAL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "camda_local.db")
 _using_cloud = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN)
+
+# Senha para liberar a área de edição do estoque (upload, ajuste, exclusão)
+# Configure via st.secrets["CAMDA_EDIT_PASSWORD"] ou variável de ambiente CAMDA_EDIT_PASSWORD
+EDIT_PASSWORD = _get_secret("CAMDA_EDIT_PASSWORD") or "camda@edit"
 
 
 @st.cache_resource
@@ -4723,208 +4729,243 @@ if has_mestre:
 # ── Upload Section ───────────────────────────────────────────────────────────
 with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 
-    if not has_mestre:
-        st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
-
-    opcao_mestre = "MESTRE (carga completa)" if not has_mestre else "MESTRE (substituir tudo)"
-    opcao_parcial = "PARCIAL (atualizar contagem do dia)"
-    upload_mode = st.radio(
-        "Tipo de Upload",
-        [opcao_mestre, opcao_parcial],
-        index=0 if not has_mestre else 1,
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-    is_mestre_upload = "MESTRE" in upload_mode
-
-    if is_mestre_upload:
-        st.caption("Substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
-        data_planilha = datetime.now(tz=_BRT).date()
-    else:
-        st.caption("Atualiza apenas os produtos da planilha. Os demais permanecem inalterados.")
-        data_planilha = st.date_input(
-            "📅 Data da planilha",
-            value=datetime.now(tz=_BRT).date(),
-            max_value=datetime.now(tz=_BRT).date(),
-            help="Selecione a data a que esta planilha se refere. Use quando a planilha é de um dia anterior ao de hoje.",
+    if not st.session_state.admin_unlocked:
+        # ── Portão de senha ──────────────────────────────────────────────
+        st.markdown(
+            '<div style="text-align:center;padding:20px 16px 12px;">'
+            '<div style="font-size:2.2rem;margin-bottom:6px;">🔒</div>'
+            '<div style="font-size:1rem;font-weight:600;color:#e0e6ed;margin-bottom:4px;">Área Protegida</div>'
+            '<div style="font-size:0.8rem;color:#64748b;">'
+            'Digite a senha de edição para fazer uploads ou alterar o estoque.'
+            '</div></div>',
+            unsafe_allow_html=True,
         )
-
-    uploaded = st.file_uploader("Planilha XLSX", type=["xlsx", "xls"], label_visibility="collapsed", key="upload_main")
-
-    if uploaded:
-        # Parseia UMA VEZ e guarda no session_state
-        file_id = f"{uploaded.name}_{uploaded.size}"
-        if st.session_state.processed_file != file_id:
-            ok, result, zerados = read_excel_to_records(uploaded)
-            st.session_state["_parsed_ok"] = ok
-            st.session_state["_parsed_result"] = result
-            st.session_state["_parsed_zerados"] = zerados
-            st.session_state.processed_file = file_id
-
-        ok = st.session_state.get("_parsed_ok", False)
-        result = st.session_state.get("_parsed_result")
-        zerados = st.session_state.get("_parsed_zerados", [])
-
-        if ok:
-            records = result
-            with st.expander("👁️ Preview", expanded=False):
-                df_preview = pd.DataFrame(records)
-                n_div = sum(1 for r in records if r["status"] != "ok")
-                st.caption(f"{len(records)} produtos encontrados")
-                if n_div:
-                    st.warning(f"⚠️ {n_div} divergência(s)")
-                if zerados:
-                    st.info(f"🗑️ {len(zerados)} produto(s) com estoque zerado serão removidos do mestre")
-                st.dataframe(
-                    df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
-                    hide_index=True, use_container_width=True, height=250,
-                )
-
-            if st.button("🚀 Processar", type="primary"):
-                with st.spinner("Processando..."):
-                    if is_mestre_upload:
-                        ok_up, msg = upload_mestre(records)
-                    else:
-                        ok_up, msg = upload_parcial(records, zerados)
-
-                if ok_up:
-                    st.success(msg)
-                    # Salvar dados de vendas para gráficos
-                    save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
-                    if _using_cloud:
-                        st.info("☁️ Sincronizado.")
-                    st.session_state.processed_file = None
+        _col_pwd, _col_btn = st.columns([3, 1])
+        with _col_pwd:
+            _edit_pwd = st.text_input(
+                "Senha edição", type="password",
+                placeholder="🔑 Senha de edição",
+                label_visibility="collapsed",
+                key="edit_pwd_input",
+            )
+        with _col_btn:
+            if st.button("🔓 Entrar", type="primary", key="btn_edit_unlock", use_container_width=True):
+                if _edit_pwd == EDIT_PASSWORD:
+                    st.session_state.admin_unlocked = True
                     st.rerun()
                 else:
-                    st.error(msg)
-        else:
-            st.error(result)
+                    st.error("❌ Senha incorreta")
+    else:
+        # ── Botão para bloquear novamente ────────────────────────────────
+        _col_relock, _ = st.columns([1, 5])
+        with _col_relock:
+            if st.button("🔒 Bloquear", key="btn_relock"):
+                st.session_state.admin_unlocked = False
+                st.rerun()
 
-    # Admin
-    if has_mestre:
-        st.markdown("---")
+        if not has_mestre:
+            st.info("👋 Nenhum estoque cadastrado. Faça o upload da planilha mestre para começar.")
 
-        # Upload de Princípios Ativos
-        st.markdown("##### 🧬 Base de Princípios Ativos")
-        pa_count = get_pa_count()
-        if pa_count > 0:
-            st.caption(f"✅ {pa_count} registros de princípios ativos carregados. A busca por princípio ativo está ativa.")
-        else:
-            st.caption("Carregue a planilha de princípios ativos para habilitar a busca por P.A. e a aba 🧬 P. Ativos.")
-
-        uploaded_pa = st.file_uploader(
-            "Planilha de Princípios Ativos (produtos_CAMDA.xlsx ou formato simples)",
-            type=["xlsx", "xls"],
-            label_visibility="collapsed", key="upload_pa"
+        opcao_mestre = "MESTRE (carga completa)" if not has_mestre else "MESTRE (substituir tudo)"
+        opcao_parcial = "PARCIAL (atualizar contagem do dia)"
+        upload_mode = st.radio(
+            "Tipo de Upload",
+            [opcao_mestre, opcao_parcial],
+            index=0 if not has_mestre else 1,
+            horizontal=True,
+            label_visibility="collapsed",
         )
-        if uploaded_pa:
-            pa_records = load_principios_ativos_from_excel(uploaded_pa)
-            if pa_records:
-                if st.button("🧬 Carregar Princípios Ativos", type="primary"):
-                    sync_principios_ativos(pa_records)
-                    st.success(f"✅ {len(pa_records)} registros de princípios ativos carregados!")
-                    st.rerun()
-            else:
-                st.error("Não foi possível ler a planilha. Esperado: colunas 'Produto' e 'Princípio Ativo' (ou arquivo produtos_CAMDA.xlsx com 3 abas).")
+        is_mestre_upload = "MESTRE" in upload_mode
 
-        # ── Excluir registro fantasma do mestre ──────────────────────────
-        st.markdown("---")
-        st.markdown("##### ✏️ Ajuste Manual de Quantidade")
-        st.caption("Pesquise o código, informe a quantidade real e salve. As vendas continuam descontando normalmente.")
+        if is_mestre_upload:
+            st.caption("Substitui todo o estoque. Use para carga inicial ou recomeçar do zero.")
+            data_planilha = datetime.now(tz=_BRT).date()
+        else:
+            st.caption("Atualiza apenas os produtos da planilha. Os demais permanecem inalterados.")
+            data_planilha = st.date_input(
+                "📅 Data da planilha",
+                value=datetime.now(tz=_BRT).date(),
+                max_value=datetime.now(tz=_BRT).date(),
+                help="Selecione a data a que esta planilha se refere. Use quando a planilha é de um dia anterior ao de hoje.",
+            )
 
-        cod_ajuste = st.text_input(
-            "Código do produto", placeholder="Ex: US227579", key="input_ajuste_codigo"
-        ).strip()
+        uploaded = st.file_uploader("Planilha XLSX", type=["xlsx", "xls"], label_visibility="collapsed", key="upload_main")
 
-        if cod_ajuste:
-            row_aj = get_db().execute(
-                "SELECT produto, qtd_sistema, qtd_fisica FROM estoque_mestre WHERE codigo = ?",
-                (cod_ajuste,),
-            ).fetchone()
-            if row_aj:
-                st.info(f"**{row_aj[0]}** · código `{cod_ajuste}` · quantidade atual: **{row_aj[1]} un.**")
-                nova_qtd = st.number_input(
-                    "Nova quantidade", min_value=0, value=int(row_aj[1]), step=1, key="input_nova_qtd"
-                )
-                if st.button("💾 Salvar quantidade", type="primary", key="btn_salvar_qtd"):
-                    ok, msg = ajustar_qtd_manual(cod_ajuste, int(nova_qtd))
-                    if ok:
+        if uploaded:
+            # Parseia UMA VEZ e guarda no session_state
+            file_id = f"{uploaded.name}_{uploaded.size}"
+            if st.session_state.processed_file != file_id:
+                ok, result, zerados = read_excel_to_records(uploaded)
+                st.session_state["_parsed_ok"] = ok
+                st.session_state["_parsed_result"] = result
+                st.session_state["_parsed_zerados"] = zerados
+                st.session_state.processed_file = file_id
+
+            ok = st.session_state.get("_parsed_ok", False)
+            result = st.session_state.get("_parsed_result")
+            zerados = st.session_state.get("_parsed_zerados", [])
+
+            if ok:
+                records = result
+                with st.expander("👁️ Preview", expanded=False):
+                    df_preview = pd.DataFrame(records)
+                    n_div = sum(1 for r in records if r["status"] != "ok")
+                    st.caption(f"{len(records)} produtos encontrados")
+                    if n_div:
+                        st.warning(f"⚠️ {n_div} divergência(s)")
+                    if zerados:
+                        st.info(f"🗑️ {len(zerados)} produto(s) com estoque zerado serão removidos do mestre")
+                    st.dataframe(
+                        df_preview[["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica", "diferenca", "nota", "status"]],
+                        hide_index=True, use_container_width=True, height=250,
+                    )
+
+                if st.button("🚀 Processar", type="primary"):
+                    with st.spinner("Processando..."):
+                        if is_mestre_upload:
+                            ok_up, msg = upload_mestre(records)
+                        else:
+                            ok_up, msg = upload_parcial(records, zerados)
+
+                    if ok_up:
                         st.success(msg)
+                        # Salvar dados de vendas para gráficos
+                        save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
+                        if _using_cloud:
+                            st.info("☁️ Sincronizado.")
+                        st.session_state.processed_file = None
+                        st.rerun()
                     else:
                         st.error(msg)
-                    st.rerun()
             else:
-                st.warning(f"Código `{cod_ajuste}` não encontrado no mestre.")
+                st.error(result)
 
-        st.markdown("---")
-        st.markdown("##### 🗑️ Excluir Registro do Mestre")
-        st.caption(
-            "Use quando um código foi importado errado e precisa ser removido. "
-            "Não afeta vendas, lançamentos nem nenhuma outra tabela."
-        )
+        # Admin
+        if has_mestre:
+            st.markdown("---")
 
-        cod_excluir = st.text_input(
-            "Código a excluir", placeholder="Ex: 227579", key="input_excluir_codigo"
-        ).strip()
+            # Upload de Princípios Ativos
+            st.markdown("##### 🧬 Base de Princípios Ativos")
+            pa_count = get_pa_count()
+            if pa_count > 0:
+                st.caption(f"✅ {pa_count} registros de princípios ativos carregados. A busca por princípio ativo está ativa.")
+            else:
+                st.caption("Carregue a planilha de princípios ativos para habilitar a busca por P.A. e a aba 🧬 P. Ativos.")
 
-        if cod_excluir:
-            row_exc = get_db().execute(
-                "SELECT produto, qtd_sistema FROM estoque_mestre WHERE codigo = ?",
-                (cod_excluir,),
-            ).fetchone()
-            if row_exc:
-                st.warning(
-                    f"Encontrado: **{row_exc[0]}** · código `{cod_excluir}` · {row_exc[1]} un.  \n"
-                    "Essa ação remove apenas este registro do mestre. Nenhum dado de venda ou lançamento é alterado."
-                )
-                if "confirm_excluir" not in st.session_state:
-                    st.session_state.confirm_excluir = False
-
-                if not st.session_state.confirm_excluir:
-                    if st.button("🗑️ Excluir este registro", type="primary", key="btn_excluir"):
-                        st.session_state.confirm_excluir = True
+            uploaded_pa = st.file_uploader(
+                "Planilha de Princípios Ativos (produtos_CAMDA.xlsx ou formato simples)",
+                type=["xlsx", "xls"],
+                label_visibility="collapsed", key="upload_pa"
+            )
+            if uploaded_pa:
+                pa_records = load_principios_ativos_from_excel(uploaded_pa)
+                if pa_records:
+                    if st.button("🧬 Carregar Princípios Ativos", type="primary"):
+                        sync_principios_ativos(pa_records)
+                        st.success(f"✅ {len(pa_records)} registros de princípios ativos carregados!")
                         st.rerun()
                 else:
+                    st.error("Não foi possível ler a planilha. Esperado: colunas 'Produto' e 'Princípio Ativo' (ou arquivo produtos_CAMDA.xlsx com 3 abas).")
+
+            # ── Ajuste Manual de Quantidade ───────────────────────────────
+            st.markdown("---")
+            st.markdown("##### ✏️ Ajuste Manual de Quantidade")
+            st.caption("Pesquise o código, informe a quantidade real e salve. As vendas continuam descontando normalmente.")
+
+            cod_ajuste = st.text_input(
+                "Código do produto", placeholder="Ex: US227579", key="input_ajuste_codigo"
+            ).strip()
+
+            if cod_ajuste:
+                row_aj = get_db().execute(
+                    "SELECT produto, qtd_sistema, qtd_fisica FROM estoque_mestre WHERE codigo = ?",
+                    (cod_ajuste,),
+                ).fetchone()
+                if row_aj:
+                    st.info(f"**{row_aj[0]}** · código `{cod_ajuste}` · quantidade atual: **{row_aj[1]} un.**")
+                    nova_qtd = st.number_input(
+                        "Nova quantidade", min_value=0, value=int(row_aj[1]), step=1, key="input_nova_qtd"
+                    )
+                    if st.button("💾 Salvar quantidade", type="primary", key="btn_salvar_qtd"):
+                        ok, msg = ajustar_qtd_manual(cod_ajuste, int(nova_qtd))
+                        if ok:
+                            st.success(msg)
+                        else:
+                            st.error(msg)
+                        st.rerun()
+                else:
+                    st.warning(f"Código `{cod_ajuste}` não encontrado no mestre.")
+
+            # ── Excluir registro do mestre ────────────────────────────────
+            st.markdown("---")
+            st.markdown("##### 🗑️ Excluir Registro do Mestre")
+            st.caption(
+                "Use quando um código foi importado errado e precisa ser removido. "
+                "Não afeta vendas, lançamentos nem nenhuma outra tabela."
+            )
+
+            cod_excluir = st.text_input(
+                "Código a excluir", placeholder="Ex: 227579", key="input_excluir_codigo"
+            ).strip()
+
+            if cod_excluir:
+                row_exc = get_db().execute(
+                    "SELECT produto, qtd_sistema FROM estoque_mestre WHERE codigo = ?",
+                    (cod_excluir,),
+                ).fetchone()
+                if row_exc:
+                    st.warning(
+                        f"Encontrado: **{row_exc[0]}** · código `{cod_excluir}` · {row_exc[1]} un.  \n"
+                        "Essa ação remove apenas este registro do mestre. Nenhum dado de venda ou lançamento é alterado."
+                    )
+                    if "confirm_excluir" not in st.session_state:
+                        st.session_state.confirm_excluir = False
+
+                    if not st.session_state.confirm_excluir:
+                        if st.button("🗑️ Excluir este registro", type="primary", key="btn_excluir"):
+                            st.session_state.confirm_excluir = True
+                            st.rerun()
+                    else:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            if st.button("Sim, excluir", type="primary", key="btn_confirm_excluir"):
+                                ok, msg = excluir_produto_mestre(cod_excluir)
+                                st.session_state.confirm_excluir = False
+                                if ok:
+                                    st.success(msg)
+                                else:
+                                    st.error(msg)
+                                st.rerun()
+                        with c2:
+                            if st.button("Cancelar", key="btn_cancel_excluir"):
+                                st.session_state.confirm_excluir = False
+                                st.rerun()
+                else:
+                    st.info(f"Código `{cod_excluir}` não encontrado no mestre.")
+
+            st.markdown("---")
+            _, col_sync, col_reset = st.columns([2, 1, 1])
+            with col_sync:
+                if _using_cloud and st.button("🔄 Sincronizar"):
+                    sync_db()
+                    st.rerun()
+            with col_reset:
+                if st.session_state.confirm_reset:
+                    st.warning("Tem certeza?")
                     c1, c2 = st.columns(2)
                     with c1:
-                        if st.button("Sim, excluir", type="primary", key="btn_confirm_excluir"):
-                            ok, msg = excluir_produto_mestre(cod_excluir)
-                            st.session_state.confirm_excluir = False
-                            if ok:
-                                st.success(msg)
-                            else:
-                                st.error(msg)
+                        if st.button("Sim, limpar"):
+                            reset_db()
+                            st.session_state.confirm_reset = False
                             st.rerun()
                     with c2:
-                        if st.button("Cancelar", key="btn_cancel_excluir"):
-                            st.session_state.confirm_excluir = False
+                        if st.button("Cancelar"):
+                            st.session_state.confirm_reset = False
                             st.rerun()
-            else:
-                st.info(f"Código `{cod_excluir}` não encontrado no mestre.")
-
-        st.markdown("---")
-        _, col_sync, col_reset = st.columns([2, 1, 1])
-        with col_sync:
-            if _using_cloud and st.button("🔄 Sincronizar"):
-                sync_db()
-                st.rerun()
-        with col_reset:
-            if st.session_state.confirm_reset:
-                st.warning("Tem certeza?")
-                c1, c2 = st.columns(2)
-                with c1:
-                    if st.button("Sim, limpar"):
-                        reset_db()
-                        st.session_state.confirm_reset = False
+                else:
+                    if st.button("🗑️ Limpar BD"):
+                        st.session_state.confirm_reset = True
                         st.rerun()
-                with c2:
-                    if st.button("Cancelar"):
-                        st.session_state.confirm_reset = False
-                        st.rerun()
-            else:
-                if st.button("🗑️ Limpar BD"):
-                    st.session_state.confirm_reset = True
-                    st.rerun()
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
