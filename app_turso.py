@@ -382,7 +382,8 @@ st.markdown("""
         border-radius: 4px; padding: 4px; margin: 2px;
         display: flex; flex-direction: column;
         justify-content: center; align-items: center;
-        overflow: hidden; box-sizing: border-box;
+        overflow: visible; box-sizing: border-box;
+        position: relative; cursor: pointer; outline: none;
     }
     .tm-name {
         font-size: 0.55rem; font-weight: 700; text-align: center; width: 100%;
@@ -464,6 +465,32 @@ st.markdown("""
         text-overflow: ellipsis; white-space: nowrap;
     }
     .tm-tile:hover .tm-cod { display: block; }
+    /* ── Popup nome completo ao clicar/focar no tile (CSS puro, sem JS) ── */
+    .tm-tile:focus { z-index: 100; box-shadow: 0 0 0 2px rgba(255,255,255,0.6), 0 8px 30px rgba(0,0,0,0.5) !important; }
+    .tm-popup {
+        display: none;
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 50%; transform: translateX(-50%);
+        background: rgba(15,23,42,0.97);
+        color: #e2e8f0;
+        padding: 8px 14px;
+        border-radius: 10px;
+        font-size: 0.8rem; font-weight: 600;
+        line-height: 1.4; text-align: center;
+        white-space: normal;
+        min-width: 180px; max-width: 260px;
+        z-index: 9999;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+        border: 1px solid rgba(100,116,139,0.5);
+        pointer-events: none;
+    }
+    .tm-popup-code {
+        font-size: 0.62rem; color: #94a3b8;
+        font-family: 'JetBrains Mono', monospace;
+        margin-bottom: 4px; letter-spacing: 0.5px;
+    }
+    .tm-tile:focus .tm-popup { display: block; }
     .tm-tile:nth-child(1)  { animation-delay: 0.03s; }
     .tm-tile:nth-child(2)  { animation-delay: 0.06s; }
     .tm-tile:nth-child(3)  { animation-delay: 0.09s; }
@@ -2931,12 +2958,13 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 av_html = ""
 
             prods.append(
-                f'<div class="tm-tile" style="background:{bg};color:{txt};'
+                f'<div class="tm-tile" tabindex="0" style="background:{bg};color:{txt};'
                 f'border:1px solid rgba(0,0,0,0.1);{border}" title="{r["codigo"]} — {r["produto"]}">'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
                 f'<div class="tm-info">{info}</div>'
                 f'<div class="tm-cod">{r["codigo"]}</div>'
                 f'{av_html}'
+                f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}</div>'
                 f'</div>'
             )
 
@@ -2949,41 +2977,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             f'<div class="tm-wrap">{"".join(prods)}</div></div>'
         )
 
-    touch_js = (
-        '<div id="tm-touch-panel" style="display:none;position:fixed;bottom:0;left:0;right:0;'
-        'background:rgba(15,23,42,0.97);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);'
-        'padding:14px 20px 28px;z-index:9999;border-top:2px solid #334155;'
-        'transition:transform 0.2s ease;transform:translateY(100%);">'
-        '<div style="width:36px;height:4px;background:#334155;border-radius:2px;margin:0 auto 12px;"></div>'
-        '<div id="tm-touch-code" style="font-size:0.68rem;color:#64748b;font-family:\'JetBrains Mono\',monospace;margin-bottom:6px;"></div>'
-        '<div id="tm-touch-name" style="font-size:1rem;color:#e2e8f0;font-weight:700;word-break:break-word;line-height:1.4;"></div>'
-        '</div>'
-        '<script>'
-        '(function(){'
-        'var panel=document.getElementById("tm-touch-panel");'
-        'var codeEl=document.getElementById("tm-touch-code");'
-        'var nameEl=document.getElementById("tm-touch-name");'
-        'var h;'
-        'function show(tile){'
-        'var lbl=tile.getAttribute("title")||"";'
-        'if(!lbl)return;'
-        'var sep=lbl.indexOf(" \u2014 ");'
-        'if(sep>=0){codeEl.textContent=lbl.slice(0,sep);nameEl.textContent=lbl.slice(sep+3);}'
-        'else{codeEl.textContent="";nameEl.textContent=lbl;}'
-        'panel.style.display="block";'
-        'requestAnimationFrame(function(){panel.style.transform="translateY(0)";});'
-        'clearTimeout(h);h=setTimeout(hide,4000);}'
-        'function hide(){'
-        'panel.style.transform="translateY(100%)";'
-        'setTimeout(function(){panel.style.display="none";},200);}'
-        'document.addEventListener("touchstart",function(e){'
-        'var tile=e.target.closest(".tm-tile");'
-        'if(tile){show(tile);}else if(!panel.contains(e.target)){hide();}'
-        '},{passive:true});'
-        '})();'
-        '</script>'
-    )
-    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>{touch_js}'
+    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>'
 
 
 # ══════════════════════════════════════════════════════════════════════════════
