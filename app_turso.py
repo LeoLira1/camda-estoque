@@ -3084,11 +3084,14 @@ def get_vendas_historico() -> pd.DataFrame:
         rows = get_db().execute("""
             SELECT v.codigo, v.produto, v.grupo,
                    SUM(v.qtd_vendida)  AS qtd_vendida,
-                   (SELECT v2.qtd_estoque
-                      FROM vendas_historico v2
-                     WHERE v2.codigo = v.codigo
-                     ORDER BY v2.data_upload DESC
-                     LIMIT 1)          AS qtd_estoque,
+                   COALESCE(
+                       (SELECT em.qtd_sistema FROM estoque_mestre em WHERE em.codigo = v.codigo),
+                       (SELECT v2.qtd_estoque
+                          FROM vendas_historico v2
+                         WHERE v2.codigo = v.codigo
+                         ORDER BY v2.data_upload DESC
+                         LIMIT 1)
+                   )                   AS qtd_estoque,
                    MAX(v.data_upload)  AS data_upload
               FROM vendas_historico v
              GROUP BY v.codigo
