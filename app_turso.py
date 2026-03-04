@@ -2711,21 +2711,37 @@ def upload_parcial_estoque(records: list) -> tuple:
 
 
 def popular_contagem(records: list, upload_id: int, conn) -> None:
-    """Limpa contagem anterior e popula com itens do upload parcial filtrados por categoria."""
+    """Mantém itens pendentes anteriores e atualiza/insere itens do upload filtrados por categoria.
+
+    - Se o produto já existe na lista (mesmo código): atualiza com dados mais recentes e volta para 'pendente'.
+    - Se é produto novo: insere normalmente.
+    - Itens pendentes não presentes no novo upload permanecem até serem confirmados.
+    """
     now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
-    itens = [
+    itens_novos = [
         (upload_id, r["codigo"], r["produto"], r["categoria"],
          r["qtd_sistema"], "pendente", "", 0, now)
         for r in records
         if r["categoria"] in CATEGORIAS_CONTAGEM
     ]
-    conn.execute("DELETE FROM contagem_itens")
-    if itens:
-        conn.executemany("""
-            INSERT INTO contagem_itens
-                (upload_id, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_divergencia, registrado_em)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, itens)
+    for item in itens_novos:
+        uid, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_div, reg_em = item
+        existing = conn.execute(
+            "SELECT id FROM contagem_itens WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        if existing:
+            conn.execute("""
+                UPDATE contagem_itens
+                SET upload_id = ?, produto = ?, categoria = ?, qtd_estoque = ?,
+                    status = 'pendente', motivo = '', qtd_divergencia = 0, registrado_em = ?
+                WHERE codigo = ?
+            """, (uid, produto, categoria, qtd_estoque, reg_em, codigo))
+        else:
+            conn.execute("""
+                INSERT INTO contagem_itens
+                    (upload_id, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_divergencia, registrado_em)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, item)
 
 
 def get_contagem_itens() -> "pd.DataFrame":
