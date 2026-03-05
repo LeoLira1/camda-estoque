@@ -2981,13 +2981,11 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
             if diff == 0:
                 bg, txt = "#00d68f", "#0a2e1a"
-                info = str(qs)
             elif diff < 0:
                 bg, txt = "#ff4757", "#fff"
-                info = f"{qf} (F {abs(diff)})"
             else:
                 bg, txt = "#ffa502", "#fff"
-                info = f"{qf} (S {diff})"
+            info = str(qs)
 
             contagem = str(r.get("ultima_contagem", ""))
             border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
