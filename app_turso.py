@@ -3863,6 +3863,17 @@ if has_mestre:
             if df_est_corr.empty:
                 st.info("Carregue o estoque mestre para usar esta função.")
             else:
+                senha_div = st.text_input(
+                    "🔑 Senha para edição",
+                    type="password",
+                    key="repor_manual_senha",
+                    placeholder="Digite a senha…",
+                )
+                if senha_div != "camda@edit":
+                    if senha_div:
+                        st.error("Senha incorreta.")
+                    st.stop()
+
                 st.caption(
                     "Selecione o produto e informe **quantos estão sobrando** (+) "
                     "ou **faltando** (−) em relação ao que o sistema mostra. "
