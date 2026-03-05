@@ -2054,6 +2054,34 @@ def marcar_reposto(item_id: int):
         st.error(f"❌ Erro ao marcar reposto: {e}")
 
 
+def inserir_reposicao_manual(codigo: str, produto: str, categoria: str, qtd: int) -> tuple:
+    """Insere ou atualiza manualmente um item na fila de reposição da loja.
+    Se já existe um registro pendente para o código, atualiza a quantidade.
+    Retorna (True, mensagem) em caso de sucesso, (False, mensagem) em caso de erro.
+    """
+    try:
+        conn = get_db()
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+        existing = conn.execute(
+            "SELECT id FROM reposicao_loja WHERE codigo = ? AND reposto = 0", (codigo,)
+        ).fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE reposicao_loja SET qtd_vendida = ?, criado_em = ? WHERE id = ?",
+                (qtd, now, existing[0]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO reposicao_loja (codigo, produto, categoria, qtd_vendida, criado_em) VALUES (?, ?, ?, ?, ?)",
+                (codigo, produto, categoria, qtd, now),
+            )
+        conn.commit()
+        sync_db()
+        return (True, f"✅ {produto} ({codigo}) → {qtd} un. na fila de reposição.")
+    except Exception as e:
+        return (False, f"❌ Erro: {e}")
+
+
 def resolver_divergencia(codigo: str):
     """Remove manualmente um produto da lista de divergências (seta status para 'ok')."""
     try:
@@ -3828,6 +3856,80 @@ if has_mestre:
                     if st.button("✅", key=f"repor_{item['id']}", help="Marcar como reposto"):
                         marcar_reposto(int(item["id"]))
                         st.rerun()
+
+        # ── Correção / inserção manual ───────────────────────────────────────
+        st.markdown("---")
+        with st.expander("🔧 Corrigir / adicionar item manualmente", expanded=False):
+            df_est_corr = get_current_stock()
+            if df_est_corr.empty:
+                st.info("Carregue o estoque mestre para usar esta função.")
+            else:
+                st.caption(
+                    "Busque pelo **código** ou **nome** do produto, informe a quantidade "
+                    "a repor (positivo) ou sobrando (negativo) e salve."
+                )
+                opcoes_corr = [
+                    f"{r['codigo']} — {r['produto']}"
+                    for _, r in df_est_corr.iterrows()
+                ]
+                sel_corr = st.selectbox(
+                    "Produto",
+                    options=opcoes_corr,
+                    index=0,
+                    key="repor_manual_prod_sel",
+                    placeholder="Digite código ou nome do produto…",
+                )
+                if sel_corr:
+                    cod_corr = sel_corr.split(" — ")[0].strip()
+                    row_corr = df_est_corr[df_est_corr["codigo"] == cod_corr]
+                    if not row_corr.empty:
+                        prod_corr = str(row_corr["produto"].iloc[0])
+                        cat_corr  = str(row_corr["categoria"].iloc[0])
+                        qtd_atual = int(row_corr["qtd_sistema"].iloc[0])
+
+                        # Verifica se já está na fila de reposição
+                        _pend = get_db().execute(
+                            "SELECT id, qtd_vendida FROM reposicao_loja WHERE codigo = ? AND reposto = 0",
+                            (cod_corr,),
+                        ).fetchone()
+                        if _pend:
+                            st.caption(
+                                f"Estoque atual: **{qtd_atual} un.** — Categoria: *{cat_corr}*  \n"
+                                f"⚠️ Já na fila com **{int(_pend[1])} un.** — salvar irá atualizar a quantidade."
+                            )
+                            _default_qtd = int(_pend[1])
+                        else:
+                            st.caption(
+                                f"Estoque atual: **{qtd_atual} un.** — Categoria: *{cat_corr}*"
+                            )
+                            _default_qtd = 1
+
+                        qtd_corr = st.number_input(
+                            "Quantidade (positivo = faltando / negativo = sobrando)",
+                            min_value=-9999,
+                            max_value=9999,
+                            value=_default_qtd,
+                            step=1,
+                            key="repor_manual_qtd",
+                        )
+
+                        if st.button(
+                            "💾 Salvar na fila de reposição",
+                            type="primary",
+                            use_container_width=True,
+                            key="repor_manual_btn",
+                        ):
+                            if qtd_corr != 0:
+                                ok, msg = inserir_reposicao_manual(
+                                    cod_corr, prod_corr, cat_corr, int(qtd_corr)
+                                )
+                                if ok:
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.error(msg)
+                            else:
+                                st.warning("Informe uma quantidade diferente de zero.")
 
     with t4:
         df_vendas = get_vendas_historico()
