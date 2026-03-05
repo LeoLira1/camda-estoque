@@ -395,7 +395,7 @@ st.markdown("""
         font-weight: bold; margin-top: 2px;
     }
     .tm-av { font-size: 0.5rem; font-weight: 700; margin-top: 2px; }
-    .tm-diff { font-size: 0.48rem; font-weight: 700; opacity: 0.85; margin-top: 1px; letter-spacing: 0.3px; }
+    .tm-diff { position: absolute; bottom: 2px; right: 3px; font-size: 0.42rem; font-weight: 700; opacity: 0.8; letter-spacing: 0.3px; }
     /* ── Streamlit tabs: sempre scrollável ─────────────────────────────── */
     .stTabs [data-baseweb="tab-list"] {
         flex-wrap: nowrap !important;
