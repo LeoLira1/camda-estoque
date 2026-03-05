@@ -3604,7 +3604,8 @@ else:
 
 st.markdown(f'''
 <style>
-.camda-header-wrap {{ position: relative; width: 100%; margin-bottom: 0.8rem; }}
+.camda-header-wrap {{ position: relative; width: 100%; }}
+.date-badge-row {{ display: flex; justify-content: center; margin-top: 10px; margin-bottom: 0.8rem; }}
 .camda-header {{
     width: 100%; height: 220px;
     background-image: url(https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/banner.jpg?v=20260228);
@@ -3627,12 +3628,11 @@ st.markdown(f'''
     .wco {{ top: 6px; right: 6px; padding: 8px 10px 8px; border-radius: 14px; min-width: 100px; }}
     .wco > div:nth-child(2) {{ font-size: 1.6rem !important; }}
     .wco > div:nth-child(3) {{ font-size: 1.4rem !important; }}
-    .date-badge {{ bottom: 10px; padding: 8px 14px; }}
+    .date-badge {{ padding: 8px 14px; }}
     .date-badge .date-day {{ font-size: 1.6rem !important; }}
     .date-badge .date-month {{ font-size: 0.48rem !important; }}
 }}
 .date-badge {{
-    position: absolute; left: 50%; bottom: 16px; transform: translateX(-50%);
     background: rgba(255,255,255,0.10);
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
     border: 1px solid rgba(255,255,255,0.18);
@@ -3659,11 +3659,13 @@ st.markdown(f'''
 </style>
 <div class="camda-header-wrap">
   <div class="camda-header"></div>
+  {_whtml}
+</div>
+<div class="date-badge-row">
   <div class="date-badge">
     <span class="date-day">{_dia_num_dash}</span>
     <span class="date-month">{_mes_nome_dash}</span>
   </div>
-  {_whtml}
 </div>
 ''', unsafe_allow_html=True)
 
