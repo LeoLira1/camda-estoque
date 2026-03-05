@@ -3568,9 +3568,6 @@ _wd_dash = get_weather_forecast_quirinopolis()
 _now_dash = datetime.now(tz=_BRT)
 _dia_abr_dash = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"][_now_dash.weekday()]
 _hora_dash = _now_dash.strftime("%H:%M")
-_dia_num_dash = _now_dash.day
-_mes_nome_dash = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
-                  "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"][_now_dash.month - 1]
 
 if _wd_dash:
     _cur_d = _wd_dash["current"]
@@ -3604,8 +3601,7 @@ else:
 
 st.markdown(f'''
 <style>
-.camda-header-wrap {{ position: relative; width: 100%; }}
-.date-badge-row {{ display: flex; justify-content: center; margin-top: 10px; margin-bottom: 0.8rem; }}
+.camda-header-wrap {{ position: relative; width: 100%; margin-bottom: 0.8rem; }}
 .camda-header {{
     width: 100%; height: 220px;
     background-image: url(https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/banner.jpg?v=20260228);
@@ -3628,45 +3624,13 @@ st.markdown(f'''
     .wco {{ top: 6px; right: 6px; padding: 8px 10px 8px; border-radius: 14px; min-width: 100px; }}
     .wco > div:nth-child(2) {{ font-size: 1.6rem !important; }}
     .wco > div:nth-child(3) {{ font-size: 1.4rem !important; }}
-    .date-badge {{ padding: 8px 14px; }}
-    .date-badge .date-day {{ font-size: 1.6rem !important; }}
-    .date-badge .date-month {{ font-size: 0.48rem !important; }}
-}}
-.date-badge {{
-    background: rgba(255,255,255,0.10);
-    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255,255,255,0.18);
-    border-radius: 16px;
-    padding: 14px 18px;
-    display: flex; flex-direction: column; align-items: center; gap: 3px;
-    pointer-events: none;
-}}
-.date-badge .date-day {{
-    font-family: 'Syne', sans-serif;
-    font-weight: 700;
-    font-size: 2.8rem;
-    line-height: 1;
-    color: #fff;
-    text-shadow: 0 2px 10px rgba(0,0,0,0.3);
-}}
-.date-badge .date-month {{
-    font-family: 'Outfit', sans-serif;
-    font-size: 0.6rem;
-    letter-spacing: 2.5px;
-    color: rgba(255,255,255,0.80);
-    text-transform: uppercase;
 }}
 </style>
 <div class="camda-header-wrap">
   <div class="camda-header"></div>
   {_whtml}
 </div>
-<div class="date-badge-row">
-  <div class="date-badge">
-    <span class="date-day">{_dia_num_dash}</span>
-    <span class="date-month">{_mes_nome_dash}</span>
-  </div>
-</div>
+
 ''', unsafe_allow_html=True)
 
 # ── Alertas automáticos (abaixo do clima) ────────────────────────────────────
