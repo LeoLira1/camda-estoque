@@ -3633,9 +3633,9 @@ st.markdown(f'''
 }}
 .date-badge {{
     position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
-    background: rgba(255,255,255,0.06);
+    background: rgba(255,255,255,0.10);
     backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255,255,255,0.09);
+    border: 1px solid rgba(255,255,255,0.18);
     border-radius: 16px;
     padding: 14px 18px;
     display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -3646,13 +3646,14 @@ st.markdown(f'''
     font-weight: 700;
     font-size: 2.8rem;
     line-height: 1;
-    color: rgba(255,255,255,0.78);
+    color: #fff;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.3);
 }}
 .date-badge .date-month {{
     font-family: 'Outfit', sans-serif;
     font-size: 0.6rem;
     letter-spacing: 2.5px;
-    color: rgba(255,255,255,0.28);
+    color: rgba(255,255,255,0.80);
     text-transform: uppercase;
 }}
 </style>
