@@ -2054,6 +2054,33 @@ def marcar_reposto(item_id: int):
         st.error(f"❌ Erro ao marcar reposto: {e}")
 
 
+def registrar_divergencia_manual(codigo: str, delta: int) -> tuple:
+    """Registra divergência (sobra/falta) sem alterar qtd_sistema.
+    delta > 0 = sobrando, delta < 0 = faltando.
+    """
+    try:
+        conn = get_db()
+        row = conn.execute(
+            "SELECT produto, qtd_sistema FROM estoque_mestre WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        if not row:
+            return (False, f"Código '{codigo}' não encontrado.")
+        produto, qtd_sistema = row
+        qtd_fisica = qtd_sistema + delta
+        diferenca = delta  # qtd_fisica - qtd_sistema
+        status = "sobra" if delta > 0 else "falta"
+        conn.execute(
+            "UPDATE estoque_mestre SET qtd_fisica = ?, diferenca = ?, status = ? WHERE codigo = ?",
+            (qtd_fisica, diferenca, status, codigo),
+        )
+        conn.commit()
+        sync_db()
+        sinal = "+" if delta > 0 else ""
+        return (True, f"✅ {produto} ({codigo}) → {status} de {sinal}{delta} un. registrada.")
+    except Exception as e:
+        return (False, f"❌ Erro: {e}")
+
+
 def resolver_divergencia(codigo: str):
     """Remove manualmente um produto da lista de divergências (seta status para 'ok')."""
     try:
@@ -3829,17 +3856,17 @@ if has_mestre:
                         marcar_reposto(int(item["id"]))
                         st.rerun()
 
-        # ── Correção de contagem manual ──────────────────────────────────────
+        # ── Registrar divergência manual ─────────────────────────────────────
         st.markdown("---")
-        with st.expander("🔧 Corrigir contagem de um produto", expanded=False):
+        with st.expander("⚠️ Registrar divergência de contagem", expanded=False):
             df_est_corr = get_current_stock()
             if df_est_corr.empty:
                 st.info("Carregue o estoque mestre para usar esta função.")
             else:
                 st.caption(
-                    "Encontrou uma diferença entre o sistema e o físico? "
                     "Selecione o produto e informe **quantos estão sobrando** (+) "
-                    "ou **faltando** (−) em relação ao que o sistema mostra."
+                    "ou **faltando** (−) em relação ao que o sistema mostra. "
+                    "O valor do sistema **não é alterado** — apenas a divergência é registrada."
                 )
                 opcoes_corr = [
                     f"{r['codigo']} — {r['produto']}"
@@ -3856,51 +3883,56 @@ if has_mestre:
                     cod_corr = sel_corr.split(" — ")[0].strip()
                     row_corr = df_est_corr[df_est_corr["codigo"] == cod_corr]
                     if not row_corr.empty:
-                        prod_corr = str(row_corr["produto"].iloc[0])
-                        cat_corr  = str(row_corr["categoria"].iloc[0])
                         qtd_atual = int(row_corr["qtd_sistema"].iloc[0])
+                        cat_corr  = str(row_corr["categoria"].iloc[0])
+                        status_atual = str(row_corr["status"].iloc[0])
+                        div_atual = int(row_corr["diferenca"].iloc[0]) if pd.notnull(row_corr["diferenca"].iloc[0]) else 0
 
+                        _cor_status = {"sobra": "#22c55e", "falta": "#f87171"}.get(status_atual, "#64748b")
+                        _label_status = {"sobra": "sobra", "falta": "falta"}.get(status_atual, "ok")
                         st.markdown(
                             f'<div style="background:#111827;border:1px solid #1e293b;'
                             f'border-radius:8px;padding:10px 14px;margin:6px 0;">'
-                            f'<span style="color:#94a3b8;font-size:0.75rem;">Estoque atual no sistema: </span>'
+                            f'<span style="color:#94a3b8;font-size:0.75rem;">Sistema: </span>'
                             f'<span style="color:#e0e6ed;font-weight:700;">{qtd_atual} un.</span>'
+                            f'&nbsp;&nbsp;'
+                            f'<span style="color:{_cor_status};font-size:0.7rem;font-weight:600;">{_label_status}'
+                            f'{f" ({div_atual:+d})" if div_atual != 0 else ""}</span>'
                             f'&nbsp;&nbsp;<span style="color:#64748b;font-size:0.7rem;">{cat_corr}</span>'
                             f'</div>',
                             unsafe_allow_html=True,
                         )
 
                         delta_corr = st.number_input(
-                            "Diferença encontrada  (+sobrando / −faltando)",
+                            "Diferença (+sobrando / −faltando)",
                             min_value=-9999,
                             max_value=9999,
                             value=0,
                             step=1,
                             key="repor_manual_delta",
-                            help="Ex: sistema diz 11, mas há 12 físicos → digite +1. "
-                                 "Sistema diz 11, mas há 9 → digite −2.",
+                            help="Ex: sistema diz 11, físico tem 12 → digite +1. "
+                                 "Sistema diz 11, físico tem 9 → digite −2.",
                         )
 
-                        nova_qtd_corr = qtd_atual + delta_corr
                         if delta_corr != 0:
                             cor = "#22c55e" if delta_corr > 0 else "#f87171"
+                            tipo = "sobra" if delta_corr > 0 else "falta"
                             sinal = "+" if delta_corr > 0 else ""
                             st.markdown(
                                 f'<div style="color:{cor};font-size:0.8rem;margin-top:4px;">'
-                                f'Sistema: {qtd_atual} un. &nbsp;→&nbsp; '
-                                f'Novo total: <b>{nova_qtd_corr} un.</b> '
-                                f'({sinal}{delta_corr})</div>',
+                                f'Será registrada <b>{tipo}</b> de <b>{sinal}{delta_corr} un.</b> '
+                                f'(físico: {qtd_atual + delta_corr} un. · sistema: {qtd_atual} un.)</div>',
                                 unsafe_allow_html=True,
                             )
 
                         if st.button(
-                            "💾 Corrigir estoque",
+                            "⚠️ Registrar divergência",
                             type="primary",
                             use_container_width=True,
                             key="repor_manual_btn",
                             disabled=(delta_corr == 0),
                         ):
-                            ok, msg = ajustar_qtd_manual(cod_corr, nova_qtd_corr)
+                            ok, msg = registrar_divergencia_manual(cod_corr, int(delta_corr))
                             if ok:
                                 st.success(msg)
                                 st.rerun()
