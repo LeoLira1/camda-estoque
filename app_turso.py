@@ -3568,6 +3568,9 @@ _wd_dash = get_weather_forecast_quirinopolis()
 _now_dash = datetime.now(tz=_BRT)
 _dia_abr_dash = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"][_now_dash.weekday()]
 _hora_dash = _now_dash.strftime("%H:%M")
+_dia_num_dash = _now_dash.day
+_mes_nome_dash = ["JANEIRO","FEVEREIRO","MARÇO","ABRIL","MAIO","JUNHO",
+                  "JULHO","AGOSTO","SETEMBRO","OUTUBRO","NOVEMBRO","DEZEMBRO"][_now_dash.month - 1]
 
 if _wd_dash:
     _cur_d = _wd_dash["current"]
@@ -3624,10 +3627,41 @@ st.markdown(f'''
     .wco {{ top: 6px; right: 6px; padding: 8px 10px 8px; border-radius: 14px; min-width: 100px; }}
     .wco > div:nth-child(2) {{ font-size: 1.6rem !important; }}
     .wco > div:nth-child(3) {{ font-size: 1.4rem !important; }}
+    .date-badge {{ left: 10px; padding: 10px 13px; }}
+    .date-badge .date-day {{ font-size: 2rem !important; }}
+    .date-badge .date-month {{ font-size: 0.5rem !important; }}
+}}
+.date-badge {{
+    position: absolute; left: 16px; top: 50%; transform: translateY(-50%);
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255,255,255,0.09);
+    border-radius: 16px;
+    padding: 14px 18px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    pointer-events: none;
+}}
+.date-badge .date-day {{
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 2.8rem;
+    line-height: 1;
+    color: rgba(255,255,255,0.78);
+}}
+.date-badge .date-month {{
+    font-family: 'Outfit', sans-serif;
+    font-size: 0.6rem;
+    letter-spacing: 2.5px;
+    color: rgba(255,255,255,0.28);
+    text-transform: uppercase;
 }}
 </style>
 <div class="camda-header-wrap">
   <div class="camda-header"></div>
+  <div class="date-badge">
+    <span class="date-day">{_dia_num_dash}</span>
+    <span class="date-month">{_mes_nome_dash}</span>
+  </div>
   {_whtml}
 </div>
 ''', unsafe_allow_html=True)
