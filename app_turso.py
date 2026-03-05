@@ -3957,8 +3957,13 @@ if has_mestre:
                                 st.error(msg)
 
     with t4:
-        df_vendas = get_vendas_historico()
-        build_vendas_tab(df_vendas)
+        try:
+            df_vendas = get_vendas_historico()
+            build_vendas_tab(df_vendas)
+        except Exception as _e:
+            import traceback
+            st.error(f"Erro na aba Vendas: {_e}")
+            st.code(traceback.format_exc())
 
     with t6:
         # ── CSS da aba ──
