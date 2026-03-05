@@ -395,7 +395,11 @@ st.markdown("""
         font-weight: bold; margin-top: 2px;
     }
     .tm-av { font-size: 0.5rem; font-weight: 700; margin-top: 2px; }
-    .tm-diff { position: absolute; bottom: 2px; right: 3px; font-size: 0.42rem; font-weight: 700; opacity: 0.8; letter-spacing: 0.3px; }
+    .tm-tile[data-diff]::after {
+        content: attr(data-diff);
+        position: absolute; bottom: 2px; right: 3px;
+        font-size: 0.42rem; font-weight: 700; opacity: 0.8;
+    }
     /* ── Streamlit tabs: sempre scrollável ─────────────────────────────── */
     .stTabs [data-baseweb="tab-list"] {
         flex-wrap: nowrap !important;
@@ -2982,16 +2986,14 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
             if diff == 0:
                 bg, txt = "#00d68f", "#0a2e1a"
-                info = str(qs)
-                diff_badge = ""
+                data_diff = ""
             elif diff < 0:
                 bg, txt = "#ff4757", "#fff"
-                info = str(qs)
-                diff_badge = f'<div class="tm-diff">▼ {abs(diff)}</div>'
+                data_diff = f'data-diff="▼{abs(diff)}"'
             else:
                 bg, txt = "#ffa502", "#fff"
-                info = str(qs)
-                diff_badge = f'<div class="tm-diff">▲ {diff}</div>' 
+                data_diff = f'data-diff="▲{diff}"'
+            info = str(qs)
 
             contagem = str(r.get("ultima_contagem", ""))
             border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
@@ -3005,12 +3007,11 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 av_html = ""
 
             prods.append(
-                f'<div class="tm-tile" tabindex="0" style="background:{bg};color:{txt};'
+                f'<div class="tm-tile" tabindex="0" {data_diff} style="background:{bg};color:{txt};'
                 f'border:1px solid rgba(0,0,0,0.1);{border}" title="{r["codigo"]} — {r["produto"]}">'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
                 f'<div class="tm-info">{info}</div>'
                 f'<div class="tm-cod">{r["codigo"]}</div>'
-                f'{diff_badge}'
                 f'{av_html}'
                 f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}</div>'
                 f'</div>'
