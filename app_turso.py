@@ -3943,7 +3943,7 @@ def build_infograficos_tab():
             yaxis=dict(autorange="reversed", tickfont=dict(size=10, color="#e0e6ed")),
             margin=dict(l=20, r=20, t=60, b=20),
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
         st.caption(
             f"Top 20 produtos por volume · Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
         )
@@ -3970,7 +3970,13 @@ def build_infograficos_tab():
             return s[:n] + "…" if len(s) > n else s
 
         top10_mais = df_mv.head(10).copy()
-        top10_menos = df_mv[df_mv["total_vendido"] > 0].tail(10).sort_values("total_vendido").copy()
+        _produtos_mais = set(top10_mais["produto"])
+        top10_menos = (
+            df_mv[df_mv["total_vendido"] > 0][~df_mv["produto"].isin(_produtos_mais)]
+            .tail(10)
+            .sort_values("total_vendido")
+            .copy()
+        )
 
         fig = go.Figure()
 
@@ -4022,7 +4028,7 @@ def build_infograficos_tab():
                 line=dict(color="#64748b", width=1.5),
             )],
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
         st.caption(
             f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')} · Excluindo produtos sem vendas"
         )
@@ -4175,7 +4181,7 @@ def build_infograficos_tab():
             ),
             margin=dict(l=20, r=20, t=40, b=60),
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
         st.caption(
             f"Mediana giro: {med_giro:.3f} · Mediana ruptura: {med_ruptura:.1f}% · "
             f"Tamanho proporcional ao valor em estoque · "
