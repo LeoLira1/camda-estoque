@@ -3861,12 +3861,15 @@ def build_infograficos_tab():
     with col_atalhos:
         st.markdown("<div style='padding-top:6px;font-size:0.75rem;color:#64748b;margin-bottom:2px;'>Atalhos rápidos</div>", unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
+
+        def _set_periodo(dias):
+            st.session_state["inf_data_inicio"] = max(data_min, data_max - timedelta(days=dias))
+            st.session_state["inf_data_fim"] = data_max
+
         for col_btn, dias, label in [(c1, 7, "7d"), (c2, 15, "15d"), (c3, 30, "30d"), (c4, 60, "60d")]:
             with col_btn:
-                if st.button(label, key=f"inf_atalho_{dias}", use_container_width=True):
-                    st.session_state["inf_data_inicio"] = max(data_min, data_max - timedelta(days=dias))
-                    st.session_state["inf_data_fim"] = data_max
-                    st.rerun()
+                st.button(label, key=f"inf_atalho_{dias}", use_container_width=True,
+                          on_click=_set_periodo, args=(dias,))
 
     if data_inicio > data_fim:
         st.warning("⚠️ Data início maior que data fim.")
