@@ -558,6 +558,13 @@ st.markdown("""
     @media (prefers-reduced-motion: reduce) {
         * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
     }
+    /* ── Fix mobile: impede que toque em gráfico Plotly abra teclado ───── */
+    .stPlotlyChart input,
+    .js-plotly-plot input,
+    .plotly input {
+        display: none !important;
+        pointer-events: none !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
