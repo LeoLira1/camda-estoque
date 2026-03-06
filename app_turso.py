@@ -3278,6 +3278,9 @@ def get_vendas_heatmap(data_inicio: str, data_fim: str) -> pd.DataFrame:
             df = pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "qtd_vendida", "data_upload"])
             df["data_upload"] = pd.to_datetime(df["data_upload"])
             df["dia_semana"] = df["data_upload"].dt.dayofweek  # 0=Seg, 6=Dom
+            # Normaliza filmes agrícolas de m² para unidades (rolos)
+            areas = df["produto"].apply(_area_filme)
+            df["qtd_vendida"] = (df["qtd_vendida"] / areas).round().astype(int)
             top20_codigos = df.groupby("codigo")["qtd_vendida"].sum().nlargest(20).index
             df = df[df["codigo"].isin(top20_codigos)]
             return df.groupby(["produto", "dia_semana"], as_index=False)["qtd_vendida"].sum()
@@ -3310,7 +3313,10 @@ def get_mais_menos_movimentados(data_inicio: str, data_fim: str, grupo: str = "T
                 ORDER BY total_vendido DESC
             """, (data_inicio, data_fim)).fetchall()
         if rows:
-            return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "total_vendido"])
+            df = pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "total_vendido"])
+            df = _normalizar_qtd_filme(df)
+            df = df[df["total_vendido"] > 0].sort_values("total_vendido", ascending=False)
+            return df.reset_index(drop=True)
     except Exception:
         pass
     return pd.DataFrame()
@@ -3422,6 +3428,33 @@ def get_giro_ruptura_grupos(data_inicio: str, data_fim: str) -> pd.DataFrame:
     except Exception:
         pass
     return pd.DataFrame()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# UTILITÁRIOS — normalização de quantidades
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _area_filme(produto: str) -> int:
+    """Retorna a área (m²) de um rolo de filme a partir do nome do produto.
+    Ex: 'FILME AGRICOLA 200MICR 12X50M' → 600.
+    Retorna 1 para produtos que não são filmes com dimensão no nome."""
+    if "FILME" not in produto.upper():
+        return 1
+    m = re.search(r"(\d+)[Xx](\d+)M", produto)
+    if m:
+        area = int(m.group(1)) * int(m.group(2))
+        return area if area > 0 else 1
+    return 1
+
+
+def _normalizar_qtd_filme(df: pd.DataFrame, col_produto: str = "produto", col_qtd: str = "total_vendido") -> pd.DataFrame:
+    """Divide qtd_vendida pela área do rolo para obter unidades reais de filme agrícola."""
+    if df.empty:
+        return df
+    df = df.copy()
+    areas = df[col_produto].apply(_area_filme)
+    df[col_qtd] = (df[col_qtd] / areas).round().astype(int)
+    return df
 
 
 # ══════════════════════════════════════════════════════════════════════════════
