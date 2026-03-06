@@ -3878,20 +3878,18 @@ def build_infograficos_tab():
     data_inicio_str = data_inicio.isoformat()
     data_fim_str = data_fim.isoformat()
 
-    # ── Seletor de infográfico ────────────────────────────────────────────
-    st.markdown("<div style='margin:4px 0 2px'></div>", unsafe_allow_html=True)
-    infografico = st.selectbox(
-        "Infográfico",
-        [
-            "🔥 Mapa de Calor de Vendas",
-            "📊 Mais vs Menos Movimentados",
-            "💤 Produtos Parados",
-            "⚖️ Giro vs Ruptura por Grupo",
-        ],
-        key="inf_selector",
-        label_visibility="collapsed",
-    )
-    st.markdown("<hr style='margin:4px 0;border-color:#1e293b'>", unsafe_allow_html=True)
+    # ── Seletor de infográfico (lido antes do render, exibido após o gráfico) ─
+    _INF_OPTS = [
+        "🔥 Mapa de Calor de Vendas",
+        "📊 Mais vs Menos Movimentados",
+        "💤 Produtos Parados",
+        "⚖️ Giro vs Ruptura por Grupo",
+    ]
+    infografico = st.session_state.get("inf_selector", _INF_OPTS[0])
+
+    def _render_seletor_inf():
+        st.markdown("<hr style='margin:8px 0 4px;border-color:#1e293b'>", unsafe_allow_html=True)
+        st.selectbox("Infográfico", _INF_OPTS, key="inf_selector", label_visibility="collapsed")
 
     # ════════════════════════════════════════════════════════════════════════
     # INFOGRÁFICO 1 — MAPA DE CALOR
@@ -3902,6 +3900,7 @@ def build_infograficos_tab():
 
         if df_heat.empty:
             st.info("Nenhuma venda encontrada no período selecionado.")
+            _render_seletor_inf()
             return
 
         dias_labels = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -3964,6 +3963,7 @@ def build_infograficos_tab():
 
         if df_mv.empty:
             st.info("Nenhuma venda encontrada no período selecionado.")
+            _render_seletor_inf()
             return
 
         def _short(s: str, n: int = 35) -> str:
@@ -4049,6 +4049,7 @@ def build_infograficos_tab():
 
         if df_parado.empty:
             st.success(f"✅ Nenhum produto parado há mais de {dias_parado} dias com estoque positivo!")
+            _render_seletor_inf()
             return
 
         total_parados = len(df_parado)
@@ -4100,6 +4101,7 @@ def build_infograficos_tab():
 
         if df_gr.empty:
             st.info("Nenhum dado disponível para o período selecionado.")
+            _render_seletor_inf()
             return
 
         med_giro = df_gr["taxa_giro"].median()
@@ -4187,6 +4189,9 @@ def build_infograficos_tab():
             f"Tamanho proporcional ao valor em estoque · "
             f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
         )
+
+    # ── Seletor de infográfico (posicionado após o gráfico) ───────────────
+    _render_seletor_inf()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
