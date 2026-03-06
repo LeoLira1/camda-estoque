@@ -3626,6 +3626,41 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
     with vt2:
         # Produtos com estoque zerado que venderam
         df_zero = df_vendas[(df_vendas["qtd_estoque"] <= 0) & (df_vendas["qtd_vendida"] > 0)].sort_values("qtd_vendida", ascending=False)
+
+        # Remover duplicatas: produtos zerados que têm equivalente com estoque
+        # (mesmo produto cadastrado com código diferente que ainda tem estoque)
+        _PREFIXOS_CATEGORIA = {
+            "HERBICIDA", "FUNGICIDA", "INSETICIDA", "ACARICIDA", "NEMATICIDA",
+            "ADJUVANTE", "FERTILIZANTE", "REGULADOR", "ESTIMULANTE", "INOCULANTE",
+            "SEMENTE", "SEM", "BIOLOGICO", "BIOLÓGICO", "ADUBO", "DEFENSIVO",
+            "MICRONUTRIENTE", "ENXOFRE", "CALCARIO", "CALCÁRIO",
+        }
+
+        def _core_nome(nome: str) -> str:
+            palavras = nome.upper().strip().split()
+            while palavras and palavras[0] in _PREFIXOS_CATEGORIA:
+                palavras = palavras[1:]
+            return " ".join(palavras)
+
+        try:
+            _em_rows = get_db().execute(
+                "SELECT produto FROM estoque_mestre WHERE qtd_sistema > 0"
+            ).fetchall()
+            _em_cores = {_core_nome(r[0]) for r in _em_rows if r[0]}
+            if _em_cores:
+                def _tem_duplicata_com_estoque(nome: str) -> bool:
+                    core = _core_nome(nome)
+                    if not core or len(core) < 6:
+                        return False
+                    if core in _em_cores:
+                        return True
+                    for em_core in _em_cores:
+                        if len(em_core) >= 6 and (core in em_core or em_core in core):
+                            return True
+                    return False
+                df_zero = df_zero[~df_zero["produto"].apply(_tem_duplicata_com_estoque)]
+        except Exception:
+            pass
         # Produtos com estoque < 50% do vendido
         df_crit = df_vendas[
             (df_vendas["qtd_estoque"] > 0) &
