@@ -1840,7 +1840,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 st.rerun()
     except TypeError:
         # Streamlit < 1.35 — sem on_select
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
     _n_fallback = int(df_plot["n_sem_vol"].sum())
     if _n_fallback > 0:
@@ -3575,7 +3575,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             xaxis=dict(gridcolor="#1e293b", title=None),
             showlegend=False,
         )
-        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+        st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
         # Dois gráficos lado a lado
         c1, c2 = st.columns(2)
@@ -3597,7 +3597,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 height=320, showlegend=True,
                 legend=dict(font=dict(size=9), orientation="h", y=-0.15),
             )
-            st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+            st.plotly_chart(fig_pie, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
         with c2:
             # Grouped bar — vendido vs estoque
@@ -3618,7 +3618,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(tickangle=-35, tickfont=dict(size=8), gridcolor="rgba(0,0,0,0)"),
                 legend=dict(orientation="h", y=1.12, font=dict(size=10)),
             )
-            st.plotly_chart(fig_vs, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+            st.plotly_chart(fig_vs, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
     # ══════════════════════════════════════════════════════════════════════
     # TAB 2 — ESTOQUE CRÍTICO
@@ -3681,7 +3681,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+            st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
             # Tabela detalhada
             with st.expander("📋 Tabela Detalhada — Críticos", expanded=False):
@@ -3744,7 +3744,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Dias", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_burn, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+            st.plotly_chart(fig_burn, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
             # Info box
             urgentes = df_burn[df_burn["dias_estoque"] < 15]["grupo"].tolist()
@@ -3791,7 +3791,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
                 showlegend=False,
             )
-            st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+            st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
             # Scatter vendido vs estoque
             fig_scatter = go.Figure()
@@ -3822,7 +3822,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 yaxis=dict(title="Qtd Estoque", gridcolor="#1e293b"),
                 legend=dict(font=dict(size=8), orientation="h", y=-0.2),
             )
-            st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+            st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
         else:
             st.info("Nenhum produto encontrado para o filtro selecionado.")
 
@@ -3942,7 +3942,7 @@ def build_infograficos_tab():
             yaxis=dict(autorange="reversed", tickfont=dict(size=10, color="#e0e6ed")),
             margin=dict(l=20, r=20, t=60, b=20),
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
         st.caption(
             f"Top 20 produtos por volume · Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
         )
@@ -4028,7 +4028,7 @@ def build_infograficos_tab():
                 line=dict(color="#64748b", width=1.5),
             )],
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
         st.caption(
             f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')} · Excluindo produtos sem vendas"
         )
@@ -4183,7 +4183,7 @@ def build_infograficos_tab():
             ),
             margin=dict(l=20, r=20, t=40, b=60),
         )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
         st.caption(
             f"Mediana giro: {med_giro:.3f} · Mediana ruptura: {med_ruptura:.1f}% · "
             f"Tamanho proporcional ao valor em estoque · "
@@ -5479,7 +5479,7 @@ if has_mestre:
                     xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
                     yaxis=dict(tickfont=dict(size=10)),
                 )
-                st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False, "staticPlot": True})
+                st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
             # ── Lista de lotes ─────────────────────────────────────────────────
             badge_map = {
@@ -5589,7 +5589,7 @@ if has_mestre:
                 showlegend=False,
             )
             st.plotly_chart(fig_linha, use_container_width=True,
-                            config={"displayModeBar": False, "staticPlot": True})
+                            config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
             # ── Gráfico de barras: top produtos ───────────────────────────
             if not df_top.empty:
@@ -5620,7 +5620,7 @@ if has_mestre:
                     showlegend=False,
                 )
                 st.plotly_chart(fig_top_h, use_container_width=True,
-                                config={"displayModeBar": False, "staticPlot": True})
+                                config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
             # ── Botão para zerar histórico ────────────────────────────────
             if st.button("🗑️ Zerar histórico de vendas", key="hist_zerar", type="secondary"):
