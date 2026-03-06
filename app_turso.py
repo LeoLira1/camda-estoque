@@ -2829,7 +2829,7 @@ def atualizar_item_contagem(
             """, [status_estoque, qtd_fisica, diferenca, motivo, now, codigo])
             rows_afetadas = getattr(cur, "rowcount", -1)
 
-        elif status in ("certa", "pendente"):
+        elif status == "certa":
             conn.execute("""
                 UPDATE estoque_mestre SET
                     status = 'ok',
