@@ -3234,6 +3234,197 @@ def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# INFOGRÁFICOS — funções de dados
+# ══════════════════════════════════════════════════════════════════════════════
+
+@st.cache_data(ttl=300)
+def get_datas_vendas_range() -> tuple:
+    """Retorna (data_min, data_max) das vendas registradas."""
+    try:
+        row = get_db().execute(
+            "SELECT MIN(data_upload), MAX(data_upload) FROM vendas_historico"
+        ).fetchone()
+        if row and row[0] and row[1]:
+            return date.fromisoformat(row[0]), date.fromisoformat(row[1])
+    except Exception:
+        pass
+    hoje = datetime.now(tz=_BRT).date()
+    return hoje - timedelta(days=30), hoje
+
+
+@st.cache_data(ttl=600)
+def get_grupos_vendas() -> list:
+    """Retorna lista de grupos únicos na tabela de vendas."""
+    try:
+        rows = get_db().execute(
+            "SELECT DISTINCT grupo FROM vendas_historico ORDER BY grupo"
+        ).fetchall()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=300)
+def get_vendas_heatmap(data_inicio: str, data_fim: str) -> pd.DataFrame:
+    """Retorna vendas por produto e dia da semana para o heatmap."""
+    try:
+        rows = get_db().execute("""
+            SELECT codigo, produto, grupo, SUM(qtd_vendida) AS qtd_vendida, data_upload
+            FROM vendas_historico
+            WHERE data_upload >= ? AND data_upload <= ?
+            GROUP BY codigo, data_upload
+        """, (data_inicio, data_fim)).fetchall()
+        if rows:
+            df = pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "qtd_vendida", "data_upload"])
+            df["data_upload"] = pd.to_datetime(df["data_upload"])
+            df["dia_semana"] = df["data_upload"].dt.dayofweek  # 0=Seg, 6=Dom
+            top20_codigos = df.groupby("codigo")["qtd_vendida"].sum().nlargest(20).index
+            df = df[df["codigo"].isin(top20_codigos)]
+            return df.groupby(["produto", "dia_semana"], as_index=False)["qtd_vendida"].sum()
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def get_mais_menos_movimentados(data_inicio: str, data_fim: str, grupo: str = "Todos") -> pd.DataFrame:
+    """Retorna produtos ordenados por volume de vendas no período (excluindo zerados)."""
+    try:
+        if grupo != "Todos":
+            rows = get_db().execute("""
+                SELECT codigo, produto, grupo, SUM(qtd_vendida) AS total_vendido
+                FROM vendas_historico
+                WHERE data_upload >= ? AND data_upload <= ?
+                  AND grupo = ?
+                GROUP BY codigo
+                HAVING total_vendido > 0
+                ORDER BY total_vendido DESC
+            """, (data_inicio, data_fim, grupo)).fetchall()
+        else:
+            rows = get_db().execute("""
+                SELECT codigo, produto, grupo, SUM(qtd_vendida) AS total_vendido
+                FROM vendas_historico
+                WHERE data_upload >= ? AND data_upload <= ?
+                GROUP BY codigo
+                HAVING total_vendido > 0
+                ORDER BY total_vendido DESC
+            """, (data_inicio, data_fim)).fetchall()
+        if rows:
+            return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "total_vendido"])
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def get_produtos_parados(dias_min: int) -> pd.DataFrame:
+    """Retorna produtos sem movimentação de vendas há mais de X dias."""
+    try:
+        hoje = datetime.now(tz=_BRT).date()
+        rows = get_db().execute("""
+            SELECT
+                e.codigo,
+                e.produto,
+                e.categoria AS grupo,
+                e.qtd_sistema AS qtd_estoque,
+                COALESCE(MAX(v.data_upload), '') AS ultima_venda
+            FROM estoque_mestre e
+            LEFT JOIN vendas_historico v ON v.codigo = e.codigo
+            WHERE e.qtd_sistema > 0
+            GROUP BY e.codigo
+        """).fetchall()
+        if not rows:
+            return pd.DataFrame()
+        df = pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "qtd_estoque", "ultima_venda"])
+
+        # Valor imobilizado via validade_lotes (best-effort join)
+        try:
+            vl_rows = get_db().execute(
+                "SELECT produto, SUM(valor) FROM validade_lotes GROUP BY produto"
+            ).fetchall()
+            vl_map = {r[0].strip().upper(): float(r[1] or 0) for r in vl_rows if r[0]}
+        except Exception:
+            vl_map = {}
+
+        df["valor_imobilizado"] = df["produto"].apply(lambda p: vl_map.get(str(p).strip().upper(), 0.0))
+
+        def _dias(ultima: str) -> int:
+            if not ultima:
+                return 9999
+            try:
+                return (hoje - date.fromisoformat(ultima)).days
+            except Exception:
+                return 9999
+
+        df["dias_parado"] = df["ultima_venda"].apply(_dias)
+        df = df[df["dias_parado"] >= dias_min].copy()
+
+        def _fmt_data(s: str) -> str:
+            if not s:
+                return "Nunca"
+            try:
+                return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                return s
+
+        df["ultima_venda_fmt"] = df["ultima_venda"].apply(_fmt_data)
+        return df.sort_values("valor_imobilizado", ascending=False).reset_index(drop=True)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
+def get_giro_ruptura_grupos(data_inicio: str, data_fim: str) -> pd.DataFrame:
+    """Retorna taxa de giro e % de ruptura por grupo de produtos."""
+    try:
+        rows = get_db().execute("""
+            SELECT
+                grupo,
+                SUM(qtd_vendida) AS total_vendido,
+                AVG(CASE WHEN qtd_estoque <= 0 THEN 1.0 ELSE 0.0 END) AS pct_ruptura_raw
+            FROM vendas_historico
+            WHERE data_upload >= ? AND data_upload <= ?
+            GROUP BY grupo
+        """, (data_inicio, data_fim)).fetchall()
+
+        stock_rows = get_db().execute("""
+            SELECT categoria AS grupo, SUM(qtd_sistema) AS qtd_estoque
+            FROM estoque_mestre
+            GROUP BY categoria
+        """).fetchall()
+        stock_map = {r[0]: (r[1] or 0) for r in stock_rows}
+
+        try:
+            valor_rows = get_db().execute(
+                "SELECT grupo, SUM(valor) FROM validade_lotes GROUP BY grupo"
+            ).fetchall()
+            valor_map = {r[0]: float(r[1] or 0) for r in valor_rows if r[0]}
+        except Exception:
+            valor_map = {}
+
+        if rows:
+            records = []
+            for grupo, total_vendido, pct_ruptura_raw in rows:
+                qtd_estoque = max(stock_map.get(grupo, 0), 1)
+                taxa_giro = round(float(total_vendido) / qtd_estoque, 3)
+                pct_ruptura = round(float(pct_ruptura_raw or 0) * 100, 1)
+                valor = valor_map.get(grupo, 0) or float(stock_map.get(grupo, 0))
+                records.append({
+                    "grupo": grupo,
+                    "taxa_giro": taxa_giro,
+                    "pct_ruptura": pct_ruptura,
+                    "total_vendido": int(total_vendido),
+                    "qtd_estoque": qtd_estoque,
+                    "valor_estoque": valor,
+                })
+            return pd.DataFrame(records)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # PLOTLY — tema dark consistente com o dashboard
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -3597,6 +3788,359 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# INFOGRÁFICOS — aba principal
+# ══════════════════════════════════════════════════════════════════════════════
+
+def build_infograficos_tab():
+    """Renderiza a aba de infográficos analíticos."""
+    try:
+        count = get_db().execute("SELECT COUNT(*) FROM vendas_historico").fetchone()[0]
+    except Exception:
+        count = 0
+
+    if count == 0:
+        st.info("📊 Nenhum dado de vendas disponível. Faça upload de uma planilha de vendas para ativar os infográficos.")
+        return
+
+    # ── Seletor de período ───────────────────────────────────────────────
+    data_min, data_max = get_datas_vendas_range()
+
+    col_di, col_df, col_atalhos = st.columns([2, 2, 3])
+
+    with col_di:
+        data_inicio = st.date_input(
+            "Data início", value=max(data_min, data_max - timedelta(days=30)),
+            min_value=data_min, max_value=data_max, key="inf_data_inicio",
+        )
+    with col_df:
+        data_fim = st.date_input(
+            "Data fim", value=data_max,
+            min_value=data_min, max_value=data_max, key="inf_data_fim",
+        )
+
+    with col_atalhos:
+        st.markdown("<div style='padding-top:6px;font-size:0.75rem;color:#64748b;margin-bottom:2px;'>Atalhos rápidos</div>", unsafe_allow_html=True)
+        c1, c2, c3, c4 = st.columns(4)
+        for col_btn, dias, label in [(c1, 7, "7d"), (c2, 15, "15d"), (c3, 30, "30d"), (c4, 60, "60d")]:
+            with col_btn:
+                if st.button(label, key=f"inf_atalho_{dias}", use_container_width=True):
+                    st.session_state["inf_data_inicio"] = max(data_min, data_max - timedelta(days=dias))
+                    st.session_state["inf_data_fim"] = data_max
+                    st.rerun()
+
+    if data_inicio > data_fim:
+        st.warning("⚠️ Data início maior que data fim.")
+        return
+
+    data_inicio_str = data_inicio.isoformat()
+    data_fim_str = data_fim.isoformat()
+
+    # ── Seletor de infográfico ────────────────────────────────────────────
+    st.markdown("---")
+    infografico = st.selectbox(
+        "Infográfico",
+        [
+            "🔥 Mapa de Calor de Vendas",
+            "📊 Mais vs Menos Movimentados",
+            "💤 Produtos Parados",
+            "⚖️ Giro vs Ruptura por Grupo",
+        ],
+        key="inf_selector",
+        label_visibility="collapsed",
+    )
+    st.markdown("---")
+
+    # ════════════════════════════════════════════════════════════════════════
+    # INFOGRÁFICO 1 — MAPA DE CALOR
+    # ════════════════════════════════════════════════════════════════════════
+    if infografico == "🔥 Mapa de Calor de Vendas":
+        st.markdown("### 🔥 Mapa de Calor de Vendas por Dia da Semana")
+        df_heat = get_vendas_heatmap(data_inicio_str, data_fim_str)
+
+        if df_heat.empty:
+            st.info("Nenhuma venda encontrada no período selecionado.")
+            return
+
+        dias_labels = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
+        pivot = df_heat.pivot_table(
+            index="produto", columns="dia_semana",
+            values="qtd_vendida", aggfunc="sum", fill_value=0,
+        )
+        for d in range(7):
+            if d not in pivot.columns:
+                pivot[d] = 0
+        pivot = pivot[[0, 1, 2, 3, 4, 5, 6]]
+        pivot.columns = dias_labels
+        pivot["_total"] = pivot.sum(axis=1)
+        pivot = pivot.sort_values("_total", ascending=False).head(20).drop(columns=["_total"])
+        pivot.index = [n[:42] + "…" if len(n) > 42 else n for n in pivot.index]
+
+        fig = go.Figure(data=go.Heatmap(
+            z=pivot.values,
+            x=dias_labels,
+            y=pivot.index.tolist(),
+            colorscale=[
+                [0.0, "#0d1b2a"],
+                [0.25, "#00d68f"],
+                [0.65, "#ffa502"],
+                [1.0, "#ef4444"],
+            ],
+            hoverongaps=False,
+            hovertemplate="<b>%{y}</b><br>%{x}: <b>%{z} un.</b><extra></extra>",
+            colorbar=dict(
+                title=dict(text="Qtd", font=dict(color="#94a3b8")),
+                tickfont=dict(color="#94a3b8"),
+            ),
+        ))
+        fig.update_layout(
+            **_PLOTLY_LAYOUT,
+            height=max(420, len(pivot) * 30 + 90),
+            xaxis=dict(side="top", tickfont=dict(color="#e0e6ed")),
+            yaxis=dict(autorange="reversed", tickfont=dict(size=10, color="#e0e6ed")),
+            margin=dict(l=20, r=20, t=60, b=20),
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.caption(
+            f"Top 20 produtos por volume · Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
+        )
+
+    # ════════════════════════════════════════════════════════════════════════
+    # INFOGRÁFICO 2 — MAIS vs MENOS MOVIMENTADOS
+    # ════════════════════════════════════════════════════════════════════════
+    elif infografico == "📊 Mais vs Menos Movimentados":
+        st.markdown("### 📊 Produtos Mais vs Menos Movimentados")
+
+        grupos_disp = ["Todos"] + get_grupos_vendas()
+        grupo_sel = st.selectbox("Filtrar por grupo", grupos_disp, key="inf_grupo_sel")
+
+        df_mv = get_mais_menos_movimentados(
+            data_inicio_str, data_fim_str,
+            grupo_sel if grupo_sel != "Todos" else "Todos",
+        )
+
+        if df_mv.empty:
+            st.info("Nenhuma venda encontrada no período selecionado.")
+            return
+
+        def _short(s: str, n: int = 35) -> str:
+            return s[:n] + "…" if len(s) > n else s
+
+        top10_mais = df_mv.head(10).copy()
+        top10_menos = df_mv[df_mv["total_vendido"] > 0].tail(10).sort_values("total_vendido").copy()
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Bar(
+            y=[_short(p) for p in top10_mais["produto"]],
+            x=top10_mais["total_vendido"],
+            orientation="h",
+            name="Mais vendidos",
+            marker_color="#00d68f",
+            hovertemplate="<b>%{y}</b><br>Vendido: <b>%{x} un.</b><extra></extra>",
+            text=top10_mais["total_vendido"].astype(str),
+            textposition="outside",
+            textfont=dict(color="#00d68f", size=10),
+        ))
+
+        fig.add_trace(go.Bar(
+            y=[_short(p) for p in top10_menos["produto"]],
+            x=-top10_menos["total_vendido"],
+            orientation="h",
+            name="Menos vendidos",
+            marker_color="#ffa502",
+            customdata=top10_menos["total_vendido"].values,
+            hovertemplate="<b>%{y}</b><br>Vendido: <b>%{customdata} un.</b><extra></extra>",
+            text=top10_menos["total_vendido"].astype(str),
+            textposition="outside",
+            textfont=dict(color="#ffa502", size=10),
+        ))
+
+        _max_mais = int(top10_mais["total_vendido"].max()) if not top10_mais.empty else 1
+        _max_menos = int(top10_menos["total_vendido"].max()) if not top10_menos.empty else 1
+        max_val = max(_max_mais, _max_menos) * 1.35
+
+        fig.update_layout(
+            **_PLOTLY_LAYOUT,
+            barmode="overlay",
+            height=max(520, max(len(top10_mais), len(top10_menos)) * 32 + 130),
+            xaxis=dict(
+                range=[-max_val, max_val],
+                gridcolor="#1e293b",
+                title="← Menos vendidos   |   Mais vendidos →",
+                tickvals=[int(-max_val * f) for f in [1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75, -1] if abs(f) <= 1],
+                ticktext=[str(abs(int(-max_val * f))) for f in [1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75, -1] if abs(f) <= 1],
+            ),
+            yaxis=dict(tickfont=dict(size=9)),
+            legend=dict(**_DEFAULT_LEGEND, orientation="h", y=1.05),
+            shapes=[dict(
+                type="line", x0=0, x1=0,
+                y0=-0.5, y1=max(len(top10_mais), len(top10_menos)) - 0.5,
+                line=dict(color="#64748b", width=1.5),
+            )],
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.caption(
+            f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')} · Excluindo produtos sem vendas"
+        )
+
+    # ════════════════════════════════════════════════════════════════════════
+    # INFOGRÁFICO 3 — PRODUTOS PARADOS
+    # ════════════════════════════════════════════════════════════════════════
+    elif infografico == "💤 Produtos Parados":
+        st.markdown("### 💤 Produtos Parados")
+
+        dias_parado = st.slider(
+            "Parado há mais de X dias",
+            min_value=7, max_value=180, value=30, step=7,
+            format="%d dias", key="inf_dias_parado",
+        )
+
+        df_parado = get_produtos_parados(dias_parado)
+
+        if df_parado.empty:
+            st.success(f"✅ Nenhum produto parado há mais de {dias_parado} dias com estoque positivo!")
+            return
+
+        total_parados = len(df_parado)
+        valor_total = df_parado["valor_imobilizado"].sum()
+
+        st.markdown(
+            f'<div class="stat-row">'
+            f'<div class="stat-card"><div class="stat-value red">{total_parados}</div>'
+            f'<div class="stat-label">Produtos parados</div></div>'
+            f'<div class="stat-card"><div class="stat-value amber">'
+            f'R$ {valor_total:,.2f}'.replace(",", "X").replace(".", ",").replace("X", ".") +
+            f'</div><div class="stat-label">Valor imobilizado</div></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("")
+
+        df_display = df_parado[[
+            "produto", "grupo", "ultima_venda_fmt", "dias_parado", "qtd_estoque", "valor_imobilizado",
+        ]].copy()
+        df_display.columns = [
+            "Produto", "Grupo", "Último movimento", "Dias parado", "Qtd em estoque", "Valor imobilizado (R$)",
+        ]
+        df_display["Valor imobilizado (R$)"] = df_display["Valor imobilizado (R$)"].apply(
+            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+
+        def _style_parado(row):
+            bg = "background-color: rgba(239,68,68,0.15);" if row["Dias parado"] > 90 else ""
+            return [bg] * len(row)
+
+        styled = df_display.style.apply(_style_parado, axis=1)
+        st.dataframe(
+            styled, use_container_width=True, hide_index=True,
+            height=min(600, len(df_display) * 38 + 55),
+        )
+        st.caption(
+            f"{total_parados} produto(s) sem movimentação há mais de {dias_parado} dias · "
+            "Linhas em vermelho = parados há mais de 90 dias"
+        )
+
+    # ════════════════════════════════════════════════════════════════════════
+    # INFOGRÁFICO 4 — GIRO vs RUPTURA POR GRUPO
+    # ════════════════════════════════════════════════════════════════════════
+    elif infografico == "⚖️ Giro vs Ruptura por Grupo":
+        st.markdown("### ⚖️ Giro vs Ruptura por Grupo de Produto")
+
+        df_gr = get_giro_ruptura_grupos(data_inicio_str, data_fim_str)
+
+        if df_gr.empty:
+            st.info("Nenhum dado disponível para o período selecionado.")
+            return
+
+        med_giro = df_gr["taxa_giro"].median()
+        med_ruptura = df_gr["pct_ruptura"].median()
+
+        max_valor_est = df_gr["valor_estoque"].max() or 1
+        df_gr["bubble_size"] = (df_gr["valor_estoque"] / max_valor_est * 55 + 10).round(1)
+
+        fig = go.Figure()
+        for _, row in df_gr.iterrows():
+            cor = _get_color(row["grupo"])
+            fig.add_trace(go.Scatter(
+                x=[row["taxa_giro"]],
+                y=[row["pct_ruptura"]],
+                mode="markers+text",
+                marker=dict(
+                    size=row["bubble_size"],
+                    color=cor,
+                    opacity=0.78,
+                    line=dict(width=1.5, color="rgba(255,255,255,0.25)"),
+                ),
+                text=[row["grupo"][:22]],
+                textposition="top center",
+                textfont=dict(size=9, color="#e0e6ed"),
+                name=row["grupo"],
+                customdata=[[
+                    row["grupo"], row["taxa_giro"],
+                    row["pct_ruptura"], row["valor_estoque"],
+                ]],
+                hovertemplate=(
+                    "<b>%{customdata[0]}</b><br>"
+                    "Taxa de Giro: <b>%{customdata[1]:.3f}</b><br>"
+                    "% Ruptura: <b>%{customdata[2]:.1f}%</b><br>"
+                    "Valor em Estoque: <b>R$ %{customdata[3]:,.0f}</b>"
+                    "<extra></extra>"
+                ),
+            ))
+
+        max_giro = max(df_gr["taxa_giro"].max() * 1.2, 0.1)
+        max_rupt = max(df_gr["pct_ruptura"].max() * 1.2, 5.0)
+
+        fig.add_shape(
+            type="line", x0=med_giro, x1=med_giro, y0=0, y1=max_rupt,
+            line=dict(color="#475569", width=1.5, dash="dash"),
+        )
+        fig.add_shape(
+            type="line", x0=0, x1=max_giro, y0=med_ruptura, y1=med_ruptura,
+            line=dict(color="#475569", width=1.5, dash="dash"),
+        )
+
+        for txt, x_f, y_f, color in [
+            ("⭐ Ideal",    (med_giro + max_giro) / 2, med_ruptura / 2,          "#00d68f"),
+            ("🚨 Problema", med_giro / 2,              (med_ruptura + max_rupt) / 2, "#ef4444"),
+            ("📦 Excesso",  (med_giro + max_giro) / 2, (med_ruptura + max_rupt) / 2, "#ffa502"),
+            ("💤 Parado",   med_giro / 2,              med_ruptura / 2,          "#94a3b8"),
+        ]:
+            fig.add_annotation(
+                x=x_f, y=y_f, text=txt,
+                showarrow=False,
+                font=dict(size=14, color=color),
+                opacity=0.45,
+            )
+
+        fig.update_layout(
+            **_PLOTLY_LAYOUT,
+            height=540,
+            showlegend=False,
+            xaxis=dict(
+                title="Taxa de Giro (vendas / estoque)",
+                gridcolor="#1e293b",
+                range=[0, max_giro],
+                zeroline=False,
+            ),
+            yaxis=dict(
+                title="% Ruptura (dias sem estoque)",
+                gridcolor="#1e293b",
+                range=[0, max_rupt],
+                zeroline=False,
+            ),
+            margin=dict(l=20, r=20, t=40, b=60),
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        st.caption(
+            f"Mediana giro: {med_giro:.3f} · Mediana ruptura: {med_ruptura:.1f}% · "
+            f"Tamanho proporcional ao valor em estoque · "
+            f"Período: {data_inicio.strftime('%d/%m/%Y')} a {data_fim.strftime('%d/%m/%Y')}"
+        )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -3791,7 +4335,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos"])
+    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12, t13 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📊 Infográficos"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -5051,6 +5595,12 @@ if has_mestre:
     # ══════════════════════════════════════════════════════════════════════════
     with t12:
         build_principios_ativos_tab(df_mestre, df_pa)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 13 — INFOGRÁFICOS
+    # ══════════════════════════════════════════════════════════════════════════
+    with t13:
+        build_infograficos_tab()
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────
