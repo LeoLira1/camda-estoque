@@ -5324,15 +5324,7 @@ if has_mestre:
                                 st.rerun()
 
                     if item_id in st.session_state.contagem_div_open:
-                        fc0, fc1, fc2, fc3 = st.columns([1.5, 3, 1.5, 1])
-                        with fc0:
-                            tipo_div_val = st.radio(
-                                "Tipo",
-                                ["⬇️ Falta", "⬆️ Sobra"],
-                                key=f"ct_tipo_{item_id}",
-                                horizontal=False,
-                            )
-                            tipo_div_str = "sobra" if "Sobra" in tipo_div_val else "falta"
+                        fc1, fc2, fc3 = st.columns([3, 1.5, 1])
                         with fc1:
                             motivo_val = st.text_input(
                                 "Motivo da divergência",
@@ -5341,16 +5333,17 @@ if has_mestre:
                             )
                         with fc2:
                             qty_val = st.number_input(
-                                "Qtd divergindo",
-                                min_value=0, value=0, step=1,
+                                "Qtd divergindo (− falta / + sobra)",
+                                min_value=-9999, max_value=9999, value=0, step=1,
                                 key=f"ct_qtd_{item_id}"
                             )
                         with fc3:
                             st.markdown("<div style='margin-top:26px'>", unsafe_allow_html=True)
                             if st.button("Confirmar", key=f"ct_conf_{item_id}", type="primary", use_container_width=True):
+                                tipo_div_str = "sobra" if qty_val >= 0 else "falta"
                                 ok = atualizar_item_contagem(
                                     item_id, "divergencia",
-                                    motivo_val.strip(), int(qty_val),
+                                    motivo_val.strip(), abs(int(qty_val)),
                                     codigo=_cod, qtd_sistema=_qtd_sis,
                                     tipo_div=tipo_div_str
                                 )
