@@ -3879,7 +3879,7 @@ def build_infograficos_tab():
     data_fim_str = data_fim.isoformat()
 
     # ── Seletor de infográfico ────────────────────────────────────────────
-    st.markdown("---")
+    st.markdown("<div style='margin:4px 0 2px'></div>", unsafe_allow_html=True)
     infografico = st.selectbox(
         "Infográfico",
         [
@@ -3891,7 +3891,7 @@ def build_infograficos_tab():
         key="inf_selector",
         label_visibility="collapsed",
     )
-    st.markdown("---")
+    st.markdown("<hr style='margin:4px 0;border-color:#1e293b'>", unsafe_allow_html=True)
 
     # ════════════════════════════════════════════════════════════════════════
     # INFOGRÁFICO 1 — MAPA DE CALOR
