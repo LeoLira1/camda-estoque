@@ -3893,8 +3893,8 @@ def build_infograficos_tab():
                 tickfont=dict(color="#94a3b8"),
             ),
         ))
+        fig.update_layout(**_PLOTLY_LAYOUT)
         fig.update_layout(
-            **_PLOTLY_LAYOUT,
             height=max(420, len(pivot) * 30 + 90),
             xaxis=dict(side="top", tickfont=dict(color="#e0e6ed")),
             yaxis=dict(autorange="reversed", tickfont=dict(size=10, color="#e0e6ed")),
@@ -4114,8 +4114,8 @@ def build_infograficos_tab():
                 opacity=0.45,
             )
 
+        fig.update_layout(**_PLOTLY_LAYOUT)
         fig.update_layout(
-            **_PLOTLY_LAYOUT,
             height=540,
             showlegend=False,
             xaxis=dict(
