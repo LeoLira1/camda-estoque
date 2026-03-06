@@ -2702,14 +2702,18 @@ def upload_parcial_estoque(records: list) -> tuple:
         if update_data:
             conn.executemany("""
                 UPDATE estoque_mestre SET
-                    qtd_sistema=?, qtd_fisica=?, diferenca=?, status=?, ultima_contagem=?
+                    qtd_sistema=?, qtd_fisica=?, diferenca=?,
+                    status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
+                    ultima_contagem=?
                 WHERE codigo=?
             """, update_data)
 
         if update_nota_data:
             conn.executemany("""
                 UPDATE estoque_mestre SET
-                    qtd_sistema=?, qtd_fisica=?, diferenca=?, nota=?, status=?, ultima_contagem=?
+                    qtd_sistema=?, qtd_fisica=?, diferenca=?, nota=?,
+                    status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
+                    ultima_contagem=?
                 WHERE codigo=?
             """, update_nota_data)
 
