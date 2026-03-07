@@ -2250,13 +2250,15 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 linecolor="rgba(255,255,255,0.15)",
             ),
             yaxis=dict(
-                title="Volume (L / kg / un)",
+                title=dict(
+                    text="Volume (L / kg / un)",
+                    font=dict(size=11, color="#9CA3AF"),
+                ),
                 showgrid=True,
                 gridcolor="rgba(255,255,255,0.05)",
                 zeroline=True,
                 zerolinecolor="rgba(255,255,255,0.15)",
                 tickfont=dict(size=10, color="#9CA3AF"),
-                titlefont=dict(size=11, color="#9CA3AF"),
             ),
             legend=dict(
                 orientation="h",
