@@ -2554,8 +2554,9 @@ def upload_mestre(records: list) -> tuple:
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
 
         # Preservar divergências existentes antes de limpar o banco
-        existing_div = {row[0]: row[1] for row in conn.execute(
-            "SELECT codigo, status FROM estoque_mestre WHERE status IN ('falta', 'sobra')"
+        # Salva status E diferenca para recalcular qtd_fisica após o INSERT
+        existing_div = {row[0]: (row[1], row[2]) for row in conn.execute(
+            "SELECT codigo, status, diferenca FROM estoque_mestre WHERE status IN ('falta', 'sobra')"
         ).fetchall()}
 
         conn.execute("DELETE FROM estoque_mestre")
@@ -2572,12 +2573,17 @@ def upload_mestre(records: list) -> tuple:
             for r in records
         ])
 
-        # Restaurar status de divergência para produtos que já estavam divergentes
+        # Restaurar status e diferenca de divergência para produtos que já estavam divergentes.
+        # qtd_fisica é recalculado como qtd_sistema + diferenca preservada.
         # (só sobrescreve se o novo upload não trouxe uma nova divergência)
         if existing_div:
             conn.executemany(
-                "UPDATE estoque_mestre SET status = ? WHERE codigo = ? AND status = 'ok'",
-                [(status, codigo) for codigo, status in existing_div.items()]
+                """UPDATE estoque_mestre
+                   SET status = ?,
+                       diferenca = ?,
+                       qtd_fisica = qtd_sistema + ?
+                   WHERE codigo = ? AND status = 'ok'""",
+                [(status, dif, dif, codigo) for codigo, (status, dif) in existing_div.items()]
             )
 
         n_div = conn.execute(
@@ -2614,9 +2620,11 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
 
         novos_data, update_data = [], []
         for r in records:
+            # qtd_sistema aparece duas vezes: uma para atualizar, outra para o CASE de qtd_fisica
             row_data = (
-                r["produto"], r["categoria"], r["qtd_sistema"], r["qtd_fisica"],
-                r["diferenca"], r["nota"], r["status"], now, r["codigo"]
+                r["produto"], r["categoria"], r["qtd_sistema"],
+                r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                r["nota"], r["status"], now, r["codigo"]
             )
             if r["codigo"] in existing:
                 update_data.append(row_data)
@@ -2628,12 +2636,16 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
                 ))
 
         # BATCH updates e inserts
-        # Preserva status 'falta'/'sobra' existente — só sai de divergência por ação manual
+        # Preserva status, diferenca e qtd_fisica para produtos com divergência existente.
+        # qtd_fisica é recalculado como novo qtd_sistema + diferenca preservada, mantendo
+        # a quantidade de falta/sobra anotada independente de novos uploads.
         if update_data:
             conn.executemany("""
                 UPDATE estoque_mestre SET
-                    produto=?, categoria=?, qtd_sistema=?, qtd_fisica=?,
-                    diferenca=?, nota=?,
+                    produto=?, categoria=?, qtd_sistema=?,
+                    qtd_fisica = CASE WHEN status IN ('falta', 'sobra') THEN ? + diferenca ELSE ? END,
+                    diferenca = CASE WHEN status IN ('falta', 'sobra') THEN diferenca ELSE ? END,
+                    nota=?,
                     status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
                     ultima_contagem=?
                 WHERE codigo=?
@@ -2688,15 +2700,16 @@ def upload_parcial_estoque(records: list) -> tuple:
         for r in records:
             if r["codigo"] in existing:
                 if r["nota"]:
-                    # Tem anotação: atualiza nota também
+                    # Tem anotação explícita: aplica nova divergência (sobrescreve)
                     update_nota_data.append((
                         r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
                         r["nota"], r["status"], now, r["codigo"],
                     ))
                 else:
-                    # Sem anotação: não toca na nota existente no banco
+                    # Sem anotação: preserva diferenca/qtd_fisica existentes se há divergência
+                    # qtd_sistema aparece duas vezes: atualiza e serve para recalcular qtd_fisica
                     update_data.append((
-                        r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                        r["qtd_sistema"], r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
                         r["status"], now, r["codigo"],
                     ))
             else:
@@ -2709,7 +2722,9 @@ def upload_parcial_estoque(records: list) -> tuple:
         if update_data:
             conn.executemany("""
                 UPDATE estoque_mestre SET
-                    qtd_sistema=?, qtd_fisica=?, diferenca=?,
+                    qtd_sistema=?,
+                    qtd_fisica = CASE WHEN status IN ('falta', 'sobra') THEN ? + diferenca ELSE ? END,
+                    diferenca = CASE WHEN status IN ('falta', 'sobra') THEN diferenca ELSE ? END,
                     status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
                     ultima_contagem=?
                 WHERE codigo=?
