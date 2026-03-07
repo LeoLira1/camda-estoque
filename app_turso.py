@@ -2132,7 +2132,8 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         data_prog_fim = st.date_input("Até", value=_hoje_prog, key="pa_prog_df")
 
     def _prog_estoque() -> "pd.DataFrame":
-        """Retorna o saldo de estoque (qtd_estoque) por PA por data de upload."""
+        """Retorna o saldo de estoque (qtd_estoque) por PA por data de upload,
+        sempre incluindo o saldo atual do estoque_mestre como ponto final."""
         try:
             # Pega o último registro por produto/data (caso haja múltiplos uploads no dia)
             rows = get_db().execute("""
@@ -2146,11 +2147,9 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                  ORDER BY data_upload
             """, (data_prog_ini.isoformat(), data_prog_fim.isoformat())).fetchall()
         except Exception:
-            return pd.DataFrame()
-        if not rows:
-            return pd.DataFrame()
+            rows = []
         recs = []
-        for produto, qtd, dia in rows:
+        for produto, qtd, dia in (rows or []):
             pa = _lookup_pa(str(produto))
             if pa == "Não identificado" or pa not in top20_pas:
                 continue
@@ -2158,6 +2157,23 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             kg2 = extrair_kg(str(produto)) if litros is None else None
             vol = (qtd * litros) if litros is not None else ((qtd * kg2) if kg2 is not None else qtd)
             recs.append({"dia": dia, "principio_ativo": pa, "volume": vol})
+
+        # Sempre adiciona o ponto de hoje com o saldo real do estoque_mestre
+        # (fonte autoritativa — garante que o gráfico termine no valor correto)
+        hoje = datetime.now(tz=_BRT).date()
+        if data_prog_ini <= hoje <= data_prog_fim:
+            hoje_str = hoje.isoformat()
+            # Remove eventuais entradas de hoje do vendas_historico para evitar duplicata
+            recs = [r for r in recs if r["dia"] != hoje_str]
+            for _, agg_row in df_agg[df_agg["principio_ativo"].isin(top20_pas)].iterrows():
+                pa = agg_row["principio_ativo"]
+                litros = agg_row["total_litros"]
+                kg = agg_row["total_kg"]
+                total = agg_row["total"]
+                vol = (litros if pd.notna(litros) and litros > 0
+                       else (kg if pd.notna(kg) and kg > 0 else total))
+                recs.append({"dia": hoje_str, "principio_ativo": pa, "volume": vol})
+
         if not recs:
             return pd.DataFrame()
         df = pd.DataFrame(recs)
