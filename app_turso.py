@@ -2099,14 +2099,14 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 else:
                     st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
 
-    # ── 14. Gráfico: Progresso de Vendas & Reposição por P.A. ─────────────────
+    # ── 14. Gráfico: Evolução do Estoque por P.A. ─────────────────────────────
     st.markdown("---")
     st.markdown("""
     <div style="display:flex;align-items:center;gap:12px;margin:24px 0 12px 0">
       <div style="width:6px;height:32px;border-radius:3px;
                   background:linear-gradient(180deg,#00E5A0,#00C4FF);flex-shrink:0"></div>
       <div style="font-size:18px;font-weight:800;color:#F9FAFB">
-        📈 Progresso de Vendas &amp; Reposição por P.A.
+        📉 Evolução do Estoque por P.A.
       </div>
     </div>
     """, unsafe_allow_html=True)
@@ -2121,7 +2121,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     with col_tipo_prog:
         tipo_prog = st.radio(
             "Exibir",
-            ["📦 Vendas", "🔄 Reposição", "📊 Ambos"],
+            ["📦 Estoque", "🔄 Reposição", "📊 Ambos"],
             key="pa_prog_tipo",
             horizontal=True,
             label_visibility="visible",
@@ -2131,13 +2131,18 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     with col_df_prog:
         data_prog_fim = st.date_input("Até", value=_hoje_prog, key="pa_prog_df")
 
-    def _prog_vendas() -> "pd.DataFrame":
+    def _prog_estoque() -> "pd.DataFrame":
+        """Retorna o saldo de estoque (qtd_estoque) por PA por data de upload."""
         try:
+            # Pega o último registro por produto/data (caso haja múltiplos uploads no dia)
             rows = get_db().execute("""
-                SELECT produto, SUM(qtd_vendida) AS qtd, data_upload AS dia
-                  FROM vendas_historico
+                SELECT produto, qtd_estoque AS qtd, data_upload AS dia
+                  FROM vendas_historico v1
                  WHERE data_upload >= ? AND data_upload <= ?
-                 GROUP BY produto, data_upload
+                   AND id = (
+                       SELECT MAX(id) FROM vendas_historico v2
+                        WHERE v2.produto = v1.produto AND v2.data_upload = v1.data_upload
+                   )
                  ORDER BY data_upload
             """, (data_prog_ini.isoformat(), data_prog_fim.isoformat())).fetchall()
         except Exception:
@@ -2189,13 +2194,13 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         df["dia"] = pd.to_datetime(df["dia"])
         return df
 
-    show_v = "Vendas" in tipo_prog or "Ambos" in tipo_prog
+    show_v = "Estoque" in tipo_prog or "Ambos" in tipo_prog
     show_r = "Reposição" in tipo_prog or "Ambos" in tipo_prog
-    df_pv = _prog_vendas() if show_v else pd.DataFrame()
+    df_pv = _prog_estoque() if show_v else pd.DataFrame()
     df_pr = _prog_reposicao() if show_r else pd.DataFrame()
 
     if df_pv.empty and df_pr.empty:
-        st.info("Nenhum dado de vendas ou reposição disponível no período selecionado.")
+        st.info("Nenhum dado de estoque ou reposição disponível no período selecionado.")
     else:
         fig_prog = go.Figure()
 
@@ -2204,7 +2209,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             r, g, b = int(cor[1:3], 16), int(cor[3:5], 16), int(cor[5:7], 16)
 
             if show_v and not df_pv.empty:
-                _d = df_pv[df_pv["principio_ativo"] == pa]
+                _d = df_pv[df_pv["principio_ativo"] == pa].sort_values("dia")
                 if not _d.empty:
                     fig_prog.add_trace(go.Scatter(
                         x=_d["dia"],
@@ -2221,16 +2226,16 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                     ))
 
             if show_r and not df_pr.empty:
-                _d = df_pr[df_pr["principio_ativo"] == pa]
+                _d = df_pr[df_pr["principio_ativo"] == pa].sort_values("dia")
                 if not _d.empty:
                     _lbl = f"{pa} ↺" if show_v else pa
                     fig_prog.add_trace(go.Scatter(
                         x=_d["dia"],
                         y=_d["volume"],
                         name=_lbl,
-                        mode="lines+markers",
-                        line=dict(color=cor, width=2, dash="dash"),
-                        marker=dict(size=5, color=cor, symbol="diamond"),
+                        mode="markers",
+                        marker=dict(size=10, color=cor, symbol="triangle-up",
+                                    line=dict(width=1, color="#ffffff")),
                         legendgroup=pa,
                         showlegend=not show_v,
                         hovertemplate=f"<b>{pa} ↺ repos.</b><br>%{{x|%d/%m}}: %{{y:.1f}}<extra></extra>",
@@ -2251,7 +2256,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             ),
             yaxis=dict(
                 title=dict(
-                    text="Volume (L / kg / un)",
+                    text="Estoque (L / kg / un)",
                     font=dict(size=11, color="#9CA3AF"),
                 ),
                 showgrid=True,
