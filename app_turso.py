@@ -1423,6 +1423,65 @@ def upsert_principio_ativo(produto: str, principio_ativo: str, categoria: str = 
         return False
 
 
+def _auto_cache_principios_ativos(produtos: list, conn) -> int:
+    """Busca automaticamente o princípio ativo de cada produto via lookup fuzzy e
+    persiste no banco caso ainda não exista registro exato para aquele nome.
+
+    Garante que um produto que volta ao estoque (após ter esgotado) já encontre
+    seu P.A. salvo sem precisar redigitar.
+
+    Args:
+        produtos: lista de nomes de produtos (strings) a verificar.
+        conn: conexão com o banco de dados aberta.
+
+    Returns:
+        Número de novos mapeamentos salvos.
+    """
+    if not produtos:
+        return 0
+    try:
+        # Nomes já persistidos no banco (chaves exatas — uppercase)
+        rows = conn.execute(
+            "SELECT produto, principio_ativo, categoria FROM principios_ativos"
+        ).fetchall()
+        pa_db: dict[str, tuple] = {
+            str(r[0]).strip().upper(): (str(r[1]).strip(), str(r[2]).strip())
+            for r in rows
+        }
+
+        # Mapa combinado: Excel (catálogo) + banco (prioridade ao banco)
+        mapa_excel = carregar_mapa_produtos_camda()
+        mapa_combinado: dict[str, str] = {**mapa_excel}
+        for k, (pa, _) in pa_db.items():
+            mapa_combinado[k] = pa
+
+        if not mapa_combinado:
+            return 0
+
+        _idx = _build_pa_lookup(mapa_combinado)
+
+        inserir: list[tuple] = []
+        for produto in produtos:
+            nome_u = str(produto).strip().upper()
+            if not nome_u or nome_u in ("NAN", "NONE"):
+                continue
+            # Já existe registro exato → não sobrescrever
+            if nome_u in pa_db:
+                continue
+            pa = _lookup_pa_from_index(produto, *_idx)
+            if pa:
+                inserir.append((nome_u, pa, ""))
+
+        if inserir:
+            conn.executemany(
+                "INSERT INTO principios_ativos (produto, principio_ativo, categoria) VALUES (?, ?, ?)",
+                inserir,
+            )
+        return len(inserir)
+    except Exception:
+        return 0
+
+
 def get_principios_ativos() -> pd.DataFrame:
     """Retorna DataFrame com mapeamento produto ↔ princípio ativo."""
     try:
@@ -2594,6 +2653,9 @@ def upload_mestre(records: list) -> tuple:
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, [now, "MESTRE", "", len(records), len(records), 0, n_div])
 
+        # Auto-cachear princípios ativos para todos os produtos do mestre
+        _auto_cache_principios_ativos([r["produto"] for r in records], conn)
+
         conn.commit()
         sync_db()  # Sync UMA VEZ no final
         return (True, f"✅ Mestre: {len(records)} produtos ({n_div} divergências)")
@@ -2657,6 +2719,8 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
                     (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, novos_data)
+            # Auto-cachear P.A. para produtos que entraram ou voltaram ao estoque
+            _auto_cache_principios_ativos([r[1] for r in novos_data], conn)
 
         # Reposição loja
         n_repo = _detectar_reposicao_batch(records, conn, now)
@@ -2745,6 +2809,8 @@ def upload_parcial_estoque(records: list) -> tuple:
                     (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, novos_data)
+            # Auto-cachear P.A. para produtos que entraram ou voltaram ao estoque
+            _auto_cache_principios_ativos([r[1] for r in novos_data], conn)
 
         n_atualizados = len(update_data) + len(update_nota_data)
         n_div = sum(1 for r in records if r["status"] != "ok")
