@@ -362,14 +362,15 @@ def sync_quantidades_from_estoque(conn) -> dict:
             continue
 
         if len(posicoes) > 1:
-            multiplas.append(nome)
+            # Não toca quantidades — distribuição por posição é manual
+            multiplas.append({"nome": nome, "posicoes": posicoes, "total_estoque": qtd_estoque})
+            continue
 
-        for pos_key in posicoes:
-            conn.execute(
-                "UPDATE mapa_posicoes SET quantidade = ?, atualizado = ? WHERE pos_key = ?",
-                (qtd_estoque, now, pos_key),
-            )
-            atualizadas += 1
+        conn.execute(
+            "UPDATE mapa_posicoes SET quantidade = ?, atualizado = ? WHERE pos_key = ?",
+            (qtd_estoque, now, posicoes[0]),
+        )
+        atualizadas += 1
 
     conn.commit()
     return {"atualizadas": atualizadas, "sem_match": sem_match, "multiplas": multiplas}

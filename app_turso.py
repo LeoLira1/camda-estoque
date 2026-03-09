@@ -3315,10 +3315,15 @@ def render_mapa_visual(conn):
             else:
                 st.info("Nenhuma posição foi atualizada — nenhum produto do mapa encontrado no estoque.")
             if mult:
+                linhas = "\n".join(
+                    f"- **{m['nome']}** — total no estoque: **{m['total_estoque']} un** "
+                    f"| posições: {', '.join(m['posicoes'])}"
+                    for m in mult
+                )
                 st.warning(
-                    f"**{len(mult)} produto(s) em múltiplas posições** — a quantidade total do estoque "
-                    f"foi aplicada em cada posição. Edite manualmente para distribuir:\n\n"
-                    + "\n".join(f"- {nome}" for nome in mult)
+                    f"**{len(mult)} produto(s) em múltiplas posições — não sincronizados automaticamente.**\n\n"
+                    f"Distribua a quantidade manualmente entre as posições usando ✏️ Editar palete:\n\n"
+                    + linhas
                 )
             if sem:
                 st.warning(
