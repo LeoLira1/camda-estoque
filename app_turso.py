@@ -3304,26 +3304,24 @@ def render_mapa_visual(conn):
             "Atualiza a quantidade de cada palete no mapa com o valor atual de "
             "**qtd_sistema** do estoque mestre, casando pelo nome do produto."
         )
+        st.caption(
+            "Produtos em **múltiplas posições** têm a quantidade do estoque "
+            "distribuída proporcionalmente às quantidades já registradas em cada palete "
+            "(se todas zeradas, divide igualmente)."
+        )
         if st.button("🔄 Sincronizar agora", key="btn_sync_estoque"):
             resultado = sync_quantidades_from_estoque(conn)
             sync_db()
-            n = resultado["atualizadas"]
+            n   = resultado["atualizadas"]
             sem = resultado["sem_match"]
-            mult = resultado["multiplas"]
             if n > 0:
                 st.success(f"✅ {n} posição(ões) atualizada(s) com os valores do estoque.")
             else:
                 st.info("Nenhuma posição foi atualizada — nenhum produto do mapa encontrado no estoque.")
-            if mult:
-                st.warning(
-                    f"**{len(mult)} produto(s) em múltiplas posições** — a quantidade total do estoque "
-                    f"foi aplicada em cada posição. Edite manualmente para distribuir:\n\n"
-                    + "\n".join(f"- {nome}" for nome in mult)
-                )
             if sem:
                 st.warning(
-                    f"**{len(sem)} produto(s) do mapa sem correspondência no estoque** "
-                    f"(nome diferente ou não cadastrado) — quantidade não alterada:\n\n"
+                    f"**{len(sem)} produto(s) sem correspondência no estoque** "
+                    f"(verifique o nome) — quantidade não alterada:\n\n"
                     + "\n".join(f"- {nome}" for nome in sem)
                 )
             if n > 0:
