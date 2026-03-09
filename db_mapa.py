@@ -306,71 +306,103 @@ def delete_produto_mapa(conn, produto_id: str):
     conn.commit()
 
 
+def _distribuir_proporcional(total: float, qtd_atuais: list) -> list:
+    """
+    Distribui `total` entre N posições proporcionalmente às quantidades
+    atuais de cada posição.  Se todas estiverem zeradas/None, divide
+    igualmente.  A soma dos valores retornados é sempre igual a `total`
+    (ajuste no maior palete).
+    """
+    n = len(qtd_atuais)
+    pesos = [max(float(q or 0), 0) for q in qtd_atuais]
+    soma_pesos = sum(pesos)
+
+    if soma_pesos == 0:
+        # Divisão igualitária
+        base   = int(total) // n
+        resto  = int(total) % n
+        result = [float(base + (1 if i < resto else 0)) for i in range(n)]
+    else:
+        proporcoes = [p / soma_pesos for p in pesos]
+        result     = [round(total * prop, 2) for prop in proporcoes]
+        # Corrige arredondamento para manter soma exata
+        diff = round(total - sum(result), 2)
+        if diff:
+            idx_max = result.index(max(result))
+            result[idx_max] = round(result[idx_max] + diff, 2)
+
+    return result
+
+
 def sync_quantidades_from_estoque(conn) -> dict:
     """
     Atualiza a quantidade de cada posição do mapa com o valor de
     estoque_mestre.qtd_sistema, casando pelo nome do produto
     (case-insensitive).
 
+    Produtos em múltiplas posições têm sua quantidade distribuída
+    proporcionalmente às quantidades já registradas em cada posição
+    (ou igualmente se todas estiverem zeradas).
+
     Retorna:
         {
-            "atualizadas":   int,   # posições atualizadas com sucesso
-            "sem_match":     list,  # nomes de produtos do mapa sem par no estoque
-            "multiplas":     list,  # produtos em >1 posição (qty total aplicada em todas)
+            "atualizadas": int,   # posições atualizadas com sucesso
+            "sem_match":   list,  # nomes sem correspondência no estoque
         }
     """
     ensure_mapa_tables(conn)
 
-    # 1. Busca todos os produtos do mapa com suas posições
+    # 1. Busca todos os produtos do mapa com suas posições e quantidades atuais
     mapa_rows = conn.execute(
         """
-        SELECT mp.produto_id, mp.nome, p.pos_key
+        SELECT mp.produto_id, mp.nome, p.pos_key, p.quantidade
         FROM   mapa_produtos mp
         JOIN   mapa_posicoes p ON p.produto_id = mp.produto_id
         WHERE  p.produto_id IS NOT NULL
+        ORDER  BY mp.produto_id, p.pos_key
         """
     ).fetchall()
 
     if not mapa_rows:
-        return {"atualizadas": 0, "sem_match": [], "multiplas": []}
+        return {"atualizadas": 0, "sem_match": []}
 
-    # 2. Busca todas as quantidades do estoque_mestre (indexado pelo nome em lowercase)
+    # 2. Busca quantidades do estoque_mestre indexadas por nome em lowercase
     estoque_rows = conn.execute(
         "SELECT produto, qtd_sistema FROM estoque_mestre WHERE produto IS NOT NULL"
     ).fetchall()
-    estoque_map = {r[0].strip().lower(): r[1] for r in estoque_rows if r[0]}
+    estoque_map = {r[0].strip().lower(): (r[1] or 0) for r in estoque_rows if r[0]}
 
-    # 3. Agrupa posições por produto_id
+    # 3. Agrupa posições e quantidades por produto_id
     from collections import defaultdict
-    posicoes_por_produto: dict = defaultdict(list)
-    nome_por_produto: dict = {}
-    for pid, nome, pos_key in mapa_rows:
-        posicoes_por_produto[pid].append(pos_key)
+    posicoes_por_produto: dict  = defaultdict(list)   # pid → [(pos_key, qtd_atual)]
+    nome_por_produto:     dict  = {}
+    for pid, nome, pos_key, qtd in mapa_rows:
+        posicoes_por_produto[pid].append((pos_key, qtd))
         nome_por_produto[pid] = nome
 
     atualizadas = 0
-    sem_match: list = []
-    multiplas: list = []
+    sem_match:   list = []
     now = datetime.now(tz=_BRT).isoformat()
 
     for pid, posicoes in posicoes_por_produto.items():
-        nome = nome_por_produto[pid]
+        nome        = nome_por_produto[pid]
         qtd_estoque = estoque_map.get(nome.strip().lower())
 
         if qtd_estoque is None:
             sem_match.append(nome)
             continue
 
-        if len(posicoes) > 1:
-            # Não toca quantidades — distribuição por posição é manual
-            multiplas.append({"nome": nome, "posicoes": posicoes, "total_estoque": qtd_estoque})
-            continue
+        pos_keys   = [p[0] for p in posicoes]
+        qtd_atuais = [p[1] for p in posicoes]
 
-        conn.execute(
-            "UPDATE mapa_posicoes SET quantidade = ?, atualizado = ? WHERE pos_key = ?",
-            (qtd_estoque, now, posicoes[0]),
-        )
-        atualizadas += 1
+        novas_qtds = _distribuir_proporcional(qtd_estoque, qtd_atuais)
+
+        for pos_key, nova_qtd in zip(pos_keys, novas_qtds):
+            conn.execute(
+                "UPDATE mapa_posicoes SET quantidade = ?, atualizado = ? WHERE pos_key = ?",
+                (nova_qtd, now, pos_key),
+            )
+            atualizadas += 1
 
     conn.commit()
-    return {"atualizadas": atualizadas, "sem_match": sem_match, "multiplas": multiplas}
+    return {"atualizadas": atualizadas, "sem_match": sem_match}
