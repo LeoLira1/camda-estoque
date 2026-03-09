@@ -3239,7 +3239,7 @@ def render_mapa_visual(conn):
             mover_palete(conn, _from.strip(), _to.strip())
             sync_db()
             st.toast(f"↔️ **{_from}** → **{_to}**", icon="✅")
-        except ValueError as _e:
+        except Exception as _e:
             st.toast(str(_e), icon="❌")
         st.rerun()
 
