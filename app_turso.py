@@ -3239,39 +3239,96 @@ def render_mapa_visual(conn):
             if loc["rua"] == rua and loc["face"] == face
         }
 
-    # ── Drag-and-drop: processa sinal antes de renderizar ─────────────────────
-    _dnd_val = st.session_state.get("rack_dnd_input", "")
-    if _dnd_val and "|" in _dnd_val:
-        _dnd_src, _dnd_tgt = _dnd_val.split("|", 1)
-        st.session_state["rack_dnd_input"] = ""
-        try:
-            mover_palete(conn, _dnd_src, _dnd_tgt)
-            sync_db()
-            st.toast(f"✅ {_dnd_src} → {_dnd_tgt}", icon="↔️")
-        except Exception as _dnd_e:
-            st.error(f"Erro ao mover: {_dnd_e}")
-        st.rerun()
-
-    # ── Grid visual do rack (HTML) ────────────────────────────────────────────
+    # ── Grid interativo (dois cliques para mover) ─────────────────────────────
     n_occ = len(paletes)
     st.markdown(
         f"**Rack {rua}-{face}** — {n_occ} de 52 posições ocupadas "
         f"({round(n_occ / 52 * 100)}%)"
     )
-    import streamlit.components.v1 as _stc
-    _stc.html(_rack_html(paletes, rua, face, hl_keys), height=295, scrolling=False)
 
-    # Receptor oculto do drag-and-drop (o JS do iframe escreve aqui)
-    st.markdown(
-        """<style>
-        div[data-testid="stTextInput"]:has(input[placeholder="__rack_dnd__"]){
-            position:absolute;height:0;overflow:hidden;opacity:0;pointer-events:none;
-        }
-        </style>""",
-        unsafe_allow_html=True,
-    )
-    st.text_input("dnd", placeholder="__rack_dnd__", key="rack_dnd_input",
-                  label_visibility="collapsed")
+    # CSS: reduz padding dos botões do grid para caber 13 colunas
+    st.markdown("""<style>
+    div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button {
+        padding: 3px 1px;
+        font-size: 0.52rem;
+        min-height: 46px;
+        line-height: 1.25;
+        white-space: pre-wrap;
+    }
+    </style>""", unsafe_allow_html=True)
+
+    _picked = st.session_state.get("rack_picked_pk")
+    if _picked:
+        _p_info = paletes.get(_picked) or get_todos_paletes(conn).get(_picked)
+        _p_nome = _p_info["produto"] if _p_info else _picked
+        st.info(
+            f"📌 **{_p_nome}** selecionado — clique no destino para mover "
+            f"(ou clique nele de novo para desmarcar)"
+        )
+    else:
+        st.caption("👆 Clique em um palete para selecioná-lo, depois clique onde deseja movê-lo.")
+
+    # Cabeçalho C1…C13
+    _hcols = st.columns([0.55] + [1.0] * 13)
+    for _ci in range(1, 14):
+        _hcols[_ci].markdown(
+            f"<div style='text-align:center;font-size:0.6rem;color:#64748b;'>C{_ci}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Linhas N4 → N1
+    for _nivel in range(4, 0, -1):
+        _rcols = st.columns([0.55] + [1.0] * 13)
+        _rcols[0].markdown(
+            f"<div style='text-align:right;font-size:0.65rem;color:#64748b;"
+            f"padding-top:10px;padding-right:4px;'>N{_nivel}</div>",
+            unsafe_allow_html=True,
+        )
+        for _ci in range(1, 14):
+            _pk = f"{rua}-{face}-C{_ci}-N{_nivel}"
+            _col = _rcols[_ci]
+            _is_picked = _pk == _picked
+            _is_hl     = _pk in hl_keys
+            if _pk in paletes:
+                _info  = paletes[_pk]
+                _nc    = short_name(_info.get("produto", ""))
+                _short = (_nc[:5] + "…") if len(_nc) > 5 else _nc
+                _qty   = _info.get("quantidade")
+                _qs    = str(int(_qty)) if (_qty is not None and _qty == int(_qty)) else (str(_qty) if _qty is not None else "")
+                _icon  = "📌" if _is_picked else ("🔍" if _is_hl else "")
+                _lbl   = f"{_icon}{_short}\n{_qs}"
+                if _col.button(_lbl, key=f"gc_{_pk}", use_container_width=True):
+                    if _picked and _picked != _pk:
+                        try:
+                            mover_palete(conn, _picked, _pk)
+                            sync_db()
+                            st.session_state.rack_picked_pk = None
+                            st.toast("✅ Palete movido!", icon="↔️")
+                        except Exception as _me:
+                            st.error(str(_me))
+                        st.rerun()
+                    else:
+                        st.session_state.rack_picked_pk = None if _is_picked else _pk
+                        st.rerun()
+            else:
+                if _col.button("·", key=f"gc_{_pk}", use_container_width=True):
+                    if _picked and _picked != _pk:
+                        try:
+                            mover_palete(conn, _picked, _pk)
+                            sync_db()
+                            st.session_state.rack_picked_pk = None
+                            st.toast("✅ Palete movido!", icon="↔️")
+                        except Exception as _me:
+                            st.error(str(_me))
+                        st.rerun()
+                    else:
+                        st.session_state.rack_picked_pk = None
+                        st.rerun()
+
+    # Mapa visual (somente leitura) para referência
+    with st.expander("🗺️ Ver mapa visual do rack (somente leitura)", expanded=False):
+        import streamlit.components.v1 as _stc
+        _stc.html(_rack_html(paletes, rua, face, hl_keys), height=295, scrolling=False)
 
     # ── Mover palete ──────────────────────────────────────────────────────────
     _ocp_this = sorted(
@@ -3280,7 +3337,7 @@ def render_mapa_visual(conn):
     _ocp_all = sorted(
         [f"{k} — {v['produto']}" for k, v in get_todos_paletes(conn).items()]
     )
-    with st.expander("↔️ Mover palete", expanded=False):
+    with st.expander("↔️ Mover palete para outro rack", expanded=False):
         _use_all = st.checkbox("Mostrar paletes de todos os racks", key="mv_all_racks",
                                value=not bool(_ocp_this))
         _opts = _ocp_all if (_use_all or not _ocp_this) else _ocp_this
