@@ -3075,7 +3075,11 @@ def sort_categorias(cats):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -> str:
-    """Retorna HTML do grid visual de um rack (somente exibição)."""
+    """
+    Retorna HTML do grid de um rack com drag-and-drop.
+    Ao soltar, injeta 'from|to' num st.text_input escondido no DOM pai
+    via React nativeInputValueSetter (funciona com allow-same-origin).
+    """
     COLUNAS = 13
     NIVEIS  = 4
     hl = highlight_keys or set()
@@ -3091,28 +3095,64 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
         rows_html += f'<div class="mr-lvl">N{nivel}</div>'
         for col in range(1, COLUNAS + 1):
             pk = f"{rua}-{face}-C{col}-N{nivel}"
+            pk_j = pk.replace("'", "\\'")
             if pk in paletes:
                 info    = paletes[pk]
                 produto = info.get("produto", "")
                 qtd     = info.get("quantidade", "")
                 unidade = info.get("unidade", "")
                 cor     = info.get("cor", "#4ade80")
-                is_hl   = pk in hl
-                bg      = "#fbbf24" if is_hl else cor
+                bg      = "#fbbf24" if pk in hl else cor
                 short   = (produto[:9] + "…") if len(produto) > 10 else produto
                 qty_str = f"{qtd} {unidade}".strip() if qtd is not None else ""
                 rows_html += (
-                    f'<div class="mr-cell occ" style="background:{bg};color:#0f172a;" '
-                    f'title="{produto} · {qty_str}">'
+                    f'<div class="mr-cell occ" draggable="true"'
+                    f' style="background:{bg};color:#0f172a;"'
+                    f' title="↕ Arraste · {produto} — {qty_str}"'
+                    f' ondragstart="dStart(event,\'{pk_j}\')"'
+                    f' ondragover="event.preventDefault()"'
+                    f' ondrop="dDrop(event,\'{pk_j}\')">'
                     f'<span class="mr-pname">{short}</span>'
                     f'<span class="mr-qty">{qty_str}</span>'
                     f'</div>'
                 )
             else:
-                rows_html += f'<div class="mr-cell emp" title="{pk}">·</div>'
+                rows_html += (
+                    f'<div class="mr-cell emp" title="{pk}"'
+                    f' ondragover="dOver(event,this)"'
+                    f' ondragleave="dLeave(this)"'
+                    f' ondrop="dDrop(event,\'{pk_j}\')">'
+                    f'·</div>'
+                )
         rows_html += '</div>'
 
+    js = """<script>
+function dStart(e,pk){
+  e.dataTransfer.setData('text/plain',pk);
+  e.dataTransfer.effectAllowed='move';
+  e.currentTarget.style.opacity='0.4';
+  setTimeout(()=>e.currentTarget.style.opacity='1',0);
+}
+function dOver(e,el){e.preventDefault();el.classList.add('dt');}
+function dLeave(el){el.classList.remove('dt');}
+function dDrop(e,tgt){
+  e.preventDefault();
+  document.querySelectorAll('.dt').forEach(c=>c.classList.remove('dt'));
+  var src=e.dataTransfer.getData('text/plain');
+  if(!src||src===tgt)return;
+  try{
+    var inp=window.parent.document.querySelector('input[placeholder="__rack_dnd__"]');
+    if(inp){
+      var setter=Object.getOwnPropertyDescriptor(
+        window.parent.HTMLInputElement.prototype,'value').set;
+      setter.call(inp,src+'|'+tgt);
+      inp.dispatchEvent(new Event('input',{bubbles:true}));
+    }
+  }catch(err){console.warn('dnd signal:',err);}
+}
+</script>"""
     css = """<style>
+body{margin:0;background:#0f172a;}
 .mr-wrap{background:#0f172a;border-radius:10px;padding:12px 14px;overflow-x:auto;font-family:monospace;}
 .mr-row{display:flex;gap:3px;margin-bottom:3px;align-items:center;}
 .mr-lvl{width:22px;color:#475569;font-size:0.6rem;font-weight:700;text-align:right;flex-shrink:0;padding-right:4px;}
@@ -3120,14 +3160,16 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
 .mr-cell{width:54px;height:48px;border-radius:5px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;flex-shrink:0;
   border:1px solid rgba(255,255,255,0.07);}
-.mr-cell.emp{background:#1e293b;color:#334155;border-style:dashed;font-size:1rem;}
-.mr-cell.occ{transition:filter .15s;}
+.mr-cell.emp{background:#1e293b;color:#334155;border-style:dashed;font-size:1rem;cursor:default;}
+.mr-cell.occ{cursor:grab;transition:filter .15s,opacity .15s;}
 .mr-cell.occ:hover{filter:brightness(1.2);}
+.mr-cell.occ:active{cursor:grabbing;}
+.mr-cell.dt{background:#1d4ed8!important;color:#fff!important;border:2px dashed #60a5fa!important;}
 .mr-pname{font-size:0.48rem;font-weight:700;text-align:center;line-height:1.2;
   word-break:break-word;padding:0 2px;max-width:52px;overflow:hidden;}
 .mr-qty{font-size:0.42rem;opacity:.75;margin-top:1px;}
 </style>"""
-    return f'{css}<div class="mr-wrap">{col_heads}{rows_html}</div>'
+    return f'{css}{js}<div class="mr-wrap">{col_heads}{rows_html}</div>'
 
 
 def render_mapa_visual(conn):
@@ -3180,6 +3222,27 @@ def render_mapa_visual(conn):
         else:
             st.warning(f"Nenhuma posição encontrada para *{search_prod}* no armazém.")
 
+    # ── Sinal de drag-and-drop (input escondido comunicado pelo iframe) ───────
+    # O JS do rack injeta "from_pk|to_pk" neste campo via DOM do pai
+    st.markdown(
+        '<style>div[data-testid="stTextInput"]:has(input[placeholder="__rack_dnd__"])'
+        '{visibility:hidden;height:0;overflow:hidden;margin:0;padding:0;}</style>',
+        unsafe_allow_html=True,
+    )
+    dnd_signal = st.text_input("dnd", key="mv_dnd_signal",
+                                placeholder="__rack_dnd__",
+                                label_visibility="collapsed")
+    if dnd_signal and "|" in dnd_signal:
+        _from, _to = dnd_signal.split("|", 1)
+        st.session_state.mv_dnd_signal = ""
+        try:
+            mover_palete(conn, _from.strip(), _to.strip())
+            sync_db()
+            st.toast(f"↔️ **{_from}** → **{_to}**", icon="✅")
+        except ValueError as _e:
+            st.toast(str(_e), icon="❌")
+        st.rerun()
+
     # ── Carrega paletes e produtos ────────────────────────────────────────────
     paletes  = get_paletes_rack(conn, rua, face)
     produtos = get_produtos_mapa(conn)
@@ -3194,13 +3257,15 @@ def render_mapa_visual(conn):
             if loc["rua"] == rua and loc["face"] == face
         }
 
-    # ── Grid visual do rack ───────────────────────────────────────────────────
+    # ── Grid visual do rack com drag-and-drop ─────────────────────────────────
     st.markdown(
         f"**Rack {rua}-{face}** — "
         f"{len(paletes)} de 52 posições ocupadas "
-        f"({round(len(paletes)/52*100)}%)"
+        f"({round(len(paletes)/52*100)}%) · "
+        f"*Arraste um palete para movê-lo*"
     )
-    st.markdown(_rack_html(paletes, rua, face, hl_keys), unsafe_allow_html=True)
+    import streamlit.components.v1 as _stc
+    _stc.html(_rack_html(paletes, rua, face, hl_keys), height=295, scrolling=False)
 
     # ── Mover palete (painel rápido sempre visível) ───────────────────────────
     todos_paletes_mv = get_todos_paletes(conn)
