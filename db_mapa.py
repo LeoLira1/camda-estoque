@@ -135,6 +135,33 @@ def buscar_produto_no_mapa(conn, nome_parcial: str) -> list:
     return [r[0] for r in rows]
 
 
+def buscar_produto_todas_ruas(conn, nome_parcial: str) -> list:
+    """
+    Busca produto em TODOS os racks e retorna lista de localizações completas.
+    Retorna [{pos_key, rua, face, coluna, nivel, produto, quantidade, unidade}]
+    """
+    ensure_mapa_tables(conn)
+    rows = conn.execute(
+        """
+        SELECT p.pos_key, p.rua, p.face, p.coluna, p.nivel,
+               mp.nome, p.quantidade, p.unidade
+        FROM   mapa_posicoes p
+        JOIN   mapa_produtos mp ON mp.produto_id = p.produto_id
+        WHERE  LOWER(mp.nome) LIKE ?
+        ORDER BY p.rua, p.face, p.coluna, p.nivel
+        """,
+        (f"%{nome_parcial.lower()}%",),
+    ).fetchall()
+    return [
+        {
+            "pos_key":    r[0], "rua":       r[1], "face":      r[2],
+            "coluna":     r[3], "nivel":     r[4],
+            "produto":    r[5], "quantidade": r[6], "unidade":  r[7],
+        }
+        for r in rows
+    ]
+
+
 def get_ocupacao_geral(conn) -> dict:
     """
     Retorna {(rua, face): (ocupadas, total)} para todas as ruas e faces.
