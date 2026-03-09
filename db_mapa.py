@@ -304,3 +304,72 @@ def delete_produto_mapa(conn, produto_id: str):
     conn.execute("DELETE FROM mapa_posicoes WHERE produto_id = ?", (produto_id,))
     conn.execute("DELETE FROM mapa_produtos WHERE produto_id = ?", (produto_id,))
     conn.commit()
+
+
+def sync_quantidades_from_estoque(conn) -> dict:
+    """
+    Atualiza a quantidade de cada posição do mapa com o valor de
+    estoque_mestre.qtd_sistema, casando pelo nome do produto
+    (case-insensitive).
+
+    Retorna:
+        {
+            "atualizadas":   int,   # posições atualizadas com sucesso
+            "sem_match":     list,  # nomes de produtos do mapa sem par no estoque
+            "multiplas":     list,  # produtos em >1 posição (qty total aplicada em todas)
+        }
+    """
+    ensure_mapa_tables(conn)
+
+    # 1. Busca todos os produtos do mapa com suas posições
+    mapa_rows = conn.execute(
+        """
+        SELECT mp.produto_id, mp.nome, p.pos_key
+        FROM   mapa_produtos mp
+        JOIN   mapa_posicoes p ON p.produto_id = mp.produto_id
+        WHERE  p.produto_id IS NOT NULL
+        """
+    ).fetchall()
+
+    if not mapa_rows:
+        return {"atualizadas": 0, "sem_match": [], "multiplas": []}
+
+    # 2. Busca todas as quantidades do estoque_mestre (indexado pelo nome em lowercase)
+    estoque_rows = conn.execute(
+        "SELECT produto, qtd_sistema FROM estoque_mestre WHERE produto IS NOT NULL"
+    ).fetchall()
+    estoque_map = {r[0].strip().lower(): r[1] for r in estoque_rows if r[0]}
+
+    # 3. Agrupa posições por produto_id
+    from collections import defaultdict
+    posicoes_por_produto: dict = defaultdict(list)
+    nome_por_produto: dict = {}
+    for pid, nome, pos_key in mapa_rows:
+        posicoes_por_produto[pid].append(pos_key)
+        nome_por_produto[pid] = nome
+
+    atualizadas = 0
+    sem_match: list = []
+    multiplas: list = []
+    now = datetime.now(tz=_BRT).isoformat()
+
+    for pid, posicoes in posicoes_por_produto.items():
+        nome = nome_por_produto[pid]
+        qtd_estoque = estoque_map.get(nome.strip().lower())
+
+        if qtd_estoque is None:
+            sem_match.append(nome)
+            continue
+
+        if len(posicoes) > 1:
+            multiplas.append(nome)
+
+        for pos_key in posicoes:
+            conn.execute(
+                "UPDATE mapa_posicoes SET quantidade = ?, atualizado = ? WHERE pos_key = ?",
+                (qtd_estoque, now, pos_key),
+            )
+            atualizadas += 1
+
+    conn.commit()
+    return {"atualizadas": atualizadas, "sem_match": sem_match, "multiplas": multiplas}

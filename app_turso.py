@@ -24,6 +24,7 @@ from db_mapa import (
     mover_palete,
     add_produto_mapa,
     delete_produto_mapa,
+    sync_quantidades_from_estoque,
 )
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
@@ -3293,6 +3294,39 @@ def render_mapa_visual(conn):
                 st.rerun()
             except Exception as _e:
                 st.error(str(_e))
+
+    st.markdown("---")
+
+    # ── Sincronizar quantidades com estoque_mestre ────────────────────────────
+    with st.expander("🔄 Sincronizar quantidades com o Estoque", expanded=False):
+        st.caption(
+            "Atualiza a quantidade de cada palete no mapa com o valor atual de "
+            "**qtd_sistema** do estoque mestre, casando pelo nome do produto."
+        )
+        if st.button("🔄 Sincronizar agora", key="btn_sync_estoque"):
+            resultado = sync_quantidades_from_estoque(conn)
+            sync_db()
+            n = resultado["atualizadas"]
+            sem = resultado["sem_match"]
+            mult = resultado["multiplas"]
+            if n > 0:
+                st.success(f"✅ {n} posição(ões) atualizada(s) com os valores do estoque.")
+            else:
+                st.info("Nenhuma posição foi atualizada — nenhum produto do mapa encontrado no estoque.")
+            if mult:
+                st.warning(
+                    f"**{len(mult)} produto(s) em múltiplas posições** — a quantidade total do estoque "
+                    f"foi aplicada em cada posição. Edite manualmente para distribuir:\n\n"
+                    + "\n".join(f"- {nome}" for nome in mult)
+                )
+            if sem:
+                st.warning(
+                    f"**{len(sem)} produto(s) do mapa sem correspondência no estoque** "
+                    f"(nome diferente ou não cadastrado) — quantidade não alterada:\n\n"
+                    + "\n".join(f"- {nome}" for nome in sem)
+                )
+            if n > 0:
+                st.rerun()
 
     st.markdown("---")
 
