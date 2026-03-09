@@ -244,7 +244,6 @@ def mover_palete(conn, pos_key_origem: str, pos_key_destino: str):
             atualizado = excluded.atualizado
     """
 
-    conn.execute("BEGIN")
     try:
         if destino_row and destino_row[0]:
             # Swap: colocar produto do destino na origem
@@ -263,9 +262,12 @@ def mover_palete(conn, pos_key_origem: str, pos_key_destino: str):
             (pos_key_destino, rua_d, face_d, col_d, niv_d,
              origem_row[0], origem_row[1], origem_row[2], now),
         )
-        conn.execute("COMMIT")
+        conn.commit()
     except Exception:
-        conn.execute("ROLLBACK")
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
         raise
 
 
