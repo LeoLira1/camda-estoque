@@ -3239,9 +3239,18 @@ def render_mapa_visual(conn):
             if loc["rua"] == rua and loc["face"] == face
         }
 
-    # ── Grid interativo do rack (clique para mover) ────────────────────────
-    picked = st.session_state.get("rack_picked_pk")
-    n_occ  = len(paletes)
+    # ── Drag-and-drop: processa sinal antes de renderizar ─────────────────────
+    _dnd_val = st.session_state.get("rack_dnd_input", "")
+    if _dnd_val and "|" in _dnd_val:
+        _dnd_src, _dnd_tgt = _dnd_val.split("|", 1)
+        st.session_state["rack_dnd_input"] = ""
+        try:
+            mover_palete(conn, _dnd_src, _dnd_tgt)
+            sync_db()
+            st.toast(f"✅ {_dnd_src} → {_dnd_tgt}", icon="↔️")
+        except Exception as _dnd_e:
+            st.error(f"Erro ao mover: {_dnd_e}")
+        st.rerun()
 
     # ── Grid visual do rack (HTML) ────────────────────────────────────────────
     n_occ = len(paletes)
@@ -3251,6 +3260,18 @@ def render_mapa_visual(conn):
     )
     import streamlit.components.v1 as _stc
     _stc.html(_rack_html(paletes, rua, face, hl_keys), height=295, scrolling=False)
+
+    # Receptor oculto do drag-and-drop (o JS do iframe escreve aqui)
+    st.markdown(
+        """<style>
+        div[data-testid="stTextInput"]:has(input[placeholder="__rack_dnd__"]){
+            position:absolute;height:0;overflow:hidden;opacity:0;pointer-events:none;
+        }
+        </style>""",
+        unsafe_allow_html=True,
+    )
+    st.text_input("dnd", placeholder="__rack_dnd__", key="rack_dnd_input",
+                  label_visibility="collapsed")
 
     # ── Mover palete ──────────────────────────────────────────────────────────
     _ocp_this = sorted(
