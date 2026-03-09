@@ -5376,18 +5376,18 @@ if has_mestre:
                     item_id = int(item["id"])
                     prod = str(item["produto"])
                     qty = int(item["qtd_estoque"])
+                    _cod = str(item["codigo"])
+                    _qtd_sis = qty
 
                     col_info, col_b1, col_b2 = st.columns([5, 1.2, 1.2])
 
                     with col_info:
                         info_html = (
                             f'<span class="ct-nome">{prod}</span>'
+                            f'<span class="ct-cod" style="color:#94a3b8;font-size:0.78em;margin-left:8px;font-weight:400;">#{_cod}</span>'
                             f'<span class="ct-qty">{qty} un</span>'
                         )
                         st.markdown(f'<div class="ct-card pendente">{info_html}</div>', unsafe_allow_html=True)
-
-                    _cod = str(item["codigo"])
-                    _qtd_sis = qty
 
                     with col_b1:
                         if st.button("✅ Certa", key=f"ct_ok_{item_id}", use_container_width=True):
