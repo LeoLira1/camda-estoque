@@ -3075,13 +3075,7 @@ def sort_categorias(cats):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -> str:
-    """
-    Retorna HTML do grid de um rack com suporte a drag-and-drop.
-    Ao soltar um palete, navega a janela pai com ?mv_from=...&mv_to=...
-    para que o Streamlit execute a movimentação.
-    paletes: {pos_key: {produto, quantidade, unidade, cor}}
-    highlight_keys: conjunto de pos_keys a destacar (busca)
-    """
+    """Retorna HTML do grid visual de um rack (somente exibição)."""
     COLUNAS = 13
     NIVEIS  = 4
     hl = highlight_keys or set()
@@ -3097,7 +3091,6 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
         rows_html += f'<div class="mr-lvl">N{nivel}</div>'
         for col in range(1, COLUNAS + 1):
             pk = f"{rua}-{face}-C{col}-N{nivel}"
-            pk_safe = pk.replace("'", "\\'")
             if pk in paletes:
                 info    = paletes[pk]
                 produto = info.get("produto", "")
@@ -3106,69 +3099,20 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
                 cor     = info.get("cor", "#4ade80")
                 is_hl   = pk in hl
                 bg      = "#fbbf24" if is_hl else cor
-                txt_col = "#0f172a"
                 short   = (produto[:9] + "…") if len(produto) > 10 else produto
                 qty_str = f"{qtd} {unidade}".strip() if qtd is not None else ""
-                prod_safe = produto.replace('"', '&quot;').replace("'", "\\'")
                 rows_html += (
-                    f'<div class="mr-cell occ" draggable="true" '
-                    f'style="background:{bg};color:{txt_col};" '
-                    f'title="↕ Arraste para mover\n{produto} · {qty_str}" '
-                    f'ondragstart="onDragStart(event,\'{pk_safe}\')" '
-                    f'ondragover="event.preventDefault()" '
-                    f'ondrop="onDrop(event,\'{pk_safe}\')">'
+                    f'<div class="mr-cell occ" style="background:{bg};color:#0f172a;" '
+                    f'title="{produto} · {qty_str}">'
                     f'<span class="mr-pname">{short}</span>'
                     f'<span class="mr-qty">{qty_str}</span>'
                     f'</div>'
                 )
             else:
-                rows_html += (
-                    f'<div class="mr-cell emp" title="Solte aqui para mover — {pk}" '
-                    f'ondragover="onOver(event,this)" '
-                    f'ondragleave="onLeave(this)" '
-                    f'ondrop="onDrop(event,\'{pk_safe}\')">'
-                    f'·</div>'
-                )
+                rows_html += f'<div class="mr-cell emp" title="{pk}">·</div>'
         rows_html += '</div>'
 
-    js = """
-<script>
-var _src = null;
-function onDragStart(evt, pk) {
-    _src = pk;
-    evt.dataTransfer.setData('text/plain', pk);
-    evt.dataTransfer.effectAllowed = 'move';
-    evt.currentTarget.style.opacity = '0.5';
-    setTimeout(function(){ if(evt.target) evt.target.style.opacity = '1'; }, 0);
-}
-function onOver(evt, el) {
-    evt.preventDefault();
-    el.classList.add('drop-tgt');
-}
-function onLeave(el) {
-    el.classList.remove('drop-tgt');
-}
-function onDrop(evt, targetPk) {
-    evt.preventDefault();
-    var cells = document.querySelectorAll('.drop-tgt');
-    cells.forEach(function(c){ c.classList.remove('drop-tgt'); });
-    var srcPk = evt.dataTransfer.getData('text/plain') || _src;
-    if (!srcPk || srcPk === targetPk) return;
-    try {
-        var url = new URL(window.parent.location.href);
-        url.searchParams.set('mv_from', srcPk);
-        url.searchParams.set('mv_to', targetPk);
-        window.parent.location.href = url.toString();
-    } catch(e) {
-        /* fallback: postMessage */
-        window.parent.postMessage({mv_from: srcPk, mv_to: targetPk}, '*');
-    }
-}
-</script>
-"""
-    css = """
-<style>
-body{margin:0;background:#0f172a;}
+    css = """<style>
 .mr-wrap{background:#0f172a;border-radius:10px;padding:12px 14px;overflow-x:auto;font-family:monospace;}
 .mr-row{display:flex;gap:3px;margin-bottom:3px;align-items:center;}
 .mr-lvl{width:22px;color:#475569;font-size:0.6rem;font-weight:700;text-align:right;flex-shrink:0;padding-right:4px;}
@@ -3176,35 +3120,18 @@ body{margin:0;background:#0f172a;}
 .mr-cell{width:54px;height:48px;border-radius:5px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;flex-shrink:0;
   border:1px solid rgba(255,255,255,0.07);}
-.mr-cell.emp{background:#1e293b;color:#334155;border-style:dashed;font-size:1rem;cursor:default;}
-.mr-cell.occ{cursor:grab;transition:filter .15s,opacity .15s;}
+.mr-cell.emp{background:#1e293b;color:#334155;border-style:dashed;font-size:1rem;}
+.mr-cell.occ{transition:filter .15s;}
 .mr-cell.occ:hover{filter:brightness(1.2);}
-.mr-cell.occ:active{cursor:grabbing;}
-.mr-cell.drop-tgt{background:#1d4ed8 !important;color:#fff !important;border:2px dashed #60a5fa !important;}
 .mr-pname{font-size:0.48rem;font-weight:700;text-align:center;line-height:1.2;
   word-break:break-word;padding:0 2px;max-width:52px;overflow:hidden;}
 .mr-qty{font-size:0.42rem;opacity:.75;margin-top:1px;}
-</style>
-"""
-    return f'{css}{js}<div class="mr-wrap">{col_heads}{rows_html}</div>'
+</style>"""
+    return f'{css}<div class="mr-wrap">{col_heads}{rows_html}</div>'
 
 
 def render_mapa_visual(conn):
     st.subheader("🏭 Mapa Visual do Armazém")
-
-    # ── Drag-and-drop via query params ────────────────────────────────────────
-    _qp = st.query_params
-    _mv_from = _qp.get("mv_from", "")
-    _mv_to   = _qp.get("mv_to",   "")
-    if _mv_from and _mv_to and _mv_from != _mv_to:
-        try:
-            mover_palete(conn, _mv_from, _mv_to)
-            st.toast(f"↔️ Movido: **{_mv_from}** → **{_mv_to}**", icon="✅")
-        except ValueError as _e:
-            st.toast(str(_e), icon="❌")
-        finally:
-            _qp.clear()
-            st.rerun()
 
     # ── Seletores de rua e face ───────────────────────────────────────────────
     col_r, col_f = st.columns([2, 3])
@@ -3267,15 +3194,56 @@ def render_mapa_visual(conn):
             if loc["rua"] == rua and loc["face"] == face
         }
 
-    # ── Grid visual do rack (arraste para mover paletes) ─────────────────────
+    # ── Grid visual do rack ───────────────────────────────────────────────────
     st.markdown(
         f"**Rack {rua}-{face}** — "
         f"{len(paletes)} de 52 posições ocupadas "
-        f"({round(len(paletes)/52*100)}%) · "
-        f"*Arraste um palete para movê-lo*",
+        f"({round(len(paletes)/52*100)}%)"
     )
-    import streamlit.components.v1 as _stc
-    _stc.html(_rack_html(paletes, rua, face, hl_keys), height=290, scrolling=False)
+    st.markdown(_rack_html(paletes, rua, face, hl_keys), unsafe_allow_html=True)
+
+    # ── Mover palete (painel rápido sempre visível) ───────────────────────────
+    todos_paletes_mv = get_todos_paletes(conn)
+    _ocp_opts = sorted(
+        [f"{k} — {v['produto']}" for k, v in todos_paletes_mv.items()]
+    )
+    if _ocp_opts:
+        with st.expander("↔️ Mover palete", expanded=False):
+            mv1, mv2, mv3, mv4, mv5 = st.columns([3, 2, 2, 2, 2])
+            with mv1:
+                _orig_sel = st.selectbox(
+                    "De (origem)", _ocp_opts, key="qmv_orig",
+                    help="Posição atual do palete"
+                )
+            _orig_pk = _orig_sel.split(" — ")[0].strip() if _orig_sel else ""
+            all_ruas_mv  = ["R1","R2","R3","R4","R5","R6"]
+            all_faces_mv = ["A","B"]
+            with mv2:
+                _dest_rua  = st.selectbox("Rua destino",  all_ruas_mv,  key="qmv_rua",
+                                          index=all_ruas_mv.index(rua))
+            with mv3:
+                _dest_face = st.selectbox("Face destino", all_faces_mv, key="qmv_face",
+                                          index=all_faces_mv.index(face))
+            with mv4:
+                _dest_col  = st.selectbox("Coluna", list(range(1, 14)), key="qmv_col")
+            with mv5:
+                _dest_niv  = st.selectbox("Nível", [4,3,2,1], key="qmv_niv",
+                                          format_func=lambda n: f"N{n}")
+            _dest_pk = f"{_dest_rua}-{_dest_face}-C{_dest_col}-N{_dest_niv}"
+            _dest_info = todos_paletes_mv.get(_dest_pk)
+            if _dest_info:
+                st.warning(f"Destino **{_dest_pk}** ocupado por *{_dest_info['produto']}* → será feito **swap**.")
+            else:
+                st.caption(f"Destino **{_dest_pk}** — vazio.")
+            if st.button("↔️ Confirmar movimentação", key="qmv_btn",
+                         disabled=(not _orig_pk or _orig_pk == _dest_pk)):
+                try:
+                    mover_palete(conn, _orig_pk, _dest_pk)
+                    sync_db()
+                    st.success(f"Palete movido: **{_orig_pk}** → **{_dest_pk}**.")
+                    st.rerun()
+                except ValueError as _e:
+                    st.error(str(_e))
 
     st.markdown("---")
 
@@ -3324,9 +3292,9 @@ def render_mapa_visual(conn):
             st.caption(f"Posição selecionada: **{pk_add}** (vazia)")
 
         if st.button("✅ Salvar palete", key="btn_add", disabled=(not prod_sel)):
-            # Auto-registra o produto em mapa_produtos se ainda não existir
             pid = add_produto_mapa(conn, prod_sel, unid_add)
             upsert_palete(conn, pk_add, pid, qtd_add, unid_add)
+            sync_db()
             st.success(f"Palete alocado em **{pk_add}**.")
             st.rerun()
 
@@ -3362,6 +3330,7 @@ def render_mapa_visual(conn):
             if st.button("💾 Salvar alterações", key="btn_edit", disabled=(not new_prod)):
                 pid = add_produto_mapa(conn, new_prod, new_unid)
                 upsert_palete(conn, pk_edit, pid, new_qtd, new_unid)
+                sync_db()
                 st.success(f"Palete **{pk_edit}** atualizado.")
                 st.rerun()
 
@@ -3397,6 +3366,7 @@ def render_mapa_visual(conn):
             if st.button("↔️ Confirmar movimentação", key="btn_move", disabled=(pk_orig == pk_dest)):
                 try:
                     mover_palete(conn, pk_orig, pk_dest)
+                    sync_db()
                     st.success(f"Palete movido: **{pk_orig}** → **{pk_dest}**.")
                     st.rerun()
                 except ValueError as e:
@@ -3420,6 +3390,7 @@ def render_mapa_visual(conn):
             )
             if st.button("🗑️ Confirmar remoção", key="btn_del", type="secondary"):
                 delete_palete(conn, pk_del)
+                sync_db()
                 st.success(f"Posição **{pk_del}** esvaziada.")
                 st.rerun()
 
@@ -3435,6 +3406,7 @@ def render_mapa_visual(conn):
                                      key="prod_unid")
         if st.button("➕ Cadastrar produto", key="btn_add_prod", disabled=not novo_nome.strip()):
             pid = add_produto_mapa(conn, novo_nome.strip(), nova_unid)
+            sync_db()
             st.success(f"Produto cadastrado (id: {pid}).")
             st.rerun()
 
@@ -3453,6 +3425,7 @@ def render_mapa_visual(conn):
                 with pcol_del:
                     if st.button("🗑️", key=f"del_prod_{p['produto_id']}", help=f"Remover {p['nome']}"):
                         delete_produto_mapa(conn, p["produto_id"])
+                        sync_db()
                         st.rerun()
         else:
             st.info("Nenhum produto cadastrado ainda.")
