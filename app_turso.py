@@ -6126,7 +6126,7 @@ if has_mestre:
         build_infograficos_tab()
 
     with t_mapa:
-        render_mapa_visual(conn)
+        render_mapa_visual(get_db())
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────
