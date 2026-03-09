@@ -3222,31 +3222,9 @@ def render_mapa_visual(conn):
         else:
             st.warning(f"Nenhuma posição encontrada para *{search_prod}* no armazém.")
 
-    # ── Sinal de drag-and-drop (input escondido comunicado pelo iframe) ───────
-    # O JS do rack injeta "from_pk|to_pk" neste campo via DOM do pai
-    st.markdown(
-        '<style>div[data-testid="stTextInput"]:has(input[placeholder="__rack_dnd__"])'
-        '{visibility:hidden;height:0;overflow:hidden;margin:0;padding:0;}</style>',
-        unsafe_allow_html=True,
-    )
-    dnd_signal = st.text_input("dnd", key="mv_dnd_signal",
-                                placeholder="__rack_dnd__",
-                                label_visibility="collapsed")
-    if dnd_signal and "|" in dnd_signal:
-        _from, _to = dnd_signal.split("|", 1)
-        st.session_state.mv_dnd_signal = ""
-        try:
-            mover_palete(conn, _from.strip(), _to.strip())
-            sync_db()
-            st.toast(f"↔️ **{_from}** → **{_to}**", icon="✅")
-        except Exception as _e:
-            st.toast(str(_e), icon="❌")
-        st.rerun()
-
     # ── Carrega paletes e produtos ────────────────────────────────────────────
     paletes  = get_paletes_rack(conn, rua, face)
     produtos = get_produtos_mapa(conn)
-    prod_map = {p["nome"]: p for p in produtos}
 
     # Destaca células do produto buscado no rack atual
     hl_keys: set = set()
@@ -3257,15 +3235,110 @@ def render_mapa_visual(conn):
             if loc["rua"] == rua and loc["face"] == face
         }
 
-    # ── Grid visual do rack com drag-and-drop ─────────────────────────────────
+    # ── Grid interativo do rack (clique para mover) ────────────────────────
+    picked = st.session_state.get("rack_picked_pk")
+    n_occ  = len(paletes)
+
+    # Banner de seleção
+    if picked and picked in paletes:
+        info_p = paletes[picked]
+        c1, c2 = st.columns([6, 1])
+        c1.info(
+            f"📦 **{info_p['produto']}** selecionado em `{picked}` "
+            f"— clique na posição destino para mover. "
+            f"*Clique no mesmo palete para cancelar.*"
+        )
+        if c2.button("✕", key="rack_cancel_sel", help="Cancelar seleção"):
+            st.session_state.rack_picked_pk = None
+            st.rerun()
+    elif picked and picked not in paletes:
+        st.session_state.rack_picked_pk = None
+        picked = None
+
     st.markdown(
-        f"**Rack {rua}-{face}** — "
-        f"{len(paletes)} de 52 posições ocupadas "
-        f"({round(len(paletes)/52*100)}%) · "
-        f"*Arraste um palete para movê-lo*"
+        f"**Rack {rua}-{face}** — {n_occ} de 52 posições ocupadas "
+        f"({round(n_occ / 52 * 100)}%) · "
+        f"{'*Clique num palete para selecioná-lo*' if not picked else ''}"
     )
-    import streamlit.components.v1 as _stc
-    _stc.html(_rack_html(paletes, rua, face, hl_keys), height=295, scrolling=False)
+
+    # CSS: botões do grid ficam compactos e coloridos via CSS variables
+    st.markdown("""<style>
+.rack-grid button[kind="secondary"]{
+    height:46px!important;min-height:0!important;
+    padding:2px!important;font-size:0.44rem!important;
+    white-space:pre-wrap!important;line-height:1.15!important;
+    border-radius:5px!important;
+}
+</style>""", unsafe_allow_html=True)
+
+    # Cabeçalho de colunas
+    hdr = st.columns([0.38] + [1] * 13)
+    hdr[0].write("")
+    for _c in range(1, 14):
+        hdr[_c].markdown(
+            f"<div style='text-align:center;font-size:0.55rem;color:#64748b'>C{_c}</div>",
+            unsafe_allow_html=True,
+        )
+
+    # Linhas N4 → N1
+    with st.container():
+        for nivel in range(4, 0, -1):
+            row = st.columns([0.38] + [1] * 13)
+            row[0].markdown(
+                f"<div style='text-align:right;font-size:0.55rem;"
+                f"color:#64748b;padding-top:14px'>N{nivel}</div>",
+                unsafe_allow_html=True,
+            )
+            for col_num in range(1, 14):
+                pk   = f"{rua}-{face}-C{col_num}-N{nivel}"
+                cell = row[col_num]
+
+                if pk in paletes:
+                    info   = paletes[pk]
+                    prod   = info.get("produto", "")
+                    qtd    = info.get("quantidade", "")
+                    unid   = info.get("unidade", "")
+                    cor    = info.get("cor", "#4ade80")
+                    is_sel = (picked == pk)
+                    is_hl  = pk in hl_keys
+                    short  = (prod[:7] + "…") if len(prod) > 8 else prod
+                    lbl    = f"{'✋' if is_sel else '📦'}\n{short}"
+                    help_t = f"{prod} · {qtd} {unid}"
+                    if cell.button(lbl, key=f"rb_{pk}", help=help_t,
+                                   use_container_width=True):
+                        if is_sel:
+                            st.session_state.rack_picked_pk = None
+                        elif picked:
+                            try:
+                                mover_palete(conn, picked, pk)
+                                sync_db()
+                                st.session_state.rack_picked_pk = None
+                                st.toast(f"↔️ `{picked}` → `{pk}`", icon="✅")
+                            except Exception as _e:
+                                st.toast(str(_e), icon="❌")
+                        else:
+                            st.session_state.rack_picked_pk = pk
+                        st.rerun()
+                else:
+                    # Célula vazia — só mostra botão de destino quando há palete selecionado
+                    if picked:
+                        if cell.button("·", key=f"rb_{pk}",
+                                       help=f"Mover para {pk}",
+                                       use_container_width=True):
+                            try:
+                                mover_palete(conn, picked, pk)
+                                sync_db()
+                                st.session_state.rack_picked_pk = None
+                                st.toast(f"↔️ `{picked}` → `{pk}`", icon="✅")
+                            except Exception as _e:
+                                st.toast(str(_e), icon="❌")
+                            st.rerun()
+                    else:
+                        cell.markdown(
+                            "<div style='text-align:center;color:#1e293b;"
+                            "font-size:0.9rem;padding-top:12px'>·</div>",
+                            unsafe_allow_html=True,
+                        )
 
     # ── Mover palete (painel rápido sempre visível) ───────────────────────────
     todos_paletes_mv = get_todos_paletes(conn)
