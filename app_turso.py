@@ -3103,7 +3103,8 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
                 unidade = info.get("unidade", "")
                 cor     = info.get("cor", "#4ade80")
                 bg      = "#fbbf24" if pk in hl else cor
-                short   = (produto[:9] + "…") if len(produto) > 10 else produto
+                nome_c  = short_name(produto)          # nome comercial sem categoria
+                short   = (nome_c[:9] + "…") if len(nome_c) > 10 else nome_c
                 qty_str = f"{qtd} {unidade}".strip() if qtd is not None else ""
                 rows_html += (
                     f'<div class="mr-cell occ" draggable="true"'
