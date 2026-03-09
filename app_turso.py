@@ -3227,6 +3227,7 @@ def render_mapa_visual(conn):
     # ── Carrega paletes e produtos ────────────────────────────────────────────
     paletes  = get_paletes_rack(conn, rua, face)
     produtos = get_produtos_mapa(conn)
+    prod_map = {p["nome"]: p for p in produtos}
 
     # Destaca células do produto buscado no rack atual
     hl_keys: set = set()
