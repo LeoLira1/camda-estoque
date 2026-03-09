@@ -17,6 +17,7 @@ from db_mapa import (
     get_todos_paletes,
     get_produtos_mapa,
     buscar_produto_no_mapa,
+    buscar_produto_todas_ruas,
     get_ocupacao_geral,
     upsert_palete,
     delete_palete,
@@ -3075,7 +3076,9 @@ def sort_categorias(cats):
 
 def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -> str:
     """
-    Retorna HTML do grid de um rack (rua × face).
+    Retorna HTML do grid de um rack com suporte a drag-and-drop.
+    Ao soltar um palete, navega a janela pai com ?mv_from=...&mv_to=...
+    para que o Streamlit execute a movimentação.
     paletes: {pos_key: {produto, quantidade, unidade, cor}}
     highlight_keys: conjunto de pos_keys a destacar (busca)
     """
@@ -3083,19 +3086,18 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
     NIVEIS  = 4
     hl = highlight_keys or set()
 
-    # Cabeçalho de colunas
-    col_heads = '<div class="mr-row">'
-    col_heads += '<div class="mr-lvl"></div>'
+    col_heads = '<div class="mr-row"><div class="mr-lvl"></div>'
     for c in range(1, COLUNAS + 1):
         col_heads += f'<div class="mr-chd">C{c}</div>'
     col_heads += '</div>'
 
     rows_html = ""
-    for nivel in range(NIVEIS, 0, -1):   # N4 → N1 (topo → chão)
+    for nivel in range(NIVEIS, 0, -1):
         rows_html += '<div class="mr-row">'
         rows_html += f'<div class="mr-lvl">N{nivel}</div>'
         for col in range(1, COLUNAS + 1):
             pk = f"{rua}-{face}-C{col}-N{nivel}"
+            pk_safe = pk.replace("'", "\\'")
             if pk in paletes:
                 info    = paletes[pk]
                 produto = info.get("produto", "")
@@ -3107,41 +3109,105 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
                 txt_col = "#0f172a"
                 short   = (produto[:9] + "…") if len(produto) > 10 else produto
                 qty_str = f"{qtd} {unidade}".strip() if qtd is not None else ""
+                prod_safe = produto.replace('"', '&quot;').replace("'", "\\'")
                 rows_html += (
-                    f'<div class="mr-cell occ" style="background:{bg};color:{txt_col};" title="{produto} · {qty_str}">'
+                    f'<div class="mr-cell occ" draggable="true" '
+                    f'style="background:{bg};color:{txt_col};" '
+                    f'title="↕ Arraste para mover\n{produto} · {qty_str}" '
+                    f'ondragstart="onDragStart(event,\'{pk_safe}\')" '
+                    f'ondragover="event.preventDefault()" '
+                    f'ondrop="onDrop(event,\'{pk_safe}\')">'
                     f'<span class="mr-pname">{short}</span>'
                     f'<span class="mr-qty">{qty_str}</span>'
                     f'</div>'
                 )
             else:
-                rows_html += f'<div class="mr-cell emp" title="{pk}">·</div>'
+                rows_html += (
+                    f'<div class="mr-cell emp" title="Solte aqui para mover — {pk}" '
+                    f'ondragover="onOver(event,this)" '
+                    f'ondragleave="onLeave(this)" '
+                    f'ondrop="onDrop(event,\'{pk_safe}\')">'
+                    f'·</div>'
+                )
         rows_html += '</div>'
 
+    js = """
+<script>
+var _src = null;
+function onDragStart(evt, pk) {
+    _src = pk;
+    evt.dataTransfer.setData('text/plain', pk);
+    evt.dataTransfer.effectAllowed = 'move';
+    evt.currentTarget.style.opacity = '0.5';
+    setTimeout(function(){ if(evt.target) evt.target.style.opacity = '1'; }, 0);
+}
+function onOver(evt, el) {
+    evt.preventDefault();
+    el.classList.add('drop-tgt');
+}
+function onLeave(el) {
+    el.classList.remove('drop-tgt');
+}
+function onDrop(evt, targetPk) {
+    evt.preventDefault();
+    var cells = document.querySelectorAll('.drop-tgt');
+    cells.forEach(function(c){ c.classList.remove('drop-tgt'); });
+    var srcPk = evt.dataTransfer.getData('text/plain') || _src;
+    if (!srcPk || srcPk === targetPk) return;
+    try {
+        var url = new URL(window.parent.location.href);
+        url.searchParams.set('mv_from', srcPk);
+        url.searchParams.set('mv_to', targetPk);
+        window.parent.location.href = url.toString();
+    } catch(e) {
+        /* fallback: postMessage */
+        window.parent.postMessage({mv_from: srcPk, mv_to: targetPk}, '*');
+    }
+}
+</script>
+"""
     css = """
 <style>
+body{margin:0;background:#0f172a;}
 .mr-wrap{background:#0f172a;border-radius:10px;padding:12px 14px;overflow-x:auto;font-family:monospace;}
 .mr-row{display:flex;gap:3px;margin-bottom:3px;align-items:center;}
 .mr-lvl{width:22px;color:#475569;font-size:0.6rem;font-weight:700;text-align:right;flex-shrink:0;padding-right:4px;}
 .mr-chd{width:54px;color:#334155;font-size:0.55rem;text-align:center;flex-shrink:0;}
 .mr-cell{width:54px;height:48px;border-radius:5px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;flex-shrink:0;cursor:default;
+  align-items:center;justify-content:center;flex-shrink:0;
   border:1px solid rgba(255,255,255,0.07);}
-.mr-cell.emp{background:#1e293b;color:#334155;border-style:dashed;font-size:1rem;}
-.mr-cell.occ{transition:filter .15s;}
-.mr-cell.occ:hover{filter:brightness(1.15);}
+.mr-cell.emp{background:#1e293b;color:#334155;border-style:dashed;font-size:1rem;cursor:default;}
+.mr-cell.occ{cursor:grab;transition:filter .15s,opacity .15s;}
+.mr-cell.occ:hover{filter:brightness(1.2);}
+.mr-cell.occ:active{cursor:grabbing;}
+.mr-cell.drop-tgt{background:#1d4ed8 !important;color:#fff !important;border:2px dashed #60a5fa !important;}
 .mr-pname{font-size:0.48rem;font-weight:700;text-align:center;line-height:1.2;
   word-break:break-word;padding:0 2px;max-width:52px;overflow:hidden;}
 .mr-qty{font-size:0.42rem;opacity:.75;margin-top:1px;}
 </style>
 """
-    return f'{css}<div class="mr-wrap">{col_heads}{rows_html}</div>'
+    return f'{css}{js}<div class="mr-wrap">{col_heads}{rows_html}</div>'
 
 
 def render_mapa_visual(conn):
     st.subheader("🏭 Mapa Visual do Armazém")
 
+    # ── Drag-and-drop via query params ────────────────────────────────────────
+    _qp = st.query_params
+    _mv_from = _qp.get("mv_from", "")
+    _mv_to   = _qp.get("mv_to",   "")
+    if _mv_from and _mv_to and _mv_from != _mv_to:
+        try:
+            mover_palete(conn, _mv_from, _mv_to)
+            st.toast(f"↔️ Movido: **{_mv_from}** → **{_mv_to}**", icon="✅")
+        except ValueError as _e:
+            st.toast(str(_e), icon="❌")
+        finally:
+            _qp.clear()
+            st.rerun()
+
     # ── Seletores de rua e face ───────────────────────────────────────────────
-    col_r, col_f, col_s = st.columns([2, 3, 4])
+    col_r, col_f = st.columns([2, 3])
     with col_r:
         rua = st.selectbox("Rua", ["R1", "R2", "R3", "R4", "R5", "R6"], key="mv_rua")
     with col_f:
@@ -3150,41 +3216,66 @@ def render_mapa_visual(conn):
             horizontal=True, key="mv_face",
         )
         face = face_label[0]   # "A" ou "B"
-    with col_s:
-        search = st.text_input("🔍 Buscar produto no mapa", "", key="mv_search")
+
+    # ── Busca inteligente (todas as ruas) ─────────────────────────────────────
+    _est_rows = conn.execute(
+        "SELECT produto FROM estoque_mestre ORDER BY produto"
+    ).fetchall()
+    est_prod_names = [r[0] for r in _est_rows if r[0]]
+
+    search_prod = st.selectbox(
+        "🔍 Buscar produto no armazém (todas as ruas)",
+        options=est_prod_names,
+        index=None,
+        key="mv_search",
+        placeholder="Digite o nome do produto…",
+    )
+
+    if search_prod:
+        resultados = buscar_produto_todas_ruas(conn, search_prod)
+        if resultados:
+            st.success(
+                f"**{len(resultados)}** posição(ões) encontrada(s) para *{search_prod}*:"
+            )
+            for loc in resultados:
+                face_label_r = "Frente" if loc["face"] == "A" else "Fundo"
+                qty_str = f"{loc['quantidade']} {loc['unidade']}".strip() if loc["quantidade"] is not None else ""
+                st.markdown(
+                    f'<div style="background:#1e293b;border:1px solid #1d4ed8;border-radius:8px;'
+                    f'padding:8px 14px;margin-bottom:4px;display:flex;gap:16px;align-items:center;">'
+                    f'<span style="color:#60a5fa;font-weight:700;font-size:0.85rem;">🏷 {loc["rua"]}-{loc["face"]}</span>'
+                    f'<span style="color:#94a3b8;font-size:0.75rem;">{face_label_r}</span>'
+                    f'<span style="color:#e0e6ed;font-size:0.8rem;">📍 Coluna {loc["coluna"]}, Nível {loc["nivel"]}</span>'
+                    f'<span style="color:#64748b;font-size:0.75rem;">{qty_str}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.warning(f"Nenhuma posição encontrada para *{search_prod}* no armazém.")
 
     # ── Carrega paletes e produtos ────────────────────────────────────────────
     paletes  = get_paletes_rack(conn, rua, face)
     produtos = get_produtos_mapa(conn)
     prod_map = {p["nome"]: p for p in produtos}
 
-    # Produtos do estoque mestre (para busca inteligente igual à aba Repor na Loja)
-    _est_rows = conn.execute(
-        "SELECT produto FROM estoque_mestre ORDER BY produto"
-    ).fetchall()
-    est_prod_names = [r[0] for r in _est_rows if r[0]]
-
-    # Destaca células do produto buscado
+    # Destaca células do produto buscado no rack atual
     hl_keys: set = set()
-    if search.strip():
-        hl_keys = set(buscar_produto_no_mapa(conn, search.strip()))
+    if search_prod:
+        hl_keys = {
+            loc["pos_key"]
+            for loc in buscar_produto_todas_ruas(conn, search_prod)
+            if loc["rua"] == rua and loc["face"] == face
+        }
 
-    # ── Grid visual do rack ───────────────────────────────────────────────────
+    # ── Grid visual do rack (arraste para mover paletes) ─────────────────────
     st.markdown(
         f"**Rack {rua}-{face}** — "
         f"{len(paletes)} de 52 posições ocupadas "
-        f"({round(len(paletes)/52*100)}%)",
+        f"({round(len(paletes)/52*100)}%) · "
+        f"*Arraste um palete para movê-lo*",
     )
-    st.markdown(_rack_html(paletes, rua, face, hl_keys), unsafe_allow_html=True)
-
-    # ── Busca: destaque de resultados ─────────────────────────────────────────
-    if search.strip() and hl_keys:
-        st.info(
-            f"**{len(hl_keys)}** posição(ões) encontrada(s) para *{search}*: "
-            + ", ".join(sorted(hl_keys))
-        )
-    elif search.strip():
-        st.warning(f"Nenhuma posição encontrada para *{search}*.")
+    import streamlit.components.v1 as _stc
+    _stc.html(_rack_html(paletes, rua, face, hl_keys), height=290, scrolling=False)
 
     st.markdown("---")
 
@@ -3400,11 +3491,10 @@ def render_mapa_visual(conn):
             texttemplate="%{text}",
             showscale=True,
             colorbar=dict(
-                title="% ocup.",
+                title=dict(text="% ocup.", font=dict(color="#94a3b8")),
                 ticksuffix="%",
                 len=0.85,
                 tickfont=dict(color="#94a3b8"),
-                titlefont=dict(color="#94a3b8"),
             ),
         )
     )
