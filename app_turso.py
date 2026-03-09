@@ -25,6 +25,7 @@ from db_mapa import (
     add_produto_mapa,
     delete_produto_mapa,
     sync_quantidades_from_estoque,
+    get_posicoes_vazias,
 )
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
@@ -3326,6 +3327,122 @@ def render_mapa_visual(conn):
                 )
             if n > 0:
                 st.rerun()
+
+    st.markdown("---")
+
+    # ── Dividir produto em paletes ────────────────────────────────────────────
+    with st.expander("🔢 Dividir produto em paletes", expanded=False):
+        st.caption(
+            "Escolha um produto e o tamanho do palete. O sistema calcula quantos paletes "
+            "cabem no estoque e sugere posições automaticamente — incluindo gaiolas vazias "
+            "quando necessário. Tudo em **unidades inteiras**."
+        )
+        dp_c1, dp_c2 = st.columns([3, 2])
+        with dp_c1:
+            dp_prod = st.selectbox(
+                "Produto",
+                options=est_prod_names,
+                index=None,
+                key="dp_prod",
+                placeholder="Selecione o produto…",
+            )
+        with dp_c2:
+            dp_tam = st.selectbox(
+                "Unidades por palete",
+                [32, 45, 48],
+                key="dp_tam",
+                help="Tamanho fixo de cada palete (32, 45 ou 48 unidades)",
+            )
+
+        if dp_prod:
+            _row = conn.execute(
+                "SELECT qtd_sistema FROM estoque_mestre WHERE produto = ?", (dp_prod,)
+            ).fetchone()
+            total_qty = int(_row[0]) if (_row and _row[0] is not None) else 0
+
+            if total_qty <= 0:
+                st.warning("Produto sem estoque no mestre.")
+            else:
+                # Calcula divisão em paletes inteiros
+                _n_cheios = total_qty // dp_tam
+                _resto    = total_qty % dp_tam
+                dp_paletes_qtd = [dp_tam] * _n_cheios
+                if _resto > 0:
+                    dp_paletes_qtd.append(_resto)
+
+                _descricao = " + ".join(str(q) for q in dp_paletes_qtd)
+                st.info(
+                    f"**{total_qty} un** ÷ {dp_tam} = "
+                    f"**{len(dp_paletes_qtd)} palete(s):** {_descricao}"
+                )
+
+                # Posições existentes do produto no mapa
+                _pos_existentes = buscar_produto_todas_ruas(conn, dp_prod)
+                _pos_ex_keys    = [p["pos_key"] for p in _pos_existentes]
+                _n_ex           = len(_pos_ex_keys)
+                _n_needed       = len(dp_paletes_qtd)
+                _n_novos        = max(0, _n_needed - _n_ex)
+
+                # Gaiolas vazias para paletes extras
+                _pos_novas: list = []
+                if _n_novos > 0:
+                    _vazias    = get_posicoes_vazias(conn)
+                    _pos_novas = _vazias[:_n_novos]
+                    if len(_pos_novas) < _n_novos:
+                        st.error(
+                            f"Não há gaiolas vazias suficientes "
+                            f"(precisava de {_n_novos}, encontrou {len(_pos_novas)})."
+                        )
+
+                # Plano: posições existentes primeiro, novas depois
+                _pos_plano = list(
+                    zip(_pos_ex_keys[:_n_needed] + _pos_novas, dp_paletes_qtd)
+                )
+
+                # Posições existentes que serão liberadas
+                _pos_liberar = _pos_ex_keys[_n_needed:]
+
+                # Preview
+                import pandas as _pd_dp
+                _df_plano = _pd_dp.DataFrame(
+                    [
+                        {
+                            "Posição": pk,
+                            "Qtd (un)": qty,
+                            "Situação": "posição existente" if i < _n_ex else "gaiola vazia",
+                        }
+                        for i, (pk, qty) in enumerate(_pos_plano)
+                    ]
+                )
+                st.dataframe(_df_plano, hide_index=True, use_container_width=True)
+
+                if _pos_liberar:
+                    st.warning(
+                        f"⚠️ {len(_pos_liberar)} posição(ões) existente(s) do produto "
+                        f"serão liberadas (estoque redistribuído): "
+                        + ", ".join(_pos_liberar)
+                    )
+                if _n_novos > 0 and _pos_novas:
+                    st.caption(
+                        f"🆕 {len(_pos_novas)} gaiola(s) vazia(s) alocada(s) automaticamente."
+                    )
+
+                if _pos_plano and st.button(
+                    "✅ Aplicar divisão", type="primary", key="dp_apply"
+                ):
+                    with st.spinner("Alocando paletes…"):
+                        _pid = add_produto_mapa(conn, dp_prod, "un")
+                        # Libera posições existentes que sobram
+                        for _pk_lib in _pos_liberar:
+                            delete_palete(conn, _pk_lib)
+                        # Cria/atualiza cada palete
+                        for _pk, _qty in _pos_plano:
+                            upsert_palete(conn, _pk, _pid, float(_qty), "un")
+                        sync_db()
+                    st.success(
+                        f"✅ {len(_pos_plano)} palete(s) de **{dp_prod}** alocado(s) no armazém."
+                    )
+                    st.rerun()
 
     st.markdown("---")
 

@@ -180,6 +180,29 @@ def get_ocupacao_geral(conn) -> dict:
     return result
 
 
+def get_posicoes_vazias(conn) -> list:
+    """
+    Retorna lista de pos_key de todas as posições vazias do armazém,
+    em ordem lógica (R1→R6, A→B, C1→C13, N1→N4).
+    """
+    ensure_mapa_tables(conn)
+    ocupadas = {
+        r[0]
+        for r in conn.execute(
+            "SELECT pos_key FROM mapa_posicoes WHERE produto_id IS NOT NULL"
+        ).fetchall()
+    }
+    vazias = []
+    for rua in ["R1", "R2", "R3", "R4", "R5", "R6"]:
+        for face in ["A", "B"]:
+            for col in range(1, 14):
+                for niv in range(1, 5):
+                    pk = f"{rua}-{face}-C{col}-N{niv}"
+                    if pk not in ocupadas:
+                        vazias.append(pk)
+    return vazias
+
+
 # ── Escrita ───────────────────────────────────────────────────────────────────
 
 def upsert_palete(conn, pos_key: str, produto_id: str, quantidade: float, unidade: str):
