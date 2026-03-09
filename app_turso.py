@@ -11,6 +11,19 @@ import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date, timezone
 from PIL import Image
+from db_mapa import (
+    ensure_mapa_tables,
+    get_paletes_rack,
+    get_todos_paletes,
+    get_produtos_mapa,
+    buscar_produto_no_mapa,
+    get_ocupacao_geral,
+    upsert_palete,
+    delete_palete,
+    mover_palete,
+    add_produto_mapa,
+    delete_produto_mapa,
+)
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
 _BRT = timezone(timedelta(hours=-3))
@@ -884,6 +897,12 @@ def _get_connection():
             )
         """)
         conn.commit()
+    except Exception:
+        pass
+
+    # ── Tabelas do Mapa Visual ──
+    try:
+        ensure_mapa_tables(conn)
     except Exception:
         pass
 
@@ -3050,6 +3069,334 @@ def sort_categorias(cats):
     return sorted(cats, key=lambda c: (_CAT_PRIORITY_MAP.get(c, mx), c))
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# MAPA VISUAL DO ARMAZÉM
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -> str:
+    """
+    Retorna HTML do grid de um rack (rua × face).
+    paletes: {pos_key: {produto, quantidade, unidade, cor}}
+    highlight_keys: conjunto de pos_keys a destacar (busca)
+    """
+    COLUNAS = 13
+    NIVEIS  = 4
+    hl = highlight_keys or set()
+
+    # Cabeçalho de colunas
+    col_heads = '<div class="mr-row">'
+    col_heads += '<div class="mr-lvl"></div>'
+    for c in range(1, COLUNAS + 1):
+        col_heads += f'<div class="mr-chd">C{c}</div>'
+    col_heads += '</div>'
+
+    rows_html = ""
+    for nivel in range(NIVEIS, 0, -1):   # N4 → N1 (topo → chão)
+        rows_html += '<div class="mr-row">'
+        rows_html += f'<div class="mr-lvl">N{nivel}</div>'
+        for col in range(1, COLUNAS + 1):
+            pk = f"{rua}-{face}-C{col}-N{nivel}"
+            if pk in paletes:
+                info    = paletes[pk]
+                produto = info.get("produto", "")
+                qtd     = info.get("quantidade", "")
+                unidade = info.get("unidade", "")
+                cor     = info.get("cor", "#4ade80")
+                is_hl   = pk in hl
+                bg      = "#fbbf24" if is_hl else cor
+                txt_col = "#0f172a"
+                short   = (produto[:9] + "…") if len(produto) > 10 else produto
+                qty_str = f"{qtd} {unidade}".strip() if qtd is not None else ""
+                rows_html += (
+                    f'<div class="mr-cell occ" style="background:{bg};color:{txt_col};" title="{produto} · {qty_str}">'
+                    f'<span class="mr-pname">{short}</span>'
+                    f'<span class="mr-qty">{qty_str}</span>'
+                    f'</div>'
+                )
+            else:
+                rows_html += f'<div class="mr-cell emp" title="{pk}">·</div>'
+        rows_html += '</div>'
+
+    css = """
+<style>
+.mr-wrap{background:#0f172a;border-radius:10px;padding:12px 14px;overflow-x:auto;font-family:monospace;}
+.mr-row{display:flex;gap:3px;margin-bottom:3px;align-items:center;}
+.mr-lvl{width:22px;color:#475569;font-size:0.6rem;font-weight:700;text-align:right;flex-shrink:0;padding-right:4px;}
+.mr-chd{width:54px;color:#334155;font-size:0.55rem;text-align:center;flex-shrink:0;}
+.mr-cell{width:54px;height:48px;border-radius:5px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;flex-shrink:0;cursor:default;
+  border:1px solid rgba(255,255,255,0.07);}
+.mr-cell.emp{background:#1e293b;color:#334155;border-style:dashed;font-size:1rem;}
+.mr-cell.occ{transition:filter .15s;}
+.mr-cell.occ:hover{filter:brightness(1.15);}
+.mr-pname{font-size:0.48rem;font-weight:700;text-align:center;line-height:1.2;
+  word-break:break-word;padding:0 2px;max-width:52px;overflow:hidden;}
+.mr-qty{font-size:0.42rem;opacity:.75;margin-top:1px;}
+</style>
+"""
+    return f'{css}<div class="mr-wrap">{col_heads}{rows_html}</div>'
+
+
+def render_mapa_visual(conn):
+    st.subheader("🏭 Mapa Visual do Armazém")
+
+    # ── Seletores de rua e face ───────────────────────────────────────────────
+    col_r, col_f, col_s = st.columns([2, 3, 4])
+    with col_r:
+        rua = st.selectbox("Rua", ["R1", "R2", "R3", "R4", "R5", "R6"], key="mv_rua")
+    with col_f:
+        face_label = st.radio(
+            "Face", ["A — Frente", "B — Fundo"],
+            horizontal=True, key="mv_face",
+        )
+        face = face_label[0]   # "A" ou "B"
+    with col_s:
+        search = st.text_input("🔍 Buscar produto no mapa", "", key="mv_search")
+
+    # ── Carrega paletes e produtos ────────────────────────────────────────────
+    paletes  = get_paletes_rack(conn, rua, face)
+    produtos = get_produtos_mapa(conn)
+    prod_map = {p["nome"]: p for p in produtos}
+
+    # Destaca células do produto buscado
+    hl_keys: set = set()
+    if search.strip():
+        hl_keys = set(buscar_produto_no_mapa(conn, search.strip()))
+
+    # ── Grid visual do rack ───────────────────────────────────────────────────
+    st.markdown(
+        f"**Rack {rua}-{face}** — "
+        f"{len(paletes)} de 52 posições ocupadas "
+        f"({round(len(paletes)/52*100)}%)",
+    )
+    st.markdown(_rack_html(paletes, rua, face, hl_keys), unsafe_allow_html=True)
+
+    # ── Busca: destaque de resultados ─────────────────────────────────────────
+    if search.strip() and hl_keys:
+        st.info(
+            f"**{len(hl_keys)}** posição(ões) encontrada(s) para *{search}*: "
+            + ", ".join(sorted(hl_keys))
+        )
+    elif search.strip():
+        st.warning(f"Nenhuma posição encontrada para *{search}*.")
+
+    st.markdown("---")
+
+    # ── Ações CRUD ────────────────────────────────────────────────────────────
+    action_tab_add, action_tab_edit, action_tab_move, action_tab_del, action_tab_prod = st.tabs([
+        "➕ Adicionar palete",
+        "✏️ Editar palete",
+        "↔️ Mover palete",
+        "🗑️ Remover palete",
+        "📦 Gerenciar produtos",
+    ])
+
+    # ── Adicionar ─────────────────────────────────────────────────────────────
+    with action_tab_add:
+        st.markdown("##### Alocar produto em uma posição")
+        ac1, ac2, ac3, ac4 = st.columns([2, 2, 2, 2])
+        with ac1:
+            col_add = st.selectbox("Coluna", list(range(1, 14)), key="add_col")
+        with ac2:
+            niv_add = st.selectbox("Nível", [4, 3, 2, 1], key="add_niv",
+                                   format_func=lambda n: f"N{n} ({'topo' if n==4 else 'chão' if n==1 else str(n)})")
+        with ac3:
+            prod_names = [p["nome"] for p in produtos]
+            prod_sel = st.selectbox("Produto", prod_names if prod_names else ["— cadastre um produto primeiro —"],
+                                    key="add_prod")
+        with ac4:
+            if prod_sel and prod_sel in prod_map:
+                unid_default = prod_map[prod_sel]["unidade_pad"] or "L"
+            else:
+                unid_default = "L"
+            qtd_add = st.number_input("Quantidade", min_value=0.0, step=1.0, value=1.0, key="add_qtd")
+            unid_add = st.text_input("Unidade", unid_default, key="add_unid")
+
+        pk_add = f"{rua}-{face}-C{col_add}-N{niv_add}"
+        if pk_add in paletes:
+            st.warning(f"⚠️ Posição **{pk_add}** já está ocupada por *{paletes[pk_add]['produto']}*. "
+                       "Use **Editar palete** para substituir.")
+        else:
+            st.caption(f"Posição selecionada: **{pk_add}** (vazia)")
+
+        if st.button("✅ Salvar palete", key="btn_add", disabled=(not prod_names or prod_sel not in prod_map)):
+            pid = prod_map[prod_sel]["produto_id"]
+            upsert_palete(conn, pk_add, pid, qtd_add, unid_add)
+            st.success(f"Palete alocado em **{pk_add}**.")
+            st.rerun()
+
+    # ── Editar ────────────────────────────────────────────────────────────────
+    with action_tab_edit:
+        st.markdown("##### Editar palete existente")
+        if not paletes:
+            st.info("Nenhum palete neste rack.")
+        else:
+            pos_opts = sorted(paletes.keys())
+            pk_edit = st.selectbox("Posição", pos_opts, key="edit_pos",
+                                   format_func=lambda k: f"{k} — {paletes[k]['produto']}")
+            info_edit = paletes[pk_edit]
+            ec1, ec2, ec3 = st.columns([3, 2, 2])
+            with ec1:
+                prod_names = [p["nome"] for p in produtos]
+                cur_idx = prod_names.index(info_edit["produto"]) if info_edit["produto"] in prod_names else 0
+                new_prod = st.selectbox("Produto", prod_names, index=cur_idx, key="edit_prod")
+            with ec2:
+                new_qtd = st.number_input("Quantidade", min_value=0.0, step=1.0,
+                                          value=float(info_edit["quantidade"] or 1), key="edit_qtd")
+            with ec3:
+                new_unid = st.text_input("Unidade", info_edit["unidade"] or "L", key="edit_unid")
+
+            if st.button("💾 Salvar alterações", key="btn_edit"):
+                pid = prod_map[new_prod]["produto_id"]
+                upsert_palete(conn, pk_edit, pid, new_qtd, new_unid)
+                st.success(f"Palete **{pk_edit}** atualizado.")
+                st.rerun()
+
+    # ── Mover ─────────────────────────────────────────────────────────────────
+    with action_tab_move:
+        st.markdown("##### Mover ou trocar palete")
+        if not paletes:
+            st.info("Nenhum palete neste rack para mover.")
+        else:
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                st.markdown("**Origem** (posição atual)")
+                pos_opts = sorted(paletes.keys())
+                pk_orig = st.selectbox("Posição de origem", pos_opts, key="move_orig",
+                                       format_func=lambda k: f"{k} — {paletes[k]['produto']}")
+                all_ruas   = ["R1", "R2", "R3", "R4", "R5", "R6"]
+                all_faces  = ["A", "B"]
+            with mc2:
+                st.markdown("**Destino**")
+                rua_dest  = st.selectbox("Rua destino",  all_ruas,  index=all_ruas.index(rua),  key="move_rua_d")
+                face_dest = st.selectbox("Face destino", all_faces, index=all_faces.index(face), key="move_face_d")
+                col_dest  = st.selectbox("Coluna destino", list(range(1, 14)), key="move_col_d")
+                niv_dest  = st.selectbox("Nível destino", [4, 3, 2, 1], key="move_niv_d",
+                                         format_func=lambda n: f"N{n}")
+
+            pk_dest = f"{rua_dest}-{face_dest}-C{col_dest}-N{niv_dest}"
+            todos_paletes = get_todos_paletes(conn)
+            if pk_dest in todos_paletes:
+                st.warning(f"Destino **{pk_dest}** está ocupado por *{todos_paletes[pk_dest]['produto']}* — será feito um **swap**.")
+            else:
+                st.info(f"Destino **{pk_dest}** está vazio.")
+
+            if st.button("↔️ Confirmar movimentação", key="btn_move", disabled=(pk_orig == pk_dest)):
+                try:
+                    mover_palete(conn, pk_orig, pk_dest)
+                    st.success(f"Palete movido: **{pk_orig}** → **{pk_dest}**.")
+                    st.rerun()
+                except ValueError as e:
+                    st.error(str(e))
+
+    # ── Remover ───────────────────────────────────────────────────────────────
+    with action_tab_del:
+        st.markdown("##### Remover palete de uma posição")
+        if not paletes:
+            st.info("Nenhum palete neste rack.")
+        else:
+            pos_opts = sorted(paletes.keys())
+            pk_del = st.selectbox("Posição", pos_opts, key="del_pos",
+                                  format_func=lambda k: f"{k} — {paletes[k]['produto']}")
+            info_del = paletes[pk_del]
+            st.markdown(
+                f'<div style="background:#1e293b;border:1px solid #ef444444;border-radius:8px;padding:10px 14px;">'
+                f'<b style="color:#f87171;">{pk_del}</b> · {info_del["produto"]} · '
+                f'{info_del["quantidade"]} {info_del["unidade"]}</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("🗑️ Confirmar remoção", key="btn_del", type="secondary"):
+                delete_palete(conn, pk_del)
+                st.success(f"Posição **{pk_del}** esvaziada.")
+                st.rerun()
+
+    # ── Gerenciar produtos ────────────────────────────────────────────────────
+    with action_tab_prod:
+        st.markdown("##### Cadastro de produtos do mapa")
+
+        pc1, pc2 = st.columns([4, 2])
+        with pc1:
+            novo_nome = st.text_input("Nome do produto", key="prod_nome")
+        with pc2:
+            nova_unid = st.selectbox("Unidade padrão", ["L", "kg", "un", "cx", "sc", "fardo", "m³"],
+                                     key="prod_unid")
+        if st.button("➕ Cadastrar produto", key="btn_add_prod", disabled=not novo_nome.strip()):
+            pid = add_produto_mapa(conn, novo_nome.strip(), nova_unid)
+            st.success(f"Produto cadastrado (id: {pid}).")
+            st.rerun()
+
+        st.markdown("---")
+        if produtos:
+            st.markdown("**Produtos cadastrados:**")
+            for p in produtos:
+                pcol_name, pcol_cor, pcol_del = st.columns([5, 1, 1])
+                with pcol_name:
+                    st.markdown(
+                        f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;'
+                        f'background:{p["cor_hex"] or "#4ade80"};margin-right:6px;vertical-align:middle;"></span>'
+                        f'<b>{p["nome"]}</b> <span style="color:#64748b;font-size:0.8rem;">({p["unidade_pad"]})</span>',
+                        unsafe_allow_html=True,
+                    )
+                with pcol_del:
+                    if st.button("🗑️", key=f"del_prod_{p['produto_id']}", help=f"Remover {p['nome']}"):
+                        delete_produto_mapa(conn, p["produto_id"])
+                        st.rerun()
+        else:
+            st.info("Nenhum produto cadastrado ainda.")
+
+    # ── Heatmap de ocupação geral ─────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("##### Ocupação Geral do Armazém")
+
+    ocupacao = get_ocupacao_geral(conn)
+    total_ocp = sum(v[0] for v in ocupacao.values())
+    total_pos = sum(v[1] for v in ocupacao.values())
+    st.caption(f"Total: **{total_ocp}** paletes alocados de **{total_pos}** posições ({round(total_ocp/total_pos*100) if total_pos else 0}%)")
+
+    ruas_hm  = ["R1", "R2", "R3", "R4", "R5", "R6"]
+    faces_hm = ["A — Frente", "B — Fundo"]
+    z_data   = []
+    z_text   = []
+    for r in ruas_hm:
+        row_z, row_t = [], []
+        for f in ["A", "B"]:
+            ocp, tot = ocupacao.get((r, f), (0, 52))
+            pct = round(ocp / tot * 100) if tot else 0
+            row_z.append(pct)
+            row_t.append(f"{pct}%\n({ocp}/{tot})")
+        z_data.append(row_z)
+        z_text.append(row_t)
+
+    fig_hm = go.Figure(
+        data=go.Heatmap(
+            z=z_data,
+            x=faces_hm,
+            y=ruas_hm,
+            colorscale=[[0, "#1e293b"], [0.4, "#854d0e"], [0.75, "#f59e0b"], [1, "#22c55e"]],
+            zmin=0, zmax=100,
+            text=z_text,
+            texttemplate="%{text}",
+            showscale=True,
+            colorbar=dict(
+                title="% ocup.",
+                ticksuffix="%",
+                len=0.85,
+                tickfont=dict(color="#94a3b8"),
+                titlefont=dict(color="#94a3b8"),
+            ),
+        )
+    )
+    fig_hm.update_layout(
+        paper_bgcolor="#0f172a",
+        plot_bgcolor="#0f172a",
+        font=dict(color="#94a3b8", size=12),
+        margin=dict(l=50, r=60, t=30, b=20),
+        height=310,
+        xaxis=dict(side="top"),
+    )
+    st.plotly_chart(fig_hm, use_container_width=True)
+
+
 def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None) -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
@@ -4518,7 +4865,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12, t13 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📊 Infográficos"])
+    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12, t13, t_mapa = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📊 Infográficos", "🏭 Mapa Visual"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -5777,6 +6124,9 @@ if has_mestre:
     # ══════════════════════════════════════════════════════════════════════════
     with t13:
         build_infograficos_tab()
+
+    with t_mapa:
+        render_mapa_visual(conn)
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────
