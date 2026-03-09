@@ -3158,6 +3158,12 @@ def render_mapa_visual(conn):
     produtos = get_produtos_mapa(conn)
     prod_map = {p["nome"]: p for p in produtos}
 
+    # Produtos do estoque mestre (para busca inteligente igual à aba Repor na Loja)
+    _est_rows = conn.execute(
+        "SELECT produto FROM estoque_mestre ORDER BY produto"
+    ).fetchall()
+    est_prod_names = [r[0] for r in _est_rows if r[0]]
+
     # Destaca células do produto buscado
     hl_keys: set = set()
     if search.strip():
@@ -3194,23 +3200,30 @@ def render_mapa_visual(conn):
     # ── Adicionar ─────────────────────────────────────────────────────────────
     with action_tab_add:
         st.markdown("##### Alocar produto em uma posição")
-        ac1, ac2, ac3, ac4 = st.columns([2, 2, 2, 2])
+        ac1, ac2 = st.columns([2, 2])
         with ac1:
             col_add = st.selectbox("Coluna", list(range(1, 14)), key="add_col")
         with ac2:
             niv_add = st.selectbox("Nível", [4, 3, 2, 1], key="add_niv",
                                    format_func=lambda n: f"N{n} ({'topo' if n==4 else 'chão' if n==1 else str(n)})")
+
+        prod_sel = st.selectbox(
+            "Produto",
+            options=est_prod_names,
+            index=None,
+            key="add_prod",
+            placeholder="Digite o nome do produto…",
+        )
+
+        ac3, ac4 = st.columns([2, 2])
         with ac3:
-            prod_names = [p["nome"] for p in produtos]
-            prod_sel = st.selectbox("Produto", prod_names if prod_names else ["— cadastre um produto primeiro —"],
-                                    key="add_prod")
-        with ac4:
-            if prod_sel and prod_sel in prod_map:
-                unid_default = prod_map[prod_sel]["unidade_pad"] or "L"
-            else:
-                unid_default = "L"
+            unid_default = prod_map.get(prod_sel, {}).get("unidade_pad", "L") if prod_sel else "L"
             qtd_add = st.number_input("Quantidade", min_value=0.0, step=1.0, value=1.0, key="add_qtd")
-            unid_add = st.text_input("Unidade", unid_default, key="add_unid")
+        with ac4:
+            unid_add = st.selectbox("Unidade", ["L", "kg", "un", "cx", "sc", "fardo", "m³"],
+                                    index=["L","kg","un","cx","sc","fardo","m³"].index(unid_default)
+                                    if unid_default in ["L","kg","un","cx","sc","fardo","m³"] else 0,
+                                    key="add_unid")
 
         pk_add = f"{rua}-{face}-C{col_add}-N{niv_add}"
         if pk_add in paletes:
@@ -3219,8 +3232,9 @@ def render_mapa_visual(conn):
         else:
             st.caption(f"Posição selecionada: **{pk_add}** (vazia)")
 
-        if st.button("✅ Salvar palete", key="btn_add", disabled=(not prod_names or prod_sel not in prod_map)):
-            pid = prod_map[prod_sel]["produto_id"]
+        if st.button("✅ Salvar palete", key="btn_add", disabled=(not prod_sel)):
+            # Auto-registra o produto em mapa_produtos se ainda não existir
+            pid = add_produto_mapa(conn, prod_sel, unid_add)
             upsert_palete(conn, pk_add, pid, qtd_add, unid_add)
             st.success(f"Palete alocado em **{pk_add}**.")
             st.rerun()
@@ -3235,19 +3249,27 @@ def render_mapa_visual(conn):
             pk_edit = st.selectbox("Posição", pos_opts, key="edit_pos",
                                    format_func=lambda k: f"{k} — {paletes[k]['produto']}")
             info_edit = paletes[pk_edit]
-            ec1, ec2, ec3 = st.columns([3, 2, 2])
-            with ec1:
-                prod_names = [p["nome"] for p in produtos]
-                cur_idx = prod_names.index(info_edit["produto"]) if info_edit["produto"] in prod_names else 0
-                new_prod = st.selectbox("Produto", prod_names, index=cur_idx, key="edit_prod")
+            cur_idx_edit = est_prod_names.index(info_edit["produto"]) if info_edit["produto"] in est_prod_names else None
+            new_prod = st.selectbox(
+                "Produto",
+                options=est_prod_names,
+                index=cur_idx_edit,
+                key="edit_prod",
+                placeholder="Digite o nome do produto…",
+            )
+            ec2, ec3 = st.columns([2, 2])
             with ec2:
                 new_qtd = st.number_input("Quantidade", min_value=0.0, step=1.0,
                                           value=float(info_edit["quantidade"] or 1), key="edit_qtd")
             with ec3:
-                new_unid = st.text_input("Unidade", info_edit["unidade"] or "L", key="edit_unid")
+                _unid_opts = ["L", "kg", "un", "cx", "sc", "fardo", "m³"]
+                _cur_unid = info_edit["unidade"] or "L"
+                new_unid = st.selectbox("Unidade", _unid_opts,
+                                        index=_unid_opts.index(_cur_unid) if _cur_unid in _unid_opts else 0,
+                                        key="edit_unid")
 
-            if st.button("💾 Salvar alterações", key="btn_edit"):
-                pid = prod_map[new_prod]["produto_id"]
+            if st.button("💾 Salvar alterações", key="btn_edit", disabled=(not new_prod)):
+                pid = add_produto_mapa(conn, new_prod, new_unid)
                 upsert_palete(conn, pk_edit, pid, new_qtd, new_unid)
                 st.success(f"Palete **{pk_edit}** atualizado.")
                 st.rerun()
