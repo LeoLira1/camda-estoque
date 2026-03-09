@@ -4448,7 +4448,19 @@ if has_mestre:
     has_pa = bool(_mapa_pa_search)
 
     search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
-    search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed")
+    search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed", key="search_mestre")
+    st.markdown("""<script>
+    (function() {
+        function disableAutocomplete() {
+            var inputs = document.querySelectorAll('input[type="text"]');
+            inputs.forEach(function(el) {
+                el.setAttribute('autocomplete', 'off');
+            });
+        }
+        setTimeout(disableAutocomplete, 100);
+        setTimeout(disableAutocomplete, 500);
+    })();
+    </script>""", unsafe_allow_html=True)
 
     df_view = df_mestre
     pa_match_info = ""
