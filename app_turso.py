@@ -3306,45 +3306,45 @@ def render_mapa_visual(conn):
 
     # ── Adicionar ─────────────────────────────────────────────────────────────
     with action_tab_add:
-        st.markdown("##### Alocar produto em uma posição")
-        ac1, ac2 = st.columns([2, 2])
-        with ac1:
-            col_add = st.selectbox("Coluna", list(range(1, 14)), key="add_col")
-        with ac2:
-            niv_add = st.selectbox("Nível", [4, 3, 2, 1], key="add_niv",
-                                   format_func=lambda n: f"N{n} ({'topo' if n==4 else 'chão' if n==1 else str(n)})")
+        with st.expander("➕ Alocar produto em uma posição", expanded=False):
+            ac1, ac2 = st.columns([2, 2])
+            with ac1:
+                col_add = st.selectbox("Coluna", list(range(1, 14)), key="add_col")
+            with ac2:
+                niv_add = st.selectbox("Nível", [4, 3, 2, 1], key="add_niv",
+                                       format_func=lambda n: f"N{n} ({'topo' if n==4 else 'chão' if n==1 else str(n)})")
 
-        prod_sel = st.selectbox(
-            "Produto",
-            options=est_prod_names,
-            index=None,
-            key="add_prod",
-            placeholder="Digite o nome do produto…",
-        )
+            prod_sel = st.selectbox(
+                "Produto",
+                options=est_prod_names,
+                index=None,
+                key="add_prod",
+                placeholder="Digite o nome do produto…",
+            )
 
-        ac3, ac4 = st.columns([2, 2])
-        with ac3:
-            unid_default = prod_map.get(prod_sel, {}).get("unidade_pad", "L") if prod_sel else "L"
-            qtd_add = st.number_input("Quantidade", min_value=0.0, step=1.0, value=1.0, key="add_qtd")
-        with ac4:
-            unid_add = st.selectbox("Unidade", ["L", "kg", "un", "cx", "sc", "fardo", "m³"],
-                                    index=["L","kg","un","cx","sc","fardo","m³"].index(unid_default)
-                                    if unid_default in ["L","kg","un","cx","sc","fardo","m³"] else 0,
-                                    key="add_unid")
+            ac3, ac4 = st.columns([2, 2])
+            with ac3:
+                unid_default = prod_map.get(prod_sel, {}).get("unidade_pad", "L") if prod_sel else "L"
+                qtd_add = st.number_input("Quantidade", min_value=0.0, step=1.0, value=1.0, key="add_qtd")
+            with ac4:
+                unid_add = st.selectbox("Unidade", ["L", "kg", "un", "cx", "sc", "fardo", "m³"],
+                                        index=["L","kg","un","cx","sc","fardo","m³"].index(unid_default)
+                                        if unid_default in ["L","kg","un","cx","sc","fardo","m³"] else 0,
+                                        key="add_unid")
 
-        pk_add = f"{rua}-{face}-C{col_add}-N{niv_add}"
-        if pk_add in paletes:
-            st.warning(f"⚠️ Posição **{pk_add}** já está ocupada por *{paletes[pk_add]['produto']}*. "
-                       "Use **Editar palete** para substituir.")
-        else:
-            st.caption(f"Posição selecionada: **{pk_add}** (vazia)")
+            pk_add = f"{rua}-{face}-C{col_add}-N{niv_add}"
+            if pk_add in paletes:
+                st.warning(f"⚠️ Posição **{pk_add}** já está ocupada por *{paletes[pk_add]['produto']}*. "
+                           "Use **Editar palete** para substituir.")
+            else:
+                st.caption(f"Posição selecionada: **{pk_add}** (vazia)")
 
-        if st.button("✅ Salvar palete", key="btn_add", disabled=(not prod_sel)):
-            pid = add_produto_mapa(conn, prod_sel, unid_add)
-            upsert_palete(conn, pk_add, pid, qtd_add, unid_add)
-            sync_db()
-            st.success(f"Palete alocado em **{pk_add}**.")
-            st.rerun()
+            if st.button("✅ Salvar palete", key="btn_add", disabled=(not prod_sel)):
+                pid = add_produto_mapa(conn, prod_sel, unid_add)
+                upsert_palete(conn, pk_add, pid, qtd_add, unid_add)
+                sync_db()
+                st.success(f"Palete alocado em **{pk_add}**.")
+                st.rerun()
 
     # ── Editar ────────────────────────────────────────────────────────────────
     with action_tab_edit:
