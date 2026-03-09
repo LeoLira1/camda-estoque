@@ -6418,6 +6418,10 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         # Salvar dados de vendas para gráficos (apenas Mestre e Parcial vendas)
                         if not is_parcial_estoque:
                             save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
+                        # Sincroniza automaticamente as quantidades no mapa do rack
+                        _sync_res = sync_quantidades_from_estoque(conn)
+                        if _sync_res["atualizadas"] > 0:
+                            st.info(f"🗺️ Mapa do rack atualizado automaticamente ({_sync_res['atualizadas']} posição(ões)).")
                         if _using_cloud:
                             st.info("☁️ Sincronizado.")
                         st.session_state.processed_file = None
