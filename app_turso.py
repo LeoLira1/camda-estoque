@@ -5279,7 +5279,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12, t13, t_mapa = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📊 Infográficos", "🏭 Mapa Visual"])
+    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -6533,14 +6533,6 @@ if has_mestre:
     with t12:
         build_principios_ativos_tab(df_mestre, df_pa)
 
-    # ══════════════════════════════════════════════════════════════════════════
-    # TAB 13 — INFOGRÁFICOS
-    # ══════════════════════════════════════════════════════════════════════════
-    with t13:
-        build_infograficos_tab()
-
-    with t_mapa:
-        render_mapa_visual(get_db())
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────
