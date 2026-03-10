@@ -5210,18 +5210,23 @@ if has_mestre:
 
     search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
     search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed", key="search_mestre")
-    st.markdown("""<script>
+    import streamlit.components.v1 as _stc_ac
+    _stc_ac.html("""<script>
     (function() {
         function disableAutocomplete() {
-            var inputs = document.querySelectorAll('input[type="text"]');
-            inputs.forEach(function(el) {
-                el.setAttribute('autocomplete', 'off');
-            });
+            try {
+                var inputs = window.parent.document.querySelectorAll('input[type="text"], input:not([type])');
+                inputs.forEach(function(el) {
+                    el.setAttribute('autocomplete', 'new-password');
+                    el.setAttribute('readonly', '');
+                    setTimeout(function(){ el.removeAttribute('readonly'); }, 50);
+                });
+            } catch(e) {}
         }
-        setTimeout(disableAutocomplete, 100);
-        setTimeout(disableAutocomplete, 500);
+        setTimeout(disableAutocomplete, 200);
+        setTimeout(disableAutocomplete, 800);
     })();
-    </script>""", unsafe_allow_html=True)
+    </script>""", height=0)
 
     df_view = df_mestre
     pa_match_info = ""
