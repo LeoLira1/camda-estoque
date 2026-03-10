@@ -326,6 +326,23 @@ if not st.session_state.authenticated:
     _, col_login, _ = st.columns([1, 1.5, 1])
     with col_login:
         st.markdown(card_weather, unsafe_allow_html=True)
+        import streamlit.components.v1 as _stc_login
+        _stc_login.html("""<script>
+        (function(){
+            function disablePwdManager(){
+                try{
+                    var inputs = window.parent.document.querySelectorAll('input[type="password"]');
+                    inputs.forEach(function(el){
+                        el.setAttribute('autocomplete','new-password');
+                        el.setAttribute('name','camda_pwd_' + Math.random());
+                    });
+                }catch(e){}
+            }
+            disablePwdManager();
+            setTimeout(disablePwdManager, 300);
+            setTimeout(disablePwdManager, 800);
+        })();
+        </script>""", height=0)
         with st.form("form_login"):
             senha_input = st.text_input(
                 "senha", type="password",
