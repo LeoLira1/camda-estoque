@@ -3235,8 +3235,9 @@ def render_mapa_visual(conn):
             st.warning(f"Nenhuma posição encontrada para *{search_prod}* no armazém.")
 
     # ── Carrega paletes e produtos ────────────────────────────────────────────
-    paletes  = get_paletes_rack(conn, rua, face)
-    produtos = get_produtos_mapa(conn)
+    paletes       = get_paletes_rack(conn, rua, face)
+    produtos      = get_produtos_mapa(conn)
+    todos_paletes = get_todos_paletes(conn)
     prod_map = {p["nome"]: p for p in produtos}
 
     # Destaca células do produto buscado no rack atual
@@ -3270,7 +3271,7 @@ def render_mapa_visual(conn):
         )
         st.text_input("", key="mv_3d_click_raw", placeholder="__rack_3d_click__",
                       label_visibility="collapsed")
-        render_rack_3d(paletes, get_produtos_mapa(conn), rua, face,
+        render_rack_3d(paletes, produtos, rua, face,
                        height=560, highlight_keys=hl_keys)
     else:
         import streamlit.components.v1 as _stc
@@ -3281,7 +3282,7 @@ def render_mapa_visual(conn):
         [f"{k} — {v['produto']}" for k, v in paletes.items()]
     )
     _ocp_all = sorted(
-        [f"{k} — {v['produto']}" for k, v in get_todos_paletes(conn).items()]
+        [f"{k} — {v['produto']}" for k, v in todos_paletes.items()]
     )
     with st.expander("↔️ Mover palete para outro rack", expanded=False):
         _use_all = st.checkbox("Mostrar paletes de todos os racks", key="mv_all_racks",
@@ -3306,7 +3307,7 @@ def render_mapa_visual(conn):
             _dest_niv  = st.selectbox("Nível", [4,3,2,1], key="qmv_niv",
                                       format_func=lambda n: f"N{n}")
         _dest_pk   = f"{_dest_rua}-{_dest_face}-C{_dest_col}-N{_dest_niv}"
-        _dest_info = get_todos_paletes(conn).get(_dest_pk)
+        _dest_info = todos_paletes.get(_dest_pk)
         if _dest_info:
             st.warning(f"Destino **{_dest_pk}** ocupado por *{_dest_info['produto']}* → será feito **swap**.")
         else:
@@ -3580,7 +3581,6 @@ def render_mapa_visual(conn):
                                          format_func=lambda n: f"N{n}")
 
             pk_dest = f"{rua_dest}-{face_dest}-C{col_dest}-N{niv_dest}"
-            todos_paletes = get_todos_paletes(conn)
             if pk_dest in todos_paletes:
                 st.warning(f"Destino **{pk_dest}** está ocupado por *{todos_paletes[pk_dest]['produto']}* — será feito um **swap**.")
             else:
@@ -3668,7 +3668,7 @@ def render_mapa_visual(conn):
 
         _picked = st.session_state.get("rack_picked_pk")
         if _picked:
-            _p_info = paletes.get(_picked) or get_todos_paletes(conn).get(_picked)
+            _p_info = paletes.get(_picked) or todos_paletes.get(_picked)
             _p_nome = _p_info["produto"] if _p_info else _picked
             st.info(
                 f"📌 **{_p_nome}** selecionado — clique no destino para mover "

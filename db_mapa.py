@@ -214,14 +214,15 @@ def get_ocupacao_geral(conn) -> dict:
     """
     ensure_mapa_tables(conn)
     TOTAL = 52
+    # Uma única query GROUP BY substitui 20 queries individuais
+    rows = conn.execute(
+        "SELECT rua, face, COUNT(*) FROM mapa_posicoes WHERE produto_id IS NOT NULL GROUP BY rua, face"
+    ).fetchall()
+    ocupacao_map = {(r[0], r[1]): r[2] for r in rows}
     result = {}
     for rua in _get_rack_list(conn):
         for face in ["A", "B"]:
-            ocupadas = conn.execute(
-                "SELECT COUNT(*) FROM mapa_posicoes WHERE rua=? AND face=? AND produto_id IS NOT NULL",
-                (rua, face),
-            ).fetchone()[0]
-            result[(rua, face)] = (ocupadas, TOTAL)
+            result[(rua, face)] = (ocupacao_map.get((rua, face), 0), TOTAL)
     return result
 
 
