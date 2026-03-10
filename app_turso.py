@@ -174,7 +174,7 @@ if not st.session_state.authenticated:
         background:rgba(255,255,255,0.1) !important;
         border:1px solid rgba(255,255,255,0.22) !important;
         border-radius:30px !important;
-        color:white !important;
+        color:black !important;
         padding:12px 20px !important;
         font-size:1rem !important;
         text-align:center;
