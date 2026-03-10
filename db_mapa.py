@@ -2,9 +2,13 @@
 db_mapa.py — Funções de banco para o Mapa Visual do Armazém CAMDA.
 
 Estrutura física:
-  - 6 ruas (R1..R6), 2 faces (A=frente, B=fundo)
+  - 10 racks (R1..R10), 2 faces (A=frente, B=fundo)
   - 13 colunas por rack, 4 níveis (N1=chão, N4=topo)
-  - pos_key: "{RUA}-{FACE}-C{COL}-N{NIVEL}"  ex: R1-A-C1-N1
+  - pos_key: "{RACK}-{FACE}-C{COL}-N{NIVEL}"  ex: R1-A-C1-N1
+  - Total de posições: 10 × 2 × 13 × 4 = 1.040 células
+
+Renomear racks: UPDATE racks SET nome='Nome Real' WHERE rack_id='R1'
+O pos_key no banco NÃO muda, apenas o campo nome.
 """
 
 import uuid
@@ -22,6 +26,16 @@ _CORES = [
 
 def ensure_mapa_tables(conn):
     """Cria tabelas do mapa se não existirem (idempotente)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS racks (
+            rack_id    TEXT PRIMARY KEY,
+            nome       TEXT NOT NULL,
+            fileira    INTEGER NOT NULL,
+            posicao    INTEGER NOT NULL,
+            tem_face_b INTEGER DEFAULT 1,
+            ativo      INTEGER DEFAULT 1
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS mapa_posicoes (
             pos_key    TEXT PRIMARY KEY,
@@ -43,7 +57,38 @@ def ensure_mapa_tables(conn):
             cor_hex      TEXT
         )
     """)
+    # Seed inicial dos racks (INSERT OR IGNORE = idempotente)
+    conn.execute("""
+        INSERT OR IGNORE INTO racks VALUES
+            ('R1',  'R1',  1, 1, 1, 1),
+            ('R2',  'R2',  1, 2, 1, 1),
+            ('R3',  'R3',  1, 3, 1, 1),
+            ('R4',  'R4',  1, 4, 1, 1),
+            ('R5',  'R5',  1, 5, 1, 1),
+            ('R6',  'R6',  1, 6, 1, 1),
+            ('R7',  'R7',  2, 1, 1, 1),
+            ('R8',  'R8',  2, 2, 1, 1),
+            ('R9',  'R9',  2, 3, 1, 1),
+            ('R10', 'R10', 2, 4, 1, 1)
+    """)
     conn.commit()
+
+
+# Alias para compatibilidade com a interface descrita no schema
+init_mapa_tables = ensure_mapa_tables
+
+
+def _get_rack_list(conn) -> list:
+    """Retorna lista de rack_ids ativos ordenados por fileira e posição."""
+    try:
+        rows = conn.execute(
+            "SELECT rack_id FROM racks WHERE ativo=1 ORDER BY fileira, posicao"
+        ).fetchall()
+        if rows:
+            return [r[0] for r in rows]
+    except Exception:
+        pass
+    return [f"R{i}" for i in range(1, 11)]
 
 
 def _parse_pos_key(pos_key: str):
@@ -164,13 +209,13 @@ def buscar_produto_todas_ruas(conn, nome_parcial: str) -> list:
 
 def get_ocupacao_geral(conn) -> dict:
     """
-    Retorna {(rua, face): (ocupadas, total)} para todas as ruas e faces.
+    Retorna {(rack_id, face): (ocupadas, total)} para todos os racks ativos.
     Total fixo = 13 colunas × 4 níveis = 52 células por rack.
     """
     ensure_mapa_tables(conn)
     TOTAL = 52
     result = {}
-    for rua in ["R1", "R2", "R3", "R4", "R5", "R6"]:
+    for rua in _get_rack_list(conn):
         for face in ["A", "B"]:
             ocupadas = conn.execute(
                 "SELECT COUNT(*) FROM mapa_posicoes WHERE rua=? AND face=? AND produto_id IS NOT NULL",
@@ -183,7 +228,7 @@ def get_ocupacao_geral(conn) -> dict:
 def get_posicoes_vazias(conn) -> list:
     """
     Retorna lista de pos_key de todas as posições vazias do armazém,
-    em ordem lógica (R1→R6, A→B, C1→C13, N1→N4).
+    em ordem lógica (R1→R10, A→B, C1→C13, N1→N4).
     """
     ensure_mapa_tables(conn)
     ocupadas = {
@@ -193,7 +238,7 @@ def get_posicoes_vazias(conn) -> list:
         ).fetchall()
     }
     vazias = []
-    for rua in ["R1", "R2", "R3", "R4", "R5", "R6"]:
+    for rua in _get_rack_list(conn):
         for face in ["A", "B"]:
             for col in range(1, 14):
                 for niv in range(1, 5):

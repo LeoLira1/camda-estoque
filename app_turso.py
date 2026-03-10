@@ -27,6 +27,7 @@ from db_mapa import (
     sync_quantidades_from_estoque,
     get_posicoes_vazias,
 )
+from mapa_3d_component import render_rack_3d
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
 _BRT = timezone(timedelta(hours=-3))
@@ -3175,19 +3176,27 @@ body{margin:0;background:#0f172a;}
     return f'{css}{js}<div class="mr-wrap">{col_heads}{rows_html}</div>'
 
 
+_ALL_RACKS = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10"]
+
+
 def render_mapa_visual(conn):
     st.subheader("🏭 Mapa Visual do Armazém")
 
-    # ── Seletores de rua e face ───────────────────────────────────────────────
-    col_r, col_f = st.columns([2, 3])
+    # ── Seletores de rack, face e modo de visualização ────────────────────────
+    col_r, col_f, col_m = st.columns([2, 3, 3])
     with col_r:
-        rua = st.selectbox("Rua", ["R1", "R2", "R3", "R4", "R5", "R6"], key="mv_rua")
+        rua = st.selectbox("Rack", _ALL_RACKS, key="mv_rua")
     with col_f:
         face_label = st.radio(
             "Face", ["A — Frente", "B — Fundo"],
             horizontal=True, key="mv_face",
         )
         face = face_label[0]   # "A" ou "B"
+    with col_m:
+        modo = st.radio(
+            "Modo", ["📋 Vista 2D", "🧊 Vista 3D"],
+            horizontal=True, key="mv_modo",
+        )
 
     # ── Busca inteligente (todas as ruas) ─────────────────────────────────────
     _est_rows = conn.execute(
@@ -3239,14 +3248,33 @@ def render_mapa_visual(conn):
             if loc["rua"] == rua and loc["face"] == face
         }
 
-    # ── Mapa visual somente leitura (topo) ────────────────────────────────────
+    # ── Mapa visual — 2D ou 3D ────────────────────────────────────────────────
     n_occ = len(paletes)
     st.markdown(
         f"**Rack {rua}-{face}** — {n_occ} de 52 posições ocupadas "
         f"({round(n_occ / 52 * 100)}%)"
     )
-    import streamlit.components.v1 as _stc
-    _stc.html(_rack_html(paletes, rua, face, hl_keys), height=295, scrolling=False)
+
+    if "3D" in modo:
+        # ── Input oculto para receber clicks do Three.js ──────────────────────
+        # Reduzido a altura zero via CSS inline; JS injeta o pos_key via React
+        _3d_click_raw = st.session_state.get("mv_3d_click_raw", "")
+        if _3d_click_raw:
+            st.session_state["mv_selected"] = _3d_click_raw
+            st.session_state["mv_3d_click_raw"] = ""
+        st.markdown(
+            "<style>div[data-testid='stTextInput']:has(input[placeholder='__rack_3d_click__'])"
+            "{height:0!important;min-height:0!important;overflow:hidden!important;"
+            "visibility:hidden!important;margin:0!important;padding:0!important;}</style>",
+            unsafe_allow_html=True,
+        )
+        st.text_input("", key="mv_3d_click_raw", placeholder="__rack_3d_click__",
+                      label_visibility="collapsed")
+        render_rack_3d(paletes, get_produtos_mapa(conn), rua, face,
+                       height=560, highlight_keys=hl_keys)
+    else:
+        import streamlit.components.v1 as _stc
+        _stc.html(_rack_html(paletes, rua, face, hl_keys), height=295, scrolling=False)
 
     # ── Mover palete ──────────────────────────────────────────────────────────
     _ocp_this = sorted(
@@ -3264,10 +3292,10 @@ def render_mapa_visual(conn):
             _orig_sel = st.selectbox("De (origem)", _opts, key="qmv_orig",
                                      help="Posição atual do palete")
         _orig_pk = _orig_sel.split(" — ")[0].strip() if _orig_sel else ""
-        _all_ruas  = ["R1","R2","R3","R4","R5","R6"]
+        _all_ruas  = _ALL_RACKS
         _all_faces = ["A","B"]
         with mv2:
-            _dest_rua  = st.selectbox("Rua destino",  _all_ruas,  key="qmv_rua",
+            _dest_rua  = st.selectbox("Rack destino", _all_ruas,  key="qmv_rua",
                                       index=_all_ruas.index(rua))
         with mv3:
             _dest_face = st.selectbox("Face destino", _all_faces, key="qmv_face",
@@ -3541,11 +3569,11 @@ def render_mapa_visual(conn):
                 pos_opts = sorted(paletes.keys())
                 pk_orig = st.selectbox("Posição de origem", pos_opts, key="move_orig",
                                        format_func=lambda k: f"{k} — {paletes[k]['produto']}")
-                all_ruas   = ["R1", "R2", "R3", "R4", "R5", "R6"]
+                all_ruas   = _ALL_RACKS
                 all_faces  = ["A", "B"]
             with mc2:
                 st.markdown("**Destino**")
-                rua_dest  = st.selectbox("Rua destino",  all_ruas,  index=all_ruas.index(rua),  key="move_rua_d")
+                rua_dest  = st.selectbox("Rack destino", all_ruas,  index=all_ruas.index(rua),  key="move_rua_d")
                 face_dest = st.selectbox("Face destino", all_faces, index=all_faces.index(face), key="move_face_d")
                 col_dest  = st.selectbox("Coluna destino", list(range(1, 14)), key="move_col_d")
                 niv_dest  = st.selectbox("Nível destino", [4, 3, 2, 1], key="move_niv_d",
@@ -3706,26 +3734,38 @@ def render_mapa_visual(conn):
                             st.session_state.rack_picked_pk = None
                             st.rerun()
 
-    # ── Heatmap de ocupação geral ─────────────────────────────────────────────
+    # ── Heatmap de ocupação geral — todos os racks ────────────────────────────
     st.markdown("---")
-    st.markdown("##### Ocupação Geral do Armazém")
+    st.markdown("##### 🗺️ Ocupação Geral — Todos os Racks")
 
     ocupacao = get_ocupacao_geral(conn)
     total_ocp = sum(v[0] for v in ocupacao.values())
     total_pos = sum(v[1] for v in ocupacao.values())
-    st.caption(f"Total: **{total_ocp}** paletes alocados de **{total_pos}** posições ({round(total_ocp/total_pos*100) if total_pos else 0}%)")
+    st.caption(
+        f"Total: **{total_ocp}** paletes alocados de **{total_pos}** posições "
+        f"({round(total_ocp / total_pos * 100) if total_pos else 0}%)"
+    )
 
-    ruas_hm  = ["R1", "R2", "R3", "R4", "R5", "R6"]
+    # Layout reflete a planta baixa:
+    # Fileira 1: R1 R2 R3 R4 R5 R6
+    # Fileira 2: R7 R8 R9 R10
+    _racks_f1 = ["R1", "R2", "R3", "R4", "R5", "R6"]
+    _racks_f2 = ["R7", "R8", "R9", "R10", "(vazio)", "(vazio)"]
+    _all_hm   = _racks_f1 + _racks_f2  # y-axis: fileira 1 em cima, fileira 2 embaixo
+
     faces_hm = ["A — Frente", "B — Fundo"]
-    z_data   = []
-    z_text   = []
-    for r in ruas_hm:
+    z_data, z_text = [], []
+    for r in _all_hm:
         row_z, row_t = [], []
         for f in ["A", "B"]:
-            ocp, tot = ocupacao.get((r, f), (0, 52))
-            pct = round(ocp / tot * 100) if tot else 0
-            row_z.append(pct)
-            row_t.append(f"{pct}%\n({ocp}/{tot})")
+            if r.startswith("("):
+                row_z.append(None)
+                row_t.append("")
+            else:
+                ocp, tot = ocupacao.get((r, f), (0, 52))
+                pct = round(ocp / tot * 100) if tot else 0
+                row_z.append(pct)
+                row_t.append(f"{pct}%\n({ocp}/{tot})")
         z_data.append(row_z)
         z_text.append(row_t)
 
@@ -3733,8 +3773,8 @@ def render_mapa_visual(conn):
         data=go.Heatmap(
             z=z_data,
             x=faces_hm,
-            y=ruas_hm,
-            colorscale=[[0, "#1e293b"], [0.4, "#854d0e"], [0.75, "#f59e0b"], [1, "#22c55e"]],
+            y=_all_hm,
+            colorscale=[[0, "#1e293b"], [0.35, "#854d0e"], [0.70, "#f59e0b"], [1, "#22c55e"]],
             zmin=0, zmax=100,
             text=z_text,
             texttemplate="%{text}",
@@ -3747,13 +3787,26 @@ def render_mapa_visual(conn):
             ),
         )
     )
+    # Linha separadora entre fileiras (após R6)
+    fig_hm.add_shape(
+        type="line",
+        x0=-0.5, x1=1.5,
+        y0=5.5,  y1=5.5,
+        line=dict(color="#334155", width=2, dash="dot"),
+    )
     fig_hm.update_layout(
         paper_bgcolor="#0f172a",
         plot_bgcolor="#0f172a",
         font=dict(color="#94a3b8", size=12),
-        margin=dict(l=50, r=60, t=30, b=20),
-        height=310,
+        margin=dict(l=55, r=60, t=30, b=20),
+        height=390,
         xaxis=dict(side="top"),
+        annotations=[
+            dict(x=-0.62, y=2.5,  text="Fileira 1", showarrow=False,
+                 font=dict(color="#475569", size=10), xref="x", yref="y"),
+            dict(x=-0.62, y=8.5,  text="Fileira 2", showarrow=False,
+                 font=dict(color="#475569", size=10), xref="x", yref="y"),
+        ],
     )
     st.plotly_chart(fig_hm, use_container_width=True)
 
