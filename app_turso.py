@@ -5323,6 +5323,27 @@ if has_mestre:
             st.info("Nenhuma divergência.")
         else:
             st.caption(f"{len(df_div)} divergência(s) · Itens saem apenas quando desmarcados manualmente.")
+
+            # --- Filtro / Agrupamento por cooperado ---
+            obs_unicas = sorted([
+                o for o in df_div["observacoes"].dropna().astype(str).unique()
+                if o.strip()
+            ])
+            _c1, _c2 = st.columns([3, 1])
+            with _c1:
+                _filtro_obs = st.selectbox("Cooperado / Observação", ["Todos"] + obs_unicas, key="div_filtro_obs")
+            with _c2:
+                _agrupar = st.checkbox("Agrupar", value=False, key="div_agrupar")
+
+            if _filtro_obs != "Todos":
+                df_div = df_div[df_div["observacoes"].fillna("").astype(str).str.strip() == _filtro_obs]
+
+            if _agrupar:
+                df_div = df_div.copy()
+                df_div["_obs_sort"] = df_div["observacoes"].fillna("").astype(str).str.strip()
+                df_div = df_div.sort_values("_obs_sort")
+
+            _prev_obs_group = None
             for _, item in df_div.iterrows():
                 status_cor = "#ef4444" if item["status"] == "falta" else "#f59e0b"
                 status_label = "⬇️ FALTA" if item["status"] == "falta" else "⬆️ SOBRA"
@@ -5331,6 +5352,20 @@ if has_mestre:
                 qtd_f = int(item["qtd_fisica"]) if pd.notnull(item["qtd_fisica"]) else 0
                 nota = str(item["nota"]) if pd.notnull(item["nota"]) and str(item["nota"]).strip() else ""
                 observacoes = str(item["observacoes"]) if pd.notnull(item.get("observacoes")) and str(item.get("observacoes", "")).strip() else ""
+
+                # Cabeçalho de grupo ao agrupar por cooperado
+                if _agrupar:
+                    _obs_group = observacoes if observacoes else "Sem observação"
+                    if _obs_group != _prev_obs_group:
+                        _count_group = len(df_div[df_div["observacoes"].fillna("").astype(str).str.strip() == (observacoes if observacoes else "")])
+                        st.markdown(
+                            f'<div style="margin:14px 0 6px;padding:6px 12px;background:#1e3a5f;border-left:4px solid #3b82f6;border-radius:4px;">'
+                            f'<span style="color:#93c5fd;font-weight:700;font-size:0.82rem;">👤 {_obs_group}</span>'
+                            f'<span style="color:#64748b;font-size:0.72rem;margin-left:8px;">{_count_group} item(s)</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                        _prev_obs_group = _obs_group
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
