@@ -6533,16 +6533,25 @@ if has_mestre:
 
             if st.session_state.get("hist_confirmar_zerar"):
                 st.warning("Tem certeza? Isso apaga todo o histórico acumulado de vendas.")
+                senha_zerar = st.text_input(
+                    "Senha de edição",
+                    type="password",
+                    key="hist_zerar_senha",
+                    placeholder="Digite a senha para confirmar…",
+                )
                 col_sim, col_nao = st.columns(2)
                 with col_sim:
                     if st.button("✅ Sim, zerar", key="hist_zerar_sim", type="primary", use_container_width=True):
-                        get_db().execute("DELETE FROM vendas_historico")
-                        get_db().execute("COMMIT")
-                        sync_db()
-                        st.session_state.pop("hist_confirmar_zerar", None)
-                        st.session_state.pop("alertas_cache", None)
-                        st.success("Histórico zerado. Comece a enviar as planilhas do novo período.")
-                        st.rerun()
+                        if senha_zerar != EDIT_PASSWORD:
+                            st.error("Senha incorreta. Operação não realizada.")
+                        else:
+                            get_db().execute("DELETE FROM vendas_historico")
+                            get_db().execute("COMMIT")
+                            sync_db()
+                            st.session_state.pop("hist_confirmar_zerar", None)
+                            st.session_state.pop("alertas_cache", None)
+                            st.success("Histórico zerado. Comece a enviar as planilhas do novo período.")
+                            st.rerun()
                 with col_nao:
                     if st.button("✖ Cancelar", key="hist_zerar_nao", use_container_width=True):
                         st.session_state.pop("hist_confirmar_zerar", None)
