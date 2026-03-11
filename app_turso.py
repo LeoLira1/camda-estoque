@@ -1314,7 +1314,7 @@ _CAT_PRIORITY_MAP = {cat: i for i, cat in enumerate(CATEGORIA_PRIORITY)}
 # LEITURAS DO BANCO — simples e diretas
 # ══════════════════════════════════════════════════════════════════════════════
 _STOCK_COLS = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
-               "diferenca", "nota", "status", "ultima_contagem", "criado_em"]
+               "diferenca", "nota", "status", "ultima_contagem", "criado_em", "observacoes"]
 
 
 def get_current_stock() -> pd.DataFrame:
