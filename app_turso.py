@@ -905,6 +905,14 @@ def _get_connection():
     except Exception:
         pass
 
+    try:
+        est_cols = {row[1] for row in conn.execute("PRAGMA table_info(estoque_mestre)").fetchall()}
+        if "observacoes" not in est_cols:
+            conn.execute("ALTER TABLE estoque_mestre ADD COLUMN observacoes TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass
+
     # migração alertas_disparados já é criada no CREATE TABLE IF NOT EXISTS acima
     # mas garante que a constraint UNIQUE existe para DBs antigos sem ela
     try:
@@ -2166,7 +2174,7 @@ def marcar_reposto(item_id: int):
         st.error(f"❌ Erro ao marcar reposto: {e}")
 
 
-def registrar_divergencia_manual(codigo: str, delta: int) -> tuple:
+def registrar_divergencia_manual(codigo: str, delta: int, observacoes: str = "") -> tuple:
     """Registra divergência (sobra/falta) sem alterar qtd_sistema.
     delta > 0 = sobrando, delta < 0 = faltando.
     """
@@ -2182,8 +2190,8 @@ def registrar_divergencia_manual(codigo: str, delta: int) -> tuple:
         diferenca = delta  # qtd_fisica - qtd_sistema
         status = "sobra" if delta > 0 else "falta"
         conn.execute(
-            "UPDATE estoque_mestre SET qtd_fisica = ?, diferenca = ?, status = ? WHERE codigo = ?",
-            (qtd_fisica, diferenca, status, codigo),
+            "UPDATE estoque_mestre SET qtd_fisica = ?, diferenca = ?, status = ?, observacoes = ? WHERE codigo = ?",
+            (qtd_fisica, diferenca, status, observacoes.strip(), codigo),
         )
         conn.commit()
         sync_db()
@@ -5445,6 +5453,14 @@ if has_mestre:
                                      "Sistema diz 11, físico tem 9 → digite −2.",
                             )
 
+                            obs_corr = st.text_area(
+                                "Observações",
+                                value="",
+                                key="repor_manual_obs",
+                                placeholder="Descreva o motivo da divergência (opcional)…",
+                                height=80,
+                            )
+
                             if delta_corr != 0:
                                 cor = "#22c55e" if delta_corr > 0 else "#f87171"
                                 tipo = "sobra" if delta_corr > 0 else "falta"
@@ -5463,7 +5479,7 @@ if has_mestre:
                                 key="repor_manual_btn",
                                 disabled=(delta_corr == 0),
                             ):
-                                ok, msg = registrar_divergencia_manual(cod_corr, int(delta_corr))
+                                ok, msg = registrar_divergencia_manual(cod_corr, int(delta_corr), obs_corr)
                                 if ok:
                                     st.success(msg)
                                     st.rerun()
