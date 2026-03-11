@@ -602,6 +602,30 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ── Injetar JS: desabilitar gerenciador de senhas em todos os inputs ──────────
+st.markdown("""
+<script>
+(function() {
+  function disablePasswordManager() {
+    try {
+      var doc = window.parent.document;
+      doc.querySelectorAll('input').forEach(function(el) {
+        el.setAttribute('autocomplete', 'off');
+        el.setAttribute('autocorrect', 'off');
+        el.setAttribute('autocapitalize', 'off');
+        el.setAttribute('spellcheck', 'false');
+      });
+    } catch(e) {}
+  }
+  disablePasswordManager();
+  var _obs = new MutationObserver(disablePasswordManager);
+  try {
+    _obs.observe(window.parent.document.body, { childList: true, subtree: true });
+  } catch(e) {}
+})();
+</script>
+""", unsafe_allow_html=True)
+
 # ── Injetar JS: contadores animados nos KPI metrics ──────────────────────────
 st.markdown("""
 <script>
