@@ -5367,6 +5367,26 @@ if has_mestre:
                 df_div["_obs_sort"] = df_div["observacoes"].fillna("").astype(str).str.strip()
                 df_div = df_div.sort_values("_obs_sort")
 
+            # Paleta de cores discretas por pessoa (tema escuro)
+            _PERSON_PALETTE = [
+                {"h_bg": "#1e3a5f", "h_bd": "#3b82f6", "h_tx": "#93c5fd", "c_bg": "#0f1d2e"},  # azul
+                {"h_bg": "#1a3a20", "h_bd": "#22c55e", "h_tx": "#86efac", "c_bg": "#0d2010"},  # verde
+                {"h_bg": "#3a1e2e", "h_bd": "#ec4899", "h_tx": "#f9a8d4", "c_bg": "#200d18"},  # rosa
+                {"h_bg": "#3a2e1a", "h_bd": "#f97316", "h_tx": "#fdba74", "c_bg": "#201808"},  # laranja
+                {"h_bg": "#2a1e3a", "h_bd": "#a855f7", "h_tx": "#d8b4fe", "c_bg": "#160d21"},  # roxo
+                {"h_bg": "#1e3a3a", "h_bd": "#06b6d4", "h_tx": "#67e8f9", "c_bg": "#0d2020"},  # ciano
+                {"h_bg": "#3a2a1e", "h_bd": "#fb923c", "h_tx": "#fed7aa", "c_bg": "#211508"},  # âmbar
+                {"h_bg": "#2e3a1e", "h_bd": "#84cc16", "h_tx": "#bef264", "c_bg": "#182008"},  # lima
+            ]
+            # Mapeia cada grupo para uma cor fixa
+            _group_color_map = {}
+            _color_idx_counter = 0
+            for _g in df_div["observacoes"].fillna("").astype(str).str.strip().unique():
+                _gname = _g if _g else "Sem observação"
+                if _gname not in _group_color_map:
+                    _group_color_map[_gname] = _PERSON_PALETTE[_color_idx_counter % len(_PERSON_PALETTE)]
+                    _color_idx_counter += 1
+
             _prev_obs_group = None
             for _, item in df_div.iterrows():
                 status_cor = "#ef4444" if item["status"] == "falta" else "#f59e0b"
@@ -5377,14 +5397,17 @@ if has_mestre:
                 nota = str(item["nota"]) if pd.notnull(item["nota"]) and str(item["nota"]).strip() else ""
                 observacoes = str(item["observacoes"]) if pd.notnull(item.get("observacoes")) and str(item.get("observacoes", "")).strip() else ""
 
+                _grp_name = observacoes if observacoes else "Sem observação"
+                _grp_color = _group_color_map.get(_grp_name, _PERSON_PALETTE[0])
+
                 # Cabeçalho de grupo ao agrupar por cooperado
                 if _agrupar:
-                    _obs_group = observacoes if observacoes else "Sem observação"
+                    _obs_group = _grp_name
                     if _obs_group != _prev_obs_group:
                         _count_group = len(df_div[df_div["observacoes"].fillna("").astype(str).str.strip() == (observacoes if observacoes else "")])
                         st.markdown(
-                            f'<div style="margin:14px 0 6px;padding:6px 12px;background:#1e3a5f;border-left:4px solid #3b82f6;border-radius:4px;">'
-                            f'<span style="color:#93c5fd;font-weight:700;font-size:0.82rem;">👤 {_obs_group}</span>'
+                            f'<div style="margin:14px 0 6px;padding:6px 12px;background:{_grp_color["h_bg"]};border-left:4px solid {_grp_color["h_bd"]};border-radius:4px;">'
+                            f'<span style="color:{_grp_color["h_tx"]};font-weight:700;font-size:0.82rem;">👤 {_obs_group}</span>'
                             f'<span style="color:#64748b;font-size:0.72rem;margin-left:8px;">{_count_group} item(s)</span>'
                             f'</div>',
                             unsafe_allow_html=True,
@@ -5394,7 +5417,7 @@ if has_mestre:
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
                     st.markdown(
-                        f'<div style="background:#111827;border:1px solid {status_cor}44;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
+                        f'<div style="background:{_grp_color["c_bg"]};border:1px solid {_grp_color["h_bd"]}33;border-left:3px solid {_grp_color["h_bd"]}88;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;">'
                         f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
                         f'<span style="color:{status_cor};font-size:0.7rem;font-weight:700;">{status_label} {abs(diferenca)}</span></div>'
@@ -5403,7 +5426,7 @@ if has_mestre:
                         f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">Sistema: <b style="color:#94a3b8;">{qtd_s}</b> · Físico: <b style="color:#94a3b8;">{qtd_f}</b></span>'
                         + (f'<span style="color:#64748b;font-size:0.65rem;">Obs: <i style="color:#94a3b8;">{nota}</i></span>' if nota else '')
-                        + (f'<span style="color:#64748b;font-size:0.75rem;">Observação: <i style="color:#3b82f6;">{observacoes}</i></span>' if observacoes else '')
+                        + (f'<span style="color:#64748b;font-size:0.75rem;">Observação: <i style="color:{_grp_color["h_tx"]};">{observacoes}</i></span>' if observacoes else '')
                         + f'</div></div>',
                         unsafe_allow_html=True,
                     )
