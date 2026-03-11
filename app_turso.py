@@ -5344,7 +5344,7 @@ if has_mestre:
                         f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">Sistema: <b style="color:#94a3b8;">{qtd_s}</b> · Físico: <b style="color:#94a3b8;">{qtd_f}</b></span>'
                         + (f'<span style="color:#64748b;font-size:0.65rem;">Obs: <i style="color:#94a3b8;">{nota}</i></span>' if nota else '')
-                        + (f'<span style="color:#64748b;font-size:0.65rem;">Observação: <i style="color:#fbbf24;">{observacoes}</i></span>' if observacoes else '')
+                        + (f'<span style="color:#64748b;font-size:0.65rem;">Observação: <i style="color:#3b82f6;">{observacoes}</i></span>' if observacoes else '')
                         + f'</div></div>',
                         unsafe_allow_html=True,
                     )
