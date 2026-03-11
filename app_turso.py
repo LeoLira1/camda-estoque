@@ -5330,6 +5330,7 @@ if has_mestre:
                 qtd_s = int(item["qtd_sistema"]) if pd.notnull(item["qtd_sistema"]) else 0
                 qtd_f = int(item["qtd_fisica"]) if pd.notnull(item["qtd_fisica"]) else 0
                 nota = str(item["nota"]) if pd.notnull(item["nota"]) and str(item["nota"]).strip() else ""
+                observacoes = str(item["observacoes"]) if pd.notnull(item.get("observacoes")) and str(item.get("observacoes", "")).strip() else ""
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
@@ -5343,6 +5344,7 @@ if has_mestre:
                         f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">Sistema: <b style="color:#94a3b8;">{qtd_s}</b> · Físico: <b style="color:#94a3b8;">{qtd_f}</b></span>'
                         + (f'<span style="color:#64748b;font-size:0.65rem;">Obs: <i style="color:#94a3b8;">{nota}</i></span>' if nota else '')
+                        + (f'<span style="color:#64748b;font-size:0.65rem;">Observação: <i style="color:#fbbf24;">{observacoes}</i></span>' if observacoes else '')
                         + f'</div></div>',
                         unsafe_allow_html=True,
                     )
