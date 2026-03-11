@@ -5333,7 +5333,7 @@ if has_mestre:
             with _c1:
                 _filtro_obs = st.selectbox("Cooperado / Observação", ["Todos"] + obs_unicas, key="div_filtro_obs")
             with _c2:
-                _agrupar = st.checkbox("Agrupar", value=False, key="div_agrupar")
+                _agrupar = st.checkbox("Agrupar", value=True, key="div_agrupar")
 
             if _filtro_obs != "Todos":
                 df_div = df_div[df_div["observacoes"].fillna("").astype(str).str.strip() == _filtro_obs]
