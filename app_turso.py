@@ -1724,6 +1724,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         vol_litros = qtd * litros_emb if litros_emb is not None else None
         vol_kg = qtd * kg_emb if kg_emb is not None else None
         registros.append({
+            "codigo": row.get("codigo", ""),
             "produto": row["produto"],
             "principio_ativo": pa,
             "quantidade": qtd,
@@ -2042,10 +2043,15 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 else:
                     _vol_str = f"{int(r['quantidade'])} un.*"
                 # Sem indentação: Markdown trata 4+ espaços como bloco de código
+                _cod = str(r.get("codigo", ""))
+                _cod_html = (
+                    f'<span style="color:#6B7280;font-size:10px;margin-left:6px">'
+                    f'[{_cod}]</span>'
+                ) if _cod and not _cod.startswith("AUTO_") else ""
                 mini_bars += (
                     f'<div style="margin-bottom:10px">'
                     f'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'
-                    f'<span style="color:#F9FAFB">{r["produto"]}</span>'
+                    f'<span style="color:#F9FAFB">{r["produto"]}{_cod_html}</span>'
                     f'<span style="color:{cor};font-weight:700">{_vol_str}</span>'
                     f'</div>'
                     f'<div style="background:#1F2937;border-radius:4px;height:8px;overflow:hidden">'
