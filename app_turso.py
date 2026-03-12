@@ -1679,13 +1679,24 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     # Remover registros AUTO_ duplicados: se um produto tem código real E código AUTO_,
     # mantém apenas o real. AUTO_ são artefatos de import sem código e não devem
     # duplicar produtos que já foram corretamente importados com código real.
+    # Também cobre casos onde o nome AUTO_ tem prefixo de código embutido,
+    # ex: "US33936 - REGULADOR CRESCIMENTO ETHREL 720 20L" → limpa para
+    # "REGULADOR CRESCIMENTO ETHREL 720 20L" antes de comparar.
+    _RE_STRIP_COD_PA = re.compile(r"^\s*[A-Z0-9\-]{3,20}\s*[-–]\s*(.+)$", re.IGNORECASE)
+
+    def _nome_limpo_pa(nome: str) -> str:
+        s = str(nome).strip()
+        m = _RE_STRIP_COD_PA.match(s)
+        return m.group(1).strip().upper() if m else s.upper()
+
     _auto_mask = df_mestre["codigo"].str.startswith("AUTO_", na=False)
     if _auto_mask.any():
         _prodnames_com_codigo_real = set(
             df_mestre.loc[~_auto_mask, "produto"].str.strip().str.upper()
         )
-        _remover = _auto_mask & df_mestre["produto"].str.strip().str.upper().isin(
-            _prodnames_com_codigo_real
+        _remover = _auto_mask & df_mestre["produto"].apply(
+            lambda n: _nome_limpo_pa(n) in _prodnames_com_codigo_real
+                      or str(n).strip().upper() in _prodnames_com_codigo_real
         )
         if _remover.any():
             df_mestre = df_mestre[~_remover].copy()
