@@ -6383,7 +6383,7 @@ if has_mestre:
                  border-radius:8px;padding:8px 10px;margin-bottom:4px;}
         .val-prod{font-weight:600;font-size:0.85rem;color:#e0e6ed;}
         .val-meta{font-size:0.68rem;color:#64748b;margin-top:2px;}
-        .val-lote{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#3b82f6;}
+        .val-lote{font-family:'JetBrains Mono',monospace;font-size:0.85rem;color:#3b82f6;}
         </style>
         """, unsafe_allow_html=True)
 
