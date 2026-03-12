@@ -5453,7 +5453,7 @@ if has_mestre:
                         f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
                         f'<span style="color:{status_cor};font-size:0.7rem;font-weight:700;">{status_label} {abs(diferenca)}</span></div>'
                         f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
-                        f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
+                        f'<span style="color:#64748b;font-size:0.78rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">Sistema: <b style="color:#94a3b8;">{qtd_s}</b> · Físico: <b style="color:#94a3b8;">{qtd_f}</b></span>'
                         + (f'<span style="color:#64748b;font-size:0.65rem;">Obs: <i style="color:#94a3b8;">{nota}</i></span>' if nota else '')
@@ -5488,7 +5488,7 @@ if has_mestre:
                         f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
                         f'<span style="color:#3b82f6;font-size:0.6rem;font-family:monospace;">{tempo}</span></div>'
                         f'<div style="margin-top:4px;display:flex;gap:12px;">'
-                        f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
+                        f'<span style="color:#64748b;font-size:0.78rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
                         f'<span style="color:#ffa502;font-size:0.65rem;font-weight:700;">Estoque: {qtd_e} → Repor: {qtd_v}</span>'
                         f'</div></div>',
