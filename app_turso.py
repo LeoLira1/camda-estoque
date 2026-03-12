@@ -2975,13 +2975,15 @@ def popular_contagem(records: list, upload_id: int, conn) -> None:
 def get_contagem_itens() -> "pd.DataFrame":
     conn = get_db()
     rows = conn.execute("""
-        SELECT id, upload_id, codigo, produto, categoria, qtd_estoque,
-               status, motivo, qtd_divergencia, registrado_em
-        FROM contagem_itens
-        ORDER BY categoria, produto
+        SELECT ci.id, ci.upload_id, ci.codigo, ci.produto, ci.categoria, ci.qtd_estoque,
+               ci.status, ci.motivo, ci.qtd_divergencia, ci.registrado_em,
+               COALESCE(em.observacoes, '') AS observacoes
+        FROM contagem_itens ci
+        LEFT JOIN estoque_mestre em ON em.codigo = ci.codigo
+        ORDER BY ci.categoria, ci.produto
     """).fetchall()
     cols = ["id", "upload_id", "codigo", "produto", "categoria", "qtd_estoque",
-            "status", "motivo", "qtd_divergencia", "registrado_em"]
+            "status", "motivo", "qtd_divergencia", "registrado_em", "observacoes"]
     return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
 
 
@@ -6304,6 +6306,7 @@ if has_mestre:
                     qty = int(item["qtd_estoque"])
                     _cod = str(item["codigo"])
                     _qtd_sis = qty
+                    _obs_existente = str(item.get("observacoes", "") or "")
 
                     col_info, col_b1, col_b2 = st.columns([5, 1.2, 1.2])
 
@@ -6334,9 +6337,13 @@ if has_mestre:
                     if item_id in st.session_state.contagem_div_open:
                         fc1, fc2, fc3 = st.columns([3, 1.5, 1])
                         with fc1:
+                            motivo_key = f"ct_motivo_{item_id}"
+                            # Pré-preenche com a observação existente do produto (cooperado etc.)
+                            if motivo_key not in st.session_state and _obs_existente:
+                                st.session_state[motivo_key] = _obs_existente
                             motivo_val = st.text_input(
                                 "Motivo da divergência",
-                                key=f"ct_motivo_{item_id}",
+                                key=motivo_key,
                                 placeholder="Ex: produto vencido, faltando, danificado..."
                             )
                         with fc2:
