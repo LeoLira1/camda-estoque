@@ -3018,9 +3018,10 @@ def atualizar_item_contagem(
                     qtd_fisica = ?,
                     diferenca = ?,
                     nota = ?,
+                    observacoes = ?,
                     ultima_contagem = ?
                 WHERE codigo = ?
-            """, [status_estoque, qtd_fisica, diferenca, motivo, now, codigo])
+            """, [status_estoque, qtd_fisica, diferenca, motivo, motivo, now, codigo])
             rows_afetadas = getattr(cur, "rowcount", -1)
 
         elif status == "certa":
