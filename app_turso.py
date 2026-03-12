@@ -1676,6 +1676,20 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         st.info("Carregue o estoque mestre para visualizar os dados por princípio ativo.")
         return
 
+    # Remover registros AUTO_ duplicados: se um produto tem código real E código AUTO_,
+    # mantém apenas o real. AUTO_ são artefatos de import sem código e não devem
+    # duplicar produtos que já foram corretamente importados com código real.
+    _auto_mask = df_mestre["codigo"].str.startswith("AUTO_", na=False)
+    if _auto_mask.any():
+        _prodnames_com_codigo_real = set(
+            df_mestre.loc[~_auto_mask, "produto"].str.strip().str.upper()
+        )
+        _remover = _auto_mask & df_mestre["produto"].str.strip().str.upper().isin(
+            _prodnames_com_codigo_real
+        )
+        if _remover.any():
+            df_mestre = df_mestre[~_remover].copy()
+
     # ── 1. Montar mapa produto → principio_ativo ────────────────────────────
     mapa_db: dict = {}
     if not df_pa.empty:
