@@ -14,7 +14,11 @@ class TursoClient {
   static TursoClient? _instance;
   static TursoClient get instance => _instance ??= TursoClient._();
 
-  String get _baseUrl => dotenv.env['TURSO_DATABASE_URL'] ?? '';
+  String get _baseUrl {
+    final raw = dotenv.env['TURSO_DATABASE_URL'] ?? '';
+    // Turso HTTP API usa https://, mas a URL pode vir como libsql://
+    return raw.replaceFirst(RegExp(r'^libsql://'), 'https://');
+  }
   String get _token => dotenv.env['TURSO_AUTH_TOKEN'] ?? '';
 
   bool get isConfigured => _baseUrl.isNotEmpty && _token.isNotEmpty;
