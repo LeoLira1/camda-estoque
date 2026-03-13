@@ -24,3 +24,7 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+# Android SDK downloads (local)
+build-tools-*.zip
+platform-*.zip
+android-sdk-downloads/

@@ -60,14 +60,7 @@ flutter:
   fonts:
     - family: Outfit
       fonts:
-        - asset: assets/fonts/Outfit-Regular.ttf
-          weight: 400
-        - asset: assets/fonts/Outfit-Medium.ttf
-          weight: 500
-        - asset: assets/fonts/Outfit-Bold.ttf
-          weight: 700
-        - asset: assets/fonts/Outfit-Black.ttf
-          weight: 900
+        - asset: assets/fonts/Outfit-Variable.ttf
     - family: JetBrainsMono
       fonts:
         - asset: assets/fonts/JetBrainsMono-Regular.ttf
