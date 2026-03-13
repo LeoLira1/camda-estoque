@@ -2503,7 +2503,7 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
         lambda vals: "PRODUTO" in vals and ("QTDD" in " ".join(vals) or "VENDIDA" in " ".join(vals))
     )
     if header_idx is None:
-        return (False, "Cabeçalho não encontrado no formato vendas.")
+        return (False, "Cabeçalho não encontrado no formato vendas.", [])
 
     df = df_raw.iloc[header_idx + 1:].copy()
     raw_cols = df_raw.iloc[header_idx].tolist()
@@ -2531,9 +2531,9 @@ def parse_vendas_format(df_raw: pd.DataFrame) -> tuple:
                 break
 
     if not col_produto:
-        return (False, f"Coluna 'PRODUTO' não encontrada. Colunas: {list(df.columns)}")
+        return (False, f"Coluna 'PRODUTO' não encontrada. Colunas: {list(df.columns)}", [])
     if not col_qtd_estoque and not col_qtd_vendida:
-        return (False, "Nenhuma coluna de quantidade encontrada.")
+        return (False, "Nenhuma coluna de quantidade encontrada.", [])
 
     records = []
     zerados = []
