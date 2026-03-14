@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - 'claude/**'
   workflow_dispatch:   # permite rodar manualmente pelo botão no GitHub
 
 jobs:
@@ -27,13 +28,15 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Criar arquivo .env com credenciais
+      - name: Criar arquivo .env com credenciais do secrets.toml
         working-directory: camda-app
         run: |
+          URL=$(grep 'TURSO_DATABASE_URL' ../.streamlit/secrets.toml | sed 's/.*= *"\(.*\)"/\1/')
+          TOKEN=$(grep 'TURSO_AUTH_TOKEN' ../.streamlit/secrets.toml | sed 's/.*= *"\(.*\)"/\1/')
           cat > .env << EOF
-          TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}
-          TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}
-          CAMDA_PASSWORD=${{ secrets.CAMDA_PASSWORD }}
+          TURSO_DATABASE_URL=${URL}
+          TURSO_AUTH_TOKEN=${TOKEN}
+          CAMDA_PASSWORD=forca
           EOF
 
       - name: Instalar dependências Flutter
@@ -44,7 +47,7 @@ jobs:
         working-directory: camda-app
         run: flutter build apk --release
 
-      - name: Renomear APK
+      - name: Copiar APK
         run: |
           cp camda-app/build/app/outputs/flutter-apk/app-release.apk \
              camda-app/camda-estoque-latest.apk
