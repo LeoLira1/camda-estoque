@@ -1290,6 +1290,24 @@ def get_avarias_count_abertas() -> int:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# PRODUTOS IGNORADOS — inseridos por engano na planilha
+# Estes itens são filtrados em TODO o sistema (leitura e importação).
+# ══════════════════════════════════════════════════════════════════════════════
+_PRODUTOS_IGNORADOS: frozenset[str] = frozenset({
+    "AÇÚCAR",
+    "ACUCAR",
+    "ARQUIVO MORTO",
+    # Adicione outros nomes (em MAIÚSCULAS) conforme necessário:
+    # "OUTRO PRODUTO ERRADO",
+})
+
+
+def _is_produto_ignorado(nome: str) -> bool:
+    """Retorna True se o produto deve ser ignorado em todo o sistema."""
+    return str(nome).strip().upper() in _PRODUTOS_IGNORADOS
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # BLACKLIST DE REPOSIÇÃO
 # ══════════════════════════════════════════════════════════════════════════════
 CATEGORIAS_EXCLUIDAS_REPOSICAO = frozenset({
@@ -1344,7 +1362,10 @@ _STOCK_COLS = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
 def get_current_stock() -> pd.DataFrame:
     try:
         rows = get_db().execute("SELECT * FROM estoque_mestre ORDER BY categoria, produto").fetchall()
-        return pd.DataFrame(rows, columns=_STOCK_COLS)
+        df = pd.DataFrame(rows, columns=_STOCK_COLS)
+        if not df.empty and _PRODUTOS_IGNORADOS:
+            df = df[~df["produto"].str.strip().str.upper().isin(_PRODUTOS_IGNORADOS)]
+        return df
     except Exception as e:
         st.warning(f"⚠️ Erro ao carregar estoque: {e}")
         return pd.DataFrame(columns=_STOCK_COLS)
@@ -2716,6 +2737,9 @@ def upload_mestre(records: list) -> tuple:
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
 
+        # Remover produtos ignorados antes de inserir no banco
+        records = [r for r in records if not _is_produto_ignorado(r.get("produto", ""))]
+
         # Preservar divergências existentes antes de limpar o banco
         # Salva status E diferenca para recalcular qtd_fisica após o INSERT
         existing_div = {row[0]: (row[1], row[2]) for row in conn.execute(
@@ -2772,6 +2796,9 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
     try:
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Remover produtos ignorados antes de inserir no banco
+        records = [r for r in records if not _is_produto_ignorado(r.get("produto", ""))]
 
         # Buscar códigos existentes (1 query)
         existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
@@ -2861,6 +2888,9 @@ def upload_parcial_estoque(records: list) -> tuple:
     try:
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+
+        # Remover produtos ignorados antes de inserir no banco
+        records = [r for r in records if not _is_produto_ignorado(r.get("produto", ""))]
 
         existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
 
