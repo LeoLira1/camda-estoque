@@ -1,5 +1,6 @@
 import '../database/turso_client.dart';
 import '../models/produto.dart';
+import '../../core/services/cache_service.dart';
 
 class EstoqueRepository {
   final TursoClient _client;
@@ -46,9 +47,31 @@ class EstoqueRepository {
     }
     sql += ' ORDER BY produto ASC';
 
-    final result = await _client.query(sql, args);
-    if (result.hasError) throw TursoException(result.error!);
-    return result.toMaps().map(Produto.fromMap).toList();
+    try {
+      final result = await _client.query(sql, args);
+      if (result.hasError) throw TursoException(result.error!);
+      final produtos = result.toMaps().map(Produto.fromMap).toList();
+      // Salva no cache apenas para getAll sem filtros (dados completos)
+      if (categoria == null && status == null) {
+        await CacheService.saveEstoque(produtos.map((p) => p.toMap()).toList());
+        CacheService.isOffline = false;
+      }
+      return produtos;
+    } catch (e) {
+      // Tenta fallback do cache quando a rede falha
+      if (categoria == null && status == null) {
+        final (cached, _) = await CacheService.loadEstoque();
+        if (cached != null && cached.isNotEmpty) {
+          CacheService.isOffline = true;
+          final fromIgnored = _produtosIgnorados.toSet();
+          return cached
+              .map(Produto.fromMap)
+              .where((p) => !fromIgnored.contains(p.produto.toUpperCase().trim()))
+              .toList();
+        }
+      }
+      rethrow;
+    }
   }
 
   /// Busca produto por código.
@@ -83,25 +106,41 @@ class EstoqueRepository {
     final whereClause = _produtosIgnorados.isNotEmpty
         ? 'WHERE UPPER(TRIM(produto)) NOT IN ($ph)'
         : '';
-    final result = await _client.query('''
-      SELECT
-        COUNT(*) as total,
-        SUM(CASE WHEN status = 'falta' THEN 1 ELSE 0 END) as faltas,
-        SUM(CASE WHEN status = 'sobra' THEN 1 ELSE 0 END) as sobras,
-        SUM(CASE WHEN status = 'ok'    THEN 1 ELSE 0 END) as ok,
-        SUM(qtd_sistema) as total_itens
-      FROM estoque_mestre
-      $whereClause
-    ''', [..._produtosIgnorados]);
-    if (result.hasError) throw TursoException(result.error!);
-    final row = result.toMaps().firstOrNull ?? {};
-    return EstoqueResumo(
-      total: _toInt(row['total']),
-      faltas: _toInt(row['faltas']),
-      sobras: _toInt(row['sobras']),
-      ok: _toInt(row['ok']),
-      totalItens: _toInt(row['total_itens']),
-    );
+    try {
+      final result = await _client.query('''
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'falta' THEN 1 ELSE 0 END) as faltas,
+          SUM(CASE WHEN status = 'sobra' THEN 1 ELSE 0 END) as sobras,
+          SUM(CASE WHEN status = 'ok'    THEN 1 ELSE 0 END) as ok,
+          SUM(qtd_sistema) as total_itens
+        FROM estoque_mestre
+        $whereClause
+      ''', [..._produtosIgnorados]);
+      if (result.hasError) throw TursoException(result.error!);
+      final row = result.toMaps().firstOrNull ?? {};
+      return EstoqueResumo(
+        total: _toInt(row['total']),
+        faltas: _toInt(row['faltas']),
+        sobras: _toInt(row['sobras']),
+        ok: _toInt(row['ok']),
+        totalItens: _toInt(row['total_itens']),
+      );
+    } catch (_) {
+      // Calcula resumo a partir do cache local se rede falhar
+      final (cached, _) = await CacheService.loadEstoque();
+      if (cached != null && cached.isNotEmpty) {
+        final produtos = cached.map(Produto.fromMap).toList();
+        return EstoqueResumo(
+          total: produtos.length,
+          faltas: produtos.where((p) => p.status == 'falta').length,
+          sobras: produtos.where((p) => p.status == 'sobra').length,
+          ok: produtos.where((p) => p.status == 'ok').length,
+          totalItens: produtos.fold(0, (s, p) => s + p.qtdSistema),
+        );
+      }
+      rethrow;
+    }
   }
 
   /// Atualiza quantidade física e status de um produto.
