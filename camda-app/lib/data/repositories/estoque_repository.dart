@@ -7,6 +7,15 @@ class EstoqueRepository {
   EstoqueRepository({TursoClient? client})
       : _client = client ?? TursoClient.instance;
 
+  /// Produtos ignorados em todo o sistema (inseridos por engano na planilha).
+  /// Manter em MAIÚSCULAS — comparação é case-insensitive via UPPER() no SQL.
+  static const _produtosIgnorados = [
+    'AÇÚCAR',
+    'ACUCAR',
+    'ARQUIVO MORTO',
+    // Adicione outros conforme necessário
+  ];
+
   /// Retorna todos os produtos do estoque_mestre.
   Future<List<Produto>> getAll({String? categoria, String? status}) async {
     var sql = '''
@@ -25,6 +34,11 @@ class EstoqueRepository {
     if (status != null && status.isNotEmpty) {
       conditions.add('status = ?');
       args.add(status);
+    }
+    if (_produtosIgnorados.isNotEmpty) {
+      final ph = _produtosIgnorados.map((_) => '?').join(', ');
+      conditions.add('UPPER(TRIM(produto)) NOT IN ($ph)');
+      args.addAll(_produtosIgnorados);
     }
 
     if (conditions.isNotEmpty) {
@@ -65,6 +79,10 @@ class EstoqueRepository {
 
   /// Resumo rápido para o dashboard.
   Future<EstoqueResumo> getResumo() async {
+    final ph = _produtosIgnorados.map((_) => '?').join(', ');
+    final whereClause = _produtosIgnorados.isNotEmpty
+        ? 'WHERE UPPER(TRIM(produto)) NOT IN ($ph)'
+        : '';
     final result = await _client.query('''
       SELECT
         COUNT(*) as total,
@@ -73,7 +91,8 @@ class EstoqueRepository {
         SUM(CASE WHEN status = 'ok'    THEN 1 ELSE 0 END) as ok,
         SUM(qtd_sistema) as total_itens
       FROM estoque_mestre
-    ''');
+      $whereClause
+    ''', [..._produtosIgnorados]);
     if (result.hasError) throw TursoException(result.error!);
     final row = result.toMaps().firstOrNull ?? {};
     return EstoqueResumo(
