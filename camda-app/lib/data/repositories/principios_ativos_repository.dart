@@ -64,14 +64,48 @@ class PrincipiosAtivosRepository {
     ''', [produto.trim().toUpperCase(), principioAtivo.trim(), categoria.trim()]);
   }
 
-  /// Busca fuzzy simples: retorna PAs que contêm o termo.
+  /// Busca fuzzy por bigramas (Jaccard similarity).
+  /// Retorna resultados com score ≥ [threshold], ordenados por relevância.
   Future<List<GrupoPrincipioAtivo>> buscar(String termo) async {
     final todos = await getAgrupados();
-    final lower = termo.toLowerCase();
-    return todos.where((g) =>
-      g.principioAtivo.toLowerCase().contains(lower) ||
-      g.produtos.any((p) => p.produto.toLowerCase().contains(lower))
-    ).toList();
+    if (termo.isEmpty) return todos;
+    const threshold = 0.20;
+
+    final scored = <(double, GrupoPrincipioAtivo)>[];
+    for (final g in todos) {
+      double score = _fuzzyScore(termo, g.principioAtivo);
+      for (final p in g.produtos) {
+        final ps = _fuzzyScore(termo, p.produto);
+        if (ps > score) score = ps;
+      }
+      if (score >= threshold) scored.add((score, g));
+    }
+    scored.sort((a, b) => b.$1.compareTo(a.$1));
+    return scored.map((e) => e.$2).toList();
+  }
+
+  /// Score de similaridade por bigramas (0.0 → sem match, 1.0 → idêntico/contém).
+  /// Substring exata = 1.0. Caso contrário usa índice Jaccard de bigramas.
+  static double _fuzzyScore(String needle, String haystack) {
+    if (needle.isEmpty) return 1.0;
+    if (haystack.isEmpty) return 0.0;
+    final n = needle.toLowerCase().trim();
+    final h = haystack.toLowerCase().trim();
+    if (h.contains(n)) return 1.0;
+
+    Set<String> bigrams(String s) {
+      final result = <String>{};
+      for (int i = 0; i < s.length - 1; i++) {
+        result.add(s[i] + s[i + 1]);
+      }
+      return result.isEmpty ? {s} : result;
+    }
+
+    final nb = bigrams(n);
+    final hb = bigrams(h);
+    final intersect = nb.intersection(hb).length;
+    final union = nb.union(hb).length;
+    return union == 0 ? 0.0 : intersect / union;
   }
 
   static int _toInt(dynamic v) {

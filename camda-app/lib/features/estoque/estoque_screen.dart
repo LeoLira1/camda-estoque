@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/number_utils.dart';
+import '../../core/services/cache_service.dart';
 import '../../data/models/produto.dart';
 import '../../data/repositories/estoque_repository.dart';
 import '../../shared/widgets/stat_card.dart';
@@ -25,6 +26,7 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
   String _statusFiltro = 'Todos';
   bool _loading = true;
   String? _error;
+  bool _isOffline = false;
 
   static const _statusOptions = ['Todos', 'ok', 'falta', 'sobra'];
 
@@ -53,6 +55,7 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
         _all = results[0] as List<Produto>;
         _categorias = ['Todos', ...(results[1] as List<String>)];
         _loading = false;
+        _isOffline = CacheService.isOffline;
       });
       _applyFilter();
     } catch (e) {
@@ -96,6 +99,7 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
               ? lw.ErrorWidget(message: _error!, onRetry: _loadData)
               : Column(
                   children: [
+                    if (_isOffline) _buildOfflineBanner(),
                     _buildFilters(),
                     _buildStatBar(),
                     Expanded(child: _buildList()),
@@ -172,6 +176,28 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildOfflineBanner() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      color: AppColors.amber.withOpacity(0.12),
+      child: Row(children: [
+        const Icon(Icons.cloud_off_outlined, color: AppColors.amber, size: 16),
+        const SizedBox(width: 8),
+        const Expanded(
+          child: Text(
+            'Modo offline — dados em cache local',
+            style: TextStyle(fontSize: 12, color: AppColors.amber, fontWeight: FontWeight.w500),
+          ),
+        ),
+        GestureDetector(
+          onTap: _loadData,
+          child: const Text('Tentar novamente', style: TextStyle(fontSize: 11, color: AppColors.amber, decoration: TextDecoration.underline)),
+        ),
+      ]),
     );
   }
 

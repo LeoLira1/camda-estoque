@@ -55,16 +55,34 @@ class _PrincipiosAtivosScreenState extends State<PrincipiosAtivosScreen>
   }
 
   void _filtrar() {
-    final q = _searchCtrl.text.trim().toLowerCase();
+    final q = _searchCtrl.text.trim();
     setState(() {
-      _searchQuery = q;
-      _filtrados = q.isEmpty
-          ? _grupos
-          : _grupos.where((g) =>
-              g.principioAtivo.toLowerCase().contains(q) ||
-              g.produtos.any((p) => p.produto.toLowerCase().contains(q))
-            ).toList();
+      _searchQuery = q.toLowerCase();
     });
+    _aplicarFuzzy(q);
+  }
+
+  Future<void> _aplicarFuzzy(String query) async {
+    if (query.isEmpty) {
+      if (mounted) setState(() => _filtrados = _grupos);
+      return;
+    }
+    // Usa o repositório com fuzzy real (bigrama Jaccard)
+    try {
+      final resultado = await _repo.buscar(query);
+      if (!mounted) return;
+      setState(() => _filtrados = resultado);
+    } catch (_) {
+      // fallback: contains simples se repo falhar
+      final lower = query.toLowerCase();
+      if (!mounted) return;
+      setState(() {
+        _filtrados = _grupos.where((g) =>
+          g.principioAtivo.toLowerCase().contains(lower) ||
+          g.produtos.any((p) => p.produto.toLowerCase().contains(lower))
+        ).toList();
+      });
+    }
   }
 
   @override
