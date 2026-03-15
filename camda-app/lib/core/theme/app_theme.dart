@@ -102,7 +102,7 @@ class AppTheme {
       ),
 
       // Card
-      cardTheme: CardThemeData(
+      cardTheme: CardTheme(
         color: surfaceColor,
         elevation: isDark ? 0 : 2,
         shadowColor: isDark ? null : Colors.black12,
@@ -167,7 +167,7 @@ class AppTheme {
       ),
 
       // TabBar
-      tabBarTheme: TabBarThemeData(
+      tabBarTheme: TabBarTheme(
         labelColor: onSurface,
         unselectedLabelColor: mutedColor,
         indicator: BoxDecoration(
@@ -182,7 +182,7 @@ class AppTheme {
       ),
 
       // Dialog
-      dialogTheme: DialogThemeData(
+      dialogTheme: DialogTheme(
         backgroundColor: surfaceColor,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(20),
