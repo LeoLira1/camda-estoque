@@ -1782,11 +1782,14 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         )
         .reset_index()
     )
-    # Chave de ordenação unificada: usa litros se disponível, senão kg, senão unidades
-    # — garante que produtos só-kg entrem no ranking entre os de litros equivalente
+    # Chave de ordenação: soma total_litros + total_kg do mesmo princípio ativo.
+    # Assim, um PA com 1.680 L + 1.000 kg soma 2.680 e concorre com PAs que têm
+    # apenas litros ou apenas kg. Fallback para unidades quando ambos são zero/NaN.
     df_agg["_sort_key"] = df_agg.apply(
-        lambda r: r["total_litros"] if pd.notna(r["total_litros"]) and r["total_litros"] > 0
-                  else (r["total_kg"] if pd.notna(r["total_kg"]) and r["total_kg"] > 0 else r["total"]),
+        lambda r: (
+            (r["total_litros"] if pd.notna(r["total_litros"]) and r["total_litros"] > 0 else 0)
+            + (r["total_kg"] if pd.notna(r["total_kg"]) and r["total_kg"] > 0 else 0)
+        ) or r["total"],
         axis=1,
     )
     df_agg = df_agg.sort_values("_sort_key", ascending=False).drop(columns=["_sort_key"])
