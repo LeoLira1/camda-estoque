@@ -32,7 +32,7 @@
 
 ## 🔄 Histórico de Mudanças
 
-### v1.1 — 2025-03
+### v1.1.0 — 2026-03-15
 - Adicionado código do produto na aba Estoque
 - Nome do cooperado (campo `nota`) exibido em azul na aba Estoque
 - Aba Validade: novos filtros por período (≤7/30/60/90 dias)
@@ -174,4 +174,4 @@ flutter build apk --release
 
 ---
 
-*Última atualização: março de 2025*
+*Última atualização: março de 2026*
