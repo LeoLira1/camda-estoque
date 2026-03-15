@@ -41,8 +41,7 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
-      colorScheme: ColorScheme(
-        brightness: brightness,
+      colorScheme: (isDark ? const ColorScheme.dark() : const ColorScheme.light()).copyWith(
         primary: AppColors.green,
         onPrimary: isDark ? const Color(0xFF0A0F1A) : Colors.white,
         secondary: AppColors.blue,
@@ -53,7 +52,6 @@ class AppTheme {
         onError: Colors.white,
         surface: surfaceColor,
         onSurface: onSurface,
-        surfaceContainerHighest: surfaceVarClr,
         onSurfaceVariant: onSurfaceVar,
         outline: borderColor,
         outlineVariant: borderColor.withOpacity(0.5),
