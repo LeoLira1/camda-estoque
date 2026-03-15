@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_theme.dart';
 import '../../features/estoque/estoque_screen.dart';
 import '../../features/avarias/avarias_screen.dart';
 import '../../features/validade/validade_screen.dart';
 import '../../features/reposicao/reposicao_screen.dart';
-import '../../features/vendas/vendas_screen.dart';
-import '../../features/mapa_visual/mapa_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/lancamentos/lancamentos_screen.dart';
 import '../../features/contagem/contagem_screen.dart';
 import '../../features/pendencias/pendencias_screen.dart';
-import '../../features/principios_ativos/principios_ativos_screen.dart';
 
 /// Layout principal com navegação adaptativa:
 /// - Mobile (< 600px): BottomNavigationBar (4 fixas + "Mais")
@@ -28,29 +26,23 @@ class _MainLayoutState extends State<MainLayout> {
   static const _allScreens = [
     DashboardScreen(),
     EstoqueScreen(),
-    MapaScreen(),
     AvariasScreen(),
     ValidadeScreen(),
     ReposicaoScreen(),
-    VendasScreen(),
     LancamentosScreen(),
     ContagemScreen(),
     PendenciasScreen(),
-    PrincipiosAtivosScreen(),
   ];
 
   static const _allItems = [
     _NavItem(icon: Icons.dashboard_outlined,      activeIcon: Icons.dashboard,      label: 'Dashboard'),
     _NavItem(icon: Icons.inventory_2_outlined,    activeIcon: Icons.inventory_2,    label: 'Estoque'),
-    _NavItem(icon: Icons.map_outlined,            activeIcon: Icons.map,            label: 'Mapa'),
     _NavItem(icon: Icons.warning_amber_outlined,  activeIcon: Icons.warning_amber,  label: 'Avarias'),
     _NavItem(icon: Icons.event_outlined,          activeIcon: Icons.event,          label: 'Validade'),
     _NavItem(icon: Icons.store_outlined,          activeIcon: Icons.store,          label: 'Reposição'),
-    _NavItem(icon: Icons.bar_chart_outlined,      activeIcon: Icons.bar_chart,      label: 'Vendas'),
     _NavItem(icon: Icons.receipt_long_outlined,   activeIcon: Icons.receipt_long,   label: 'Lançamentos'),
     _NavItem(icon: Icons.fact_check_outlined,     activeIcon: Icons.fact_check,     label: 'Contagem'),
     _NavItem(icon: Icons.photo_library_outlined,  activeIcon: Icons.photo_library,  label: 'Pendências'),
-    _NavItem(icon: Icons.science_outlined,        activeIcon: Icons.science,        label: 'P. Ativos'),
   ];
 
   // Índices que aparecem diretamente no BottomNav (mobile)
@@ -103,12 +95,12 @@ class _MobileLayout extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: IndexedStack(index: selectedIndex, children: screens),
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: AppColors.surface,
-          border: Border(top: BorderSide(color: AppColors.surfaceBorder)),
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outline)),
         ),
         child: NavigationBar(
           selectedIndex: _bottomSel.clamp(0, bottomIndices.length),
@@ -142,9 +134,10 @@ class _MobileLayout extends StatelessWidget {
 
   void _openMais(BuildContext context) {
     final secondary = [for (int i = 0; i < items.length; i++) if (!bottomIndices.contains(i)) i];
+    final isDark = themeNotifier.value == ThemeMode.dark;
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Column(
         mainAxisSize: MainAxisSize.min,
@@ -154,7 +147,23 @@ class _MobileLayout extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Row(children: [
-              const Text('Mais', style: TextStyle(fontFamily: 'Outfit', fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+              Text('Mais', style: TextStyle(fontFamily: 'Outfit', fontSize: 16, fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface)),
+              const Spacer(),
+              // Toggle tema
+              Row(children: [
+                Icon(isDark ? Icons.dark_mode_outlined : Icons.light_mode_outlined,
+                    color: AppColors.blue, size: 18),
+                const SizedBox(width: 6),
+                Switch(
+                  value: isDark,
+                  onChanged: (_) {
+                    themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
+                    Navigator.pop(context);
+                  },
+                  activeColor: AppColors.blue,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+              ]),
             ]),
           ),
           const Divider(height: 1),
@@ -168,7 +177,7 @@ class _MobileLayout extends StatelessWidget {
               items[i].label,
               style: TextStyle(
                 fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w500,
-                color: selectedIndex == i ? AppColors.green : AppColors.textPrimary,
+                color: selectedIndex == i ? AppColors.green : Theme.of(context).colorScheme.onSurface,
               ),
             ),
             trailing: selectedIndex == i ? const Icon(Icons.check, color: AppColors.green, size: 18) : null,
@@ -198,43 +207,76 @@ class _WideLayout extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = themeNotifier.value == ThemeMode.dark;
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Row(
         children: [
           Container(
-            decoration: const BoxDecoration(
-              color: AppColors.surface,
-              border: Border(right: BorderSide(color: AppColors.surfaceBorder)),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border(right: BorderSide(color: Theme.of(context).colorScheme.outline)),
             ),
-            child: SingleChildScrollView(
-              child: IntrinsicHeight(
-                child: NavigationRail(
-                  selectedIndex: selectedIndex,
-                  onDestinationSelected: onSelect,
-                  backgroundColor: Colors.transparent,
-                  labelType: NavigationRailLabelType.all,
-                  minWidth: 72,
-                  leading: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(
-                        color: AppColors.green.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.green.withOpacity(0.3)),
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: IntrinsicHeight(
+                      child: NavigationRail(
+                        selectedIndex: selectedIndex,
+                        onDestinationSelected: onSelect,
+                        backgroundColor: Colors.transparent,
+                        labelType: NavigationRailLabelType.all,
+                        minWidth: 72,
+                        leading: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              color: AppColors.green.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.green.withOpacity(0.3)),
+                            ),
+                            child: const Icon(Icons.eco_outlined, color: AppColors.green, size: 20),
+                          ),
+                        ),
+                        destinations: items.map((d) => NavigationRailDestination(
+                          icon: Icon(d.icon),
+                          selectedIcon: Icon(d.activeIcon),
+                          label: Text(d.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                        )).toList(),
                       ),
-                      child: const Icon(Icons.eco_outlined, color: AppColors.green, size: 20),
                     ),
                   ),
-                  destinations: items.map((d) => NavigationRailDestination(
-                    icon: Icon(d.icon),
-                    selectedIcon: Icon(d.activeIcon),
-                    label: Text(d.label, maxLines: 1, overflow: TextOverflow.ellipsis),
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                  )).toList(),
                 ),
-              ),
+                // Botão de toggle de tema no rodapé do rail
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Tooltip(
+                    message: isDark ? 'Modo Claro' : 'Modo Escuro',
+                    child: InkWell(
+                      onTap: () {
+                        themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
+                      },
+                      borderRadius: BorderRadius.circular(10),
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(
+                          color: AppColors.blue.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.blue.withOpacity(0.25)),
+                        ),
+                        child: Icon(
+                          isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                          color: AppColors.blue,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           Expanded(

@@ -27,10 +27,13 @@ class _ValidadeScreenState extends State<ValidadeScreen>
   bool _loading = true;
   String? _error;
 
+  // 6 abas: Vencidos | 7d | 30d | 60d | 90d | OK
+  static const _tabDias = [-1, 7, 30, 60, 90, 0];
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _loadData();
   }
 
@@ -66,14 +69,20 @@ class _ValidadeScreenState extends State<ValidadeScreen>
     return _todos.where((l) => l.grupo == _grupoFiltro).toList();
   }
 
-  List<ValidadeLote> get _vencidos => _filteredAll.where((l) => l.isVencido).toList();
-  List<ValidadeLote> get _alertas => _filteredAll.where((l) => l.isCritico || l.isAlerta).toList();
-  List<ValidadeLote> get _ok => _filteredAll.where((l) => l.isOk).toList();
+  /// -1 = vencidos, 0 = OK (>90d), X = vencendo em até X dias
+  List<ValidadeLote> _itemsParaTab(int dias) {
+    if (dias == -1) return _filteredAll.where((l) => l.isVencido).toList();
+    if (dias == 0)  return _filteredAll.where((l) => !l.isVencido && l.diasParaVencer > 90).toList();
+    return _filteredAll
+        .where((l) => !l.isVencido && l.diasParaVencer <= dias)
+        .toList()
+      ..sort((a, b) => a.diasParaVencer.compareTo(b.diasParaVencer));
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Validade de Lotes'),
         actions: [
@@ -81,10 +90,15 @@ class _ValidadeScreenState extends State<ValidadeScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
-          tabs: const [
-            Tab(text: 'Alertas'),
-            Tab(text: 'Vencidos'),
-            Tab(text: 'OK'),
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          tabs: [
+            _buildTabLabel('Vencidos', AppColors.red),
+            _buildTabLabel('≤ 7 dias', AppColors.statusAvaria),
+            _buildTabLabel('≤ 30 dias', AppColors.amber),
+            _buildTabLabel('≤ 60 dias', const Color(0xFFFFCC44)),
+            _buildTabLabel('≤ 90 dias', AppColors.cyan),
+            _buildTabLabel('OK', AppColors.green),
           ],
           padding: const EdgeInsets.symmetric(horizontal: 8),
         ),
@@ -100,15 +114,22 @@ class _ValidadeScreenState extends State<ValidadeScreen>
                     Expanded(
                       child: TabBarView(
                         controller: _tabController,
-                        children: [
-                          _buildList(_alertas),
-                          _buildList(_vencidos),
-                          _buildList(_ok),
-                        ],
+                        children: _tabDias
+                            .map((dias) => _buildList(_itemsParaTab(dias), dias))
+                            .toList(),
                       ),
                     ),
                   ],
                 ),
+    );
+  }
+
+  Tab _buildTabLabel(String text, Color color) {
+    return Tab(
+      child: Text(
+        text,
+        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
+      ),
     );
   }
 
@@ -166,10 +187,15 @@ class _ValidadeScreenState extends State<ValidadeScreen>
     );
   }
 
-  Widget _buildList(List<ValidadeLote> items) {
+  Widget _buildList(List<ValidadeLote> items, int dias) {
     if (items.isEmpty) {
-      return const lw.EmptyWidget(
-        message: 'Nenhum lote neste filtro.',
+      final msg = dias == -1
+          ? 'Nenhum lote vencido.'
+          : dias == 0
+              ? 'Nenhum lote OK (> 90 dias).'
+              : 'Nenhum lote vencendo em $dias dias.';
+      return lw.EmptyWidget(
+        message: msg,
         icon: Icons.event_available_outlined,
       );
     }
@@ -197,11 +223,17 @@ class _LoteTile extends StatelessWidget {
     if (lote.isVencido) {
       statusColor = AppColors.red;
       statusText = 'VENCIDO';
-    } else if (lote.isCritico) {
+    } else if (lote.diasParaVencer <= 7) {
       statusColor = AppColors.statusAvaria;
       statusText = '${lote.diasParaVencer}d';
-    } else if (lote.isAlerta) {
+    } else if (lote.diasParaVencer <= 30) {
       statusColor = AppColors.amber;
+      statusText = '${lote.diasParaVencer}d';
+    } else if (lote.diasParaVencer <= 60) {
+      statusColor = const Color(0xFFFFCC44);
+      statusText = '${lote.diasParaVencer}d';
+    } else if (lote.diasParaVencer <= 90) {
+      statusColor = AppColors.cyan;
       statusText = '${lote.diasParaVencer}d';
     } else {
       statusColor = AppColors.green;
@@ -210,7 +242,7 @@ class _LoteTile extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: statusColor.withOpacity(0.25)),
       ),
@@ -244,11 +276,11 @@ class _LoteTile extends StatelessWidget {
               children: [
                 Text(
                   lote.produto,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'Outfit',
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                    color: Theme.of(context).colorScheme.onSurface,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -274,11 +306,11 @@ class _LoteTile extends StatelessWidget {
             children: [
               Text(
                 CamdaNumberUtils.formatInt(lote.quantidade),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: 'JetBrainsMono',
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
+                  color: Theme.of(context).colorScheme.onSurface,
                 ),
               ),
               if (lote.valor > 0)

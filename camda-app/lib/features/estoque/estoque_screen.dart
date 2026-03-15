@@ -82,7 +82,7 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Estoque Mestre'),
         actions: [
@@ -275,12 +275,12 @@ class _ProdutoTile extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: produto.temDivergencia
               ? statusColor.withOpacity(0.3)
-              : AppColors.surfaceBorder,
+              : Theme.of(context).colorScheme.outline,
         ),
       ),
       child: ListTile(
@@ -300,11 +300,11 @@ class _ProdutoTile extends StatelessWidget {
         ),
         title: Text(
           produto.produto,
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: 'Outfit',
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
+            color: Theme.of(context).colorScheme.onSurface,
           ),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
@@ -312,10 +312,47 @@ class _ProdutoTile extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              produto.categoria,
-              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
-            ),
+            Row(children: [
+              Text(
+                'Cód: ',
+                style: const TextStyle(
+                  fontFamily: 'JetBrainsMono',
+                  fontSize: 10,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              Text(
+                produto.codigo,
+                style: const TextStyle(
+                  fontFamily: 'JetBrainsMono',
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.blue,
+                ),
+              ),
+              if (produto.categoria.isNotEmpty) ...[
+                const Text(' · ', style: TextStyle(fontSize: 10, color: AppColors.textDisabled)),
+                Flexible(
+                  child: Text(
+                    produto.categoria,
+                    style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ]),
+            if (produto.nota.isNotEmpty)
+              Text(
+                produto.nota,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.blue,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             if (produto.observacoes.isNotEmpty)
               Text(
                 produto.observacoes,

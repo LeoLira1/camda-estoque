@@ -289,7 +289,7 @@ class _PendenciasScreenState extends State<PendenciasScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Pendências de Entrega'),
         actions: [
@@ -445,7 +445,7 @@ class _PendenciaCard extends StatelessWidget {
       onTap: onTap,
       child: Container(
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: borderColor.withOpacity(isAtrasado ? 0.5 : 0.3)),
         ),
