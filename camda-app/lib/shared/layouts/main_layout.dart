@@ -1,15 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/theme_notifier.dart';
 import '../../features/estoque/estoque_screen.dart';
 import '../../features/avarias/avarias_screen.dart';
 import '../../features/validade/validade_screen.dart';
 import '../../features/reposicao/reposicao_screen.dart';
-import '../../features/vendas/vendas_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/lancamentos/lancamentos_screen.dart';
 import '../../features/contagem/contagem_screen.dart';
 import '../../features/pendencias/pendencias_screen.dart';
-import '../../features/principios_ativos/principios_ativos_screen.dart';
 
 /// Layout principal com navegação adaptativa:
 /// - Mobile (< 600px): BottomNavigationBar (4 fixas + "Mais")
@@ -30,11 +29,9 @@ class _MainLayoutState extends State<MainLayout> {
     AvariasScreen(),
     ValidadeScreen(),
     ReposicaoScreen(),
-    VendasScreen(),
     LancamentosScreen(),
     ContagemScreen(),
     PendenciasScreen(),
-    PrincipiosAtivosScreen(),
   ];
 
   static const _allItems = [
@@ -43,11 +40,9 @@ class _MainLayoutState extends State<MainLayout> {
     _NavItem(icon: Icons.warning_amber_outlined,  activeIcon: Icons.warning_amber,  label: 'Avarias'),
     _NavItem(icon: Icons.event_outlined,          activeIcon: Icons.event,          label: 'Validade'),
     _NavItem(icon: Icons.store_outlined,          activeIcon: Icons.store,          label: 'Reposição'),
-    _NavItem(icon: Icons.bar_chart_outlined,      activeIcon: Icons.bar_chart,      label: 'Vendas'),
     _NavItem(icon: Icons.receipt_long_outlined,   activeIcon: Icons.receipt_long,   label: 'Lançamentos'),
     _NavItem(icon: Icons.fact_check_outlined,     activeIcon: Icons.fact_check,     label: 'Contagem'),
     _NavItem(icon: Icons.photo_library_outlined,  activeIcon: Icons.photo_library,  label: 'Pendências'),
-    _NavItem(icon: Icons.science_outlined,        activeIcon: Icons.science,        label: 'P. Ativos'),
   ];
 
   // Índices que aparecem diretamente no BottomNav (mobile)
@@ -171,6 +166,22 @@ class _MobileLayout extends StatelessWidget {
             trailing: selectedIndex == i ? const Icon(Icons.check, color: AppColors.green, size: 18) : null,
             onTap: () { Navigator.pop(context); onSelect(i); },
           )),
+          const Divider(height: 1),
+          ValueListenableBuilder<ThemeMode>(
+            valueListenable: ThemeNotifier.instance,
+            builder: (_, mode, __) => ListTile(
+              leading: Icon(
+                mode == ThemeMode.dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                color: AppColors.blue,
+                size: 22,
+              ),
+              title: Text(
+                mode == ThemeMode.dark ? 'Modo Claro' : 'Modo Escuro',
+                style: const TextStyle(fontFamily: 'Outfit', fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textPrimary),
+              ),
+              onTap: () { Navigator.pop(context); ThemeNotifier.instance.toggle(); },
+            ),
+          ),
           const SizedBox(height: 16),
         ],
       ),
@@ -214,15 +225,37 @@ class _WideLayout extends StatelessWidget {
                   minWidth: 72,
                   leading: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(
-                        color: AppColors.green.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.green.withOpacity(0.3)),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      Container(
+                        width: 36, height: 36,
+                        decoration: BoxDecoration(
+                          color: AppColors.green.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.green.withOpacity(0.3)),
+                        ),
+                        child: const Icon(Icons.eco_outlined, color: AppColors.green, size: 20),
                       ),
-                      child: const Icon(Icons.eco_outlined, color: AppColors.green, size: 20),
-                    ),
+                      const SizedBox(height: 8),
+                      ValueListenableBuilder<ThemeMode>(
+                        valueListenable: ThemeNotifier.instance,
+                        builder: (_, mode, __) => GestureDetector(
+                          onTap: () => ThemeNotifier.instance.toggle(),
+                          child: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                              color: AppColors.blue.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: AppColors.blue.withOpacity(0.3)),
+                            ),
+                            child: Icon(
+                              mode == ThemeMode.dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                              color: AppColors.blue,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ]),
                   ),
                   destinations: items.map((d) => NavigationRailDestination(
                     icon: Icon(d.icon),

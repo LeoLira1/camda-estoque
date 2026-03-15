@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_utils.dart';
+import '../../core/utils/number_utils.dart';
 import '../../data/models/reposicao.dart';
 import '../../data/repositories/reposicao_repository.dart';
 import '../../shared/widgets/loading_widget.dart' as lw;
@@ -172,9 +173,20 @@ class _ReposicaoTile extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(item.categoria, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-            if (item.qtdVendida > 0)
-              Text('Vendido: ${item.qtdVendida} un.', style: const TextStyle(fontSize: 11, color: AppColors.amber)),
+            Text(
+              '${item.codigo}  ·  ${item.categoria}',
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'JetBrainsMono'),
+            ),
+            const SizedBox(height: 4),
+            Row(children: [
+              _InfoChip(label: 'Vendidos', value: CamdaNumberUtils.formatInt(item.qtdVendida), color: AppColors.amber),
+              const SizedBox(width: 8),
+              _InfoChip(
+                label: 'Estoque',
+                value: CamdaNumberUtils.formatInt(item.qtdEstoque),
+                color: item.qtdEstoque > 0 ? AppColors.green : AppColors.red,
+              ),
+            ]),
             Text(dataStr, style: const TextStyle(fontSize: 10, color: AppColors.textDisabled)),
           ],
         ),
@@ -186,6 +198,31 @@ class _ReposicaoTile extends StatelessWidget {
               )
             : const Icon(Icons.check_circle, color: AppColors.green, size: 20),
       ),
+    );
+  }
+}
+
+class _InfoChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _InfoChip({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(label, style: TextStyle(fontSize: 9, color: color.withOpacity(0.8))),
+        const SizedBox(width: 4),
+        Text(value, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color, fontFamily: 'JetBrainsMono')),
+      ]),
     );
   }
 }

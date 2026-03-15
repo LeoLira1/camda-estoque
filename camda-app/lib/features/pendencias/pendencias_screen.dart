@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/date_utils.dart';
 import '../../data/models/pendencia.dart';
@@ -70,10 +71,52 @@ class _PendenciasScreenState extends State<PendenciasScreen> {
   }
 
   Future<void> _adicionarPendencia() async {
-    // No Flutter Web/Desktop sem câmera, abrimos dialog para cole Base64
-    // No Android, usar image_picker — a integração está preparada
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: AppColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (_) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 12),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.surfaceBorder, borderRadius: BorderRadius.circular(2))),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text('Nova Pendência', style: TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+          ),
+          ListTile(
+            leading: const Icon(Icons.camera_alt_outlined, color: AppColors.green),
+            title: const Text('Tirar foto', style: TextStyle(color: AppColors.textPrimary)),
+            onTap: () => Navigator.pop(_, ImageSource.camera),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library_outlined, color: AppColors.blue),
+            title: const Text('Escolher da galeria', style: TextStyle(color: AppColors.textPrimary)),
+            onTap: () => Navigator.pop(_, ImageSource.gallery),
+          ),
+          const SizedBox(height: 16),
+        ],
+      ),
+    );
+
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      maxWidth: 1280,
+      maxHeight: 1280,
+      imageQuality: 75,
+    );
+    if (picked == null) return;
+
+    final bytes = await picked.readAsBytes();
+    final b64 = base64Encode(bytes);
+
+    if (!mounted) return;
     final obsCtrl = TextEditingController();
-    final b64Ctrl = TextEditingController();
 
     await showModalBottomSheet(
       context: context,
@@ -87,83 +130,41 @@ class _PendenciasScreenState extends State<PendenciasScreen> {
           bottom: MediaQuery.of(ctx).viewInsets.bottom,
           left: 16, right: 16, top: 20,
         ),
-        child: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.surfaceBorder, borderRadius: BorderRadius.circular(2)))),
-            const SizedBox(height: 16),
-            const Text('Nova Pendência', style: TextStyle(fontFamily: 'Outfit', fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
-            const SizedBox(height: 4),
-            const Text(
-              'Cole a imagem em Base64 ou use câmera (requer plugin image_picker no pubspec).',
-              style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: AppColors.surfaceBorder, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(bytes, height: 180, width: double.infinity, fit: BoxFit.cover),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: obsCtrl,
+            maxLines: 2,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Observação (opcional)', isDense: true),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await _repo.inserir(fotoBase64: b64, observacao: obsCtrl.text.trim());
+                  await _loadData();
+                } catch (e) {
+                  if (!mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Erro: $e'), backgroundColor: AppColors.red),
+                  );
+                }
+              },
+              child: const Text('Registrar Pendência'),
             ),
-            const SizedBox(height: 14),
-            // Observação
-            TextField(
-              controller: obsCtrl,
-              maxLines: 2,
-              decoration: const InputDecoration(labelText: 'Observação', isDense: true),
-            ),
-            const SizedBox(height: 10),
-            // Foto base64 (placeholder — substituir por image_picker)
-            TextField(
-              controller: b64Ctrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Foto (Base64 JPEG)',
-                hintText: '/9j/4AAQSkZJRgAB...',
-                isDense: true,
-              ),
-            ),
-            const SizedBox(height: 6),
-            // Instrução de câmera
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.blue.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: AppColors.blue.withOpacity(0.2)),
-              ),
-              child: const Row(children: [
-                Icon(Icons.info_outline, color: AppColors.blue, size: 16),
-                SizedBox(width: 8),
-                Expanded(child: Text(
-                  'Para usar câmera: adicione image_picker ao pubspec.yaml e implemente _pickImage().',
-                  style: TextStyle(fontSize: 10, color: AppColors.blue),
-                )),
-              ]),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () async {
-                  if (b64Ctrl.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(content: Text('Adicione uma foto em Base64')),
-                    );
-                    return;
-                  }
-                  Navigator.pop(ctx);
-                  try {
-                    await _repo.inserir(
-                      fotoBase64: b64Ctrl.text.trim(),
-                      observacao: obsCtrl.text.trim(),
-                    );
-                    await _loadData();
-                  } catch (e) {
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('Erro: $e'), backgroundColor: AppColors.red),
-                    );
-                  }
-                },
-                child: const Text('Registrar Pendência'),
-              ),
-            ),
-            const SizedBox(height: 20),
-          ]),
-        ),
+          ),
+          const SizedBox(height: 20),
+        ]),
       ),
     );
   }
