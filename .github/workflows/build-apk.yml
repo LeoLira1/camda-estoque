@@ -19,6 +19,9 @@ on:
 permissions:
   contents: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   build:
     name: Build APK
@@ -42,7 +45,7 @@ jobs:
       - name: 🐦 Configurar Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.0'
+          flutter-version: '3.24.0'
           channel: stable
           cache: true
 
