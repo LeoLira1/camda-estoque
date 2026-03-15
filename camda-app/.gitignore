@@ -9,7 +9,7 @@ build/
 *.g.dart
 
 # Environment
-.env
+# .env
 
 # IDE
 .idea/
