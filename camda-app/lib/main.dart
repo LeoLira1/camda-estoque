@@ -42,20 +42,34 @@ class CamdaApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'CAMDA Estoque',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.darkTheme,
-      home: const LoginScreen(),
-      builder: (context, child) {
-        // Garante que o texto não escale além do razoável
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(
-              MediaQuery.of(context).textScaler.scale(1.0).clamp(0.85, 1.25),
-            ),
-          ),
-          child: child!,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: themeNotifier,
+      builder: (context, mode, _) {
+        // Atualiza a barra de status conforme o tema
+        SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: mode == ThemeMode.dark ? Brightness.light : Brightness.dark,
+          systemNavigationBarColor: Colors.transparent,
+        ));
+
+        return MaterialApp(
+          title: 'CAMDA Estoque',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: mode,
+          home: const LoginScreen(),
+          builder: (context, child) {
+            // Garante que o texto não escale além do razoável
+            return MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: TextScaler.linear(
+                  MediaQuery.of(context).textScaler.scale(1.0).clamp(0.85, 1.25),
+                ),
+              ),
+              child: child!,
+            );
+          },
         );
       },
     );

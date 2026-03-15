@@ -9,11 +9,14 @@ class ReposicaoRepository {
 
   Future<List<Reposicao>> getAll({bool apenasPendentes = false}) async {
     var sql = '''
-      SELECT id, codigo, produto, categoria, qtd_vendida, criado_em, reposto, reposto_em
-      FROM reposicao_loja
+      SELECT r.id, r.codigo, r.produto, r.categoria, r.qtd_vendida,
+             r.criado_em, r.reposto, r.reposto_em,
+             COALESCE(e.qtd_sistema, 0) as qtd_estoque
+      FROM reposicao_loja r
+      LEFT JOIN estoque_mestre e ON TRIM(r.codigo) = TRIM(e.codigo)
     ''';
-    if (apenasPendentes) sql += ' WHERE reposto = 0';
-    sql += ' ORDER BY criado_em DESC';
+    if (apenasPendentes) sql += ' WHERE r.reposto = 0';
+    sql += ' ORDER BY r.criado_em DESC';
 
     final result = await _client.query(sql);
     if (result.hasError) throw TursoException(result.error!);

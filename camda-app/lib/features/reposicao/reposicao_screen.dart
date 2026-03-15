@@ -65,7 +65,7 @@ class _ReposicaoScreenState extends State<ReposicaoScreen>
     final repostos = _todos.where((r) => !r.pendente).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       appBar: AppBar(
         title: const Text('Repor na Loja'),
         actions: [
@@ -120,6 +120,34 @@ class _ReposicaoScreenState extends State<ReposicaoScreen>
   }
 }
 
+class _InfoChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _InfoChip({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: RichText(
+        text: TextSpan(
+          children: [
+            TextSpan(text: '$label: ', style: const TextStyle(fontFamily: 'Outfit', fontSize: 10, color: AppColors.textMuted)),
+            TextSpan(text: value, style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 10, fontWeight: FontWeight.w700, color: color)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ReposicaoTile extends StatelessWidget {
   final Reposicao item;
   final bool showRepor;
@@ -139,7 +167,7 @@ class _ReposicaoTile extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.2)),
       ),
@@ -172,9 +200,23 @@ class _ReposicaoTile extends StatelessWidget {
         subtitle: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(item.categoria, style: const TextStyle(fontSize: 11, color: AppColors.textMuted)),
-            if (item.qtdVendida > 0)
-              Text('Vendido: ${item.qtdVendida} un.', style: const TextStyle(fontSize: 11, color: AppColors.amber)),
+            Row(children: [
+              const Text('Cód: ', style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 10, color: AppColors.textMuted)),
+              Text(item.codigo.isNotEmpty ? item.codigo : '—',
+                  style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.blue)),
+              const Text(' · ', style: TextStyle(fontSize: 10, color: AppColors.textDisabled)),
+              Flexible(child: Text(item.categoria, style: const TextStyle(fontSize: 11, color: AppColors.textMuted), maxLines: 1, overflow: TextOverflow.ellipsis)),
+            ]),
+            const SizedBox(height: 2),
+            Row(children: [
+              _InfoChip(label: 'Vendido', value: '${item.qtdVendida} un.', color: AppColors.amber),
+              const SizedBox(width: 8),
+              _InfoChip(
+                label: 'Estoque',
+                value: '${item.qtdEstoque} un.',
+                color: item.qtdEstoque > 0 ? AppColors.green : AppColors.red,
+              ),
+            ]),
             Text(dataStr, style: const TextStyle(fontSize: 10, color: AppColors.textDisabled)),
           ],
         ),
