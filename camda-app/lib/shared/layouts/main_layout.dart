@@ -5,7 +5,6 @@ import '../../features/avarias/avarias_screen.dart';
 import '../../features/validade/validade_screen.dart';
 import '../../features/reposicao/reposicao_screen.dart';
 import '../../features/vendas/vendas_screen.dart';
-import '../../features/mapa_visual/mapa_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
 import '../../features/lancamentos/lancamentos_screen.dart';
 import '../../features/contagem/contagem_screen.dart';
@@ -28,7 +27,6 @@ class _MainLayoutState extends State<MainLayout> {
   static const _allScreens = [
     DashboardScreen(),
     EstoqueScreen(),
-    MapaScreen(),
     AvariasScreen(),
     ValidadeScreen(),
     ReposicaoScreen(),
@@ -42,7 +40,6 @@ class _MainLayoutState extends State<MainLayout> {
   static const _allItems = [
     _NavItem(icon: Icons.dashboard_outlined,      activeIcon: Icons.dashboard,      label: 'Dashboard'),
     _NavItem(icon: Icons.inventory_2_outlined,    activeIcon: Icons.inventory_2,    label: 'Estoque'),
-    _NavItem(icon: Icons.map_outlined,            activeIcon: Icons.map,            label: 'Mapa'),
     _NavItem(icon: Icons.warning_amber_outlined,  activeIcon: Icons.warning_amber,  label: 'Avarias'),
     _NavItem(icon: Icons.event_outlined,          activeIcon: Icons.event,          label: 'Validade'),
     _NavItem(icon: Icons.store_outlined,          activeIcon: Icons.store,          label: 'Reposição'),

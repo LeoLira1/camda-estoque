@@ -23,9 +23,12 @@ class _ValidadeScreenState extends State<ValidadeScreen>
   List<ValidadeLote> _todos = [];
   List<String> _grupos = [];
   String _grupoFiltro = 'Todos';
+  int? _diasFiltro; // null = todos, senão <= N dias
   ValidadeResumo? _resumo;
   bool _loading = true;
   String? _error;
+
+  static const _diasOptions = [7, 30, 60, 90];
 
   @override
   void initState() {
@@ -62,8 +65,12 @@ class _ValidadeScreenState extends State<ValidadeScreen>
   }
 
   List<ValidadeLote> get _filteredAll {
-    if (_grupoFiltro == 'Todos') return _todos;
-    return _todos.where((l) => l.grupo == _grupoFiltro).toList();
+    return _todos.where((l) {
+      final matchGrupo = _grupoFiltro == 'Todos' || l.grupo == _grupoFiltro;
+      final matchDias = _diasFiltro == null ||
+          (!l.isVencido && l.diasParaVencer <= _diasFiltro!);
+      return matchGrupo && matchDias;
+    }).toList();
   }
 
   List<ValidadeLote> get _vencidos => _filteredAll.where((l) => l.isVencido).toList();
@@ -97,6 +104,7 @@ class _ValidadeScreenState extends State<ValidadeScreen>
                   children: [
                     if (_resumo != null) _buildResumoBar(),
                     _buildGrupoFilter(),
+                    _buildDiasFilter(),
                     Expanded(
                       child: TabBarView(
                         controller: _tabController,
@@ -161,6 +169,40 @@ class _ValidadeScreenState extends State<ValidadeScreen>
                     ),
                   ))
               .toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiasFilter() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: SizedBox(
+        height: 32,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: ChoiceChip(
+                label: const Text('Todos', style: TextStyle(fontSize: 11)),
+                selected: _diasFiltro == null,
+                selectedColor: AppColors.blue,
+                onSelected: (_) => setState(() => _diasFiltro = null),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+            ),
+            ..._diasOptions.map((d) => Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ChoiceChip(
+                    label: Text('$d dias', style: const TextStyle(fontSize: 11)),
+                    selected: _diasFiltro == d,
+                    selectedColor: AppColors.amber,
+                    onSelected: (_) => setState(() => _diasFiltro = _diasFiltro == d ? null : d),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                )),
+          ],
         ),
       ),
     );

@@ -287,9 +287,20 @@ class _ProdutoTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              produto.categoria,
-              style: const TextStyle(fontSize: 11, color: AppColors.textMuted),
+              '${produto.codigo}  ·  ${produto.categoria}',
+              style: const TextStyle(fontSize: 11, color: AppColors.textMuted, fontFamily: 'JetBrainsMono'),
             ),
+            if (produto.nota.isNotEmpty)
+              Text(
+                produto.nota,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.blue,
+                  fontWeight: FontWeight.w500,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             if (produto.observacoes.isNotEmpty)
               Text(
                 produto.observacoes,
