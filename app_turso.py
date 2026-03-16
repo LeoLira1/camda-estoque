@@ -905,6 +905,18 @@ def _get_connection():
             registrado_em TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS divergencias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            delta INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            cooperado TEXT DEFAULT '',
+            criado_em TEXT NOT NULL
+        )
+    """)
     conn.commit()
 
     # ── Migrações (roda 1x) ──
@@ -2253,45 +2265,57 @@ def marcar_reposto(item_id: int):
         st.error(f"❌ Erro ao marcar reposto: {e}")
 
 
-def registrar_divergencia_manual(codigo: str, delta: int, observacoes: str = "") -> tuple:
-    """Registra divergência (sobra/falta) sem alterar qtd_sistema.
+def registrar_divergencia_manual(codigo: str, delta: int, cooperado: str = "") -> tuple:
+    """Registra divergência (sobra/falta) na tabela dedicada, permitindo múltiplos registros por produto.
     delta > 0 = sobrando, delta < 0 = faltando.
     """
     try:
         conn = get_db()
         row = conn.execute(
-            "SELECT produto, qtd_sistema FROM estoque_mestre WHERE codigo = ?", (codigo,)
+            "SELECT produto, categoria FROM estoque_mestre WHERE codigo = ?", (codigo,)
         ).fetchone()
         if not row:
             return (False, f"Código '{codigo}' não encontrado.")
-        produto, qtd_sistema = row
-        qtd_fisica = qtd_sistema + delta
-        diferenca = delta  # qtd_fisica - qtd_sistema
+        produto, categoria = row
         status = "sobra" if delta > 0 else "falta"
         conn.execute(
-            "UPDATE estoque_mestre SET qtd_fisica = ?, diferenca = ?, status = ?, observacoes = ? WHERE codigo = ?",
-            (qtd_fisica, diferenca, status, observacoes.strip(), codigo),
+            "INSERT INTO divergencias (codigo, produto, categoria, delta, status, cooperado, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (codigo, produto, categoria, delta, status, cooperado.strip(), datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")),
         )
         conn.commit()
         sync_db()
         sinal = "+" if delta > 0 else ""
-        return (True, f"✅ {produto} ({codigo}) → {status} de {sinal}{delta} un. registrada.")
+        nome = cooperado.strip() or "sem cooperado"
+        return (True, f"✅ {produto} ({codigo}) → {status} de {sinal}{delta} un. registrada para {nome}.")
     except Exception as e:
         return (False, f"❌ Erro: {e}")
 
 
-def resolver_divergencia(codigo: str):
-    """Remove manualmente um produto da lista de divergências (seta status para 'ok')."""
+def resolver_divergencia(div_id: int):
+    """Remove uma divergência específica da lista pelo seu id."""
     try:
         conn = get_db()
-        conn.execute(
-            "UPDATE estoque_mestre SET status = 'ok', diferenca = 0 WHERE codigo = ?",
-            [codigo]
-        )
+        conn.execute("DELETE FROM divergencias WHERE id = ?", [div_id])
         conn.commit()
         sync_db()
     except Exception as e:
         st.error(f"❌ Erro ao resolver divergência: {e}")
+
+
+def get_divergencias() -> pd.DataFrame:
+    """Retorna todas as divergências da tabela dedicada."""
+    try:
+        conn = get_db()
+        rows = conn.execute("""
+            SELECT d.id, d.codigo, d.produto, d.categoria, d.delta, d.status, d.cooperado, d.criado_em,
+                   e.qtd_sistema
+            FROM divergencias d
+            LEFT JOIN estoque_mestre e ON d.codigo = e.codigo
+            ORDER BY d.cooperado, d.produto
+        """).fetchall()
+        return pd.DataFrame(rows, columns=["id", "codigo", "produto", "categoria", "delta", "status", "cooperado", "criado_em", "qtd_sistema"])
+    except Exception:
+        return pd.DataFrame(columns=["id", "codigo", "produto", "categoria", "delta", "status", "cooperado", "criado_em", "qtd_sistema"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -5382,8 +5406,9 @@ if has_mestre:
             st.caption(pa_match_info)
 
     n_ok = (df_view["status"] == "ok").sum()
-    n_falta = (df_view["status"] == "falta").sum()
-    n_sobra = (df_view["status"] == "sobra").sum()
+    _df_divs = get_divergencias()
+    n_falta = int((_df_divs["status"] == "falta").sum()) if not _df_divs.empty else 0
+    n_sobra = int((_df_divs["status"] == "sobra").sum()) if not _df_divs.empty else 0
 
     df_reposicao = get_reposicao_pendente()
     n_repor = len(df_reposicao)
@@ -5409,29 +5434,29 @@ if has_mestre:
         st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map), unsafe_allow_html=True)
 
     with t2:
-        df_div = df_view[df_view["status"].isin(("falta", "sobra"))]
+        df_div = get_divergencias()
         if df_div.empty:
             st.info("Nenhuma divergência.")
         else:
-            st.caption(f"{len(df_div)} divergência(s) · Itens saem apenas quando desmarcados manualmente.")
+            st.caption(f"{len(df_div)} divergência(s) · Itens saem apenas quando resolvidos manualmente.")
 
             # --- Filtro / Agrupamento por cooperado ---
-            obs_unicas = sorted([
-                o for o in df_div["observacoes"].dropna().astype(str).unique()
-                if o.strip()
+            coop_unicos = sorted([
+                c for c in df_div["cooperado"].dropna().astype(str).unique()
+                if c.strip()
             ])
             _c1, _c2 = st.columns([3, 1])
             with _c1:
-                _filtro_obs = st.selectbox("Cooperado / Observação", ["Todos"] + obs_unicas, key="div_filtro_obs")
+                _filtro_obs = st.selectbox("Cooperado", ["Todos"] + coop_unicos, key="div_filtro_obs")
             with _c2:
                 _agrupar = st.checkbox("Agrupar", value=True, key="div_agrupar")
 
             if _filtro_obs != "Todos":
-                df_div = df_div[df_div["observacoes"].fillna("").astype(str).str.strip() == _filtro_obs]
+                df_div = df_div[df_div["cooperado"].fillna("").astype(str).str.strip() == _filtro_obs]
 
             if _agrupar:
                 df_div = df_div.copy()
-                df_div["_obs_sort"] = df_div["observacoes"].fillna("").astype(str).str.strip()
+                df_div["_obs_sort"] = df_div["cooperado"].fillna("").astype(str).str.strip()
                 df_div = df_div.sort_values("_obs_sort")
 
             # Paleta de cores discretas por pessoa (tema escuro)
@@ -5448,8 +5473,8 @@ if has_mestre:
             # Mapeia cada grupo para uma cor fixa
             _group_color_map = {}
             _color_idx_counter = 0
-            for _g in df_div["observacoes"].fillna("").astype(str).str.strip().unique():
-                _gname = _g if _g else "Sem observação"
+            for _g in df_div["cooperado"].fillna("").astype(str).str.strip().unique():
+                _gname = _g if _g else "Sem cooperado"
                 if _gname not in _group_color_map:
                     _group_color_map[_gname] = _PERSON_PALETTE[_color_idx_counter % len(_PERSON_PALETTE)]
                     _color_idx_counter += 1
@@ -5458,20 +5483,19 @@ if has_mestre:
             for _, item in df_div.iterrows():
                 status_cor = "#ef4444" if item["status"] == "falta" else "#f59e0b"
                 status_label = "⬇️ FALTA" if item["status"] == "falta" else "⬆️ SOBRA"
-                diferenca = int(item["diferenca"]) if pd.notnull(item["diferenca"]) else 0
+                delta = int(item["delta"]) if pd.notnull(item["delta"]) else 0
                 qtd_s = int(item["qtd_sistema"]) if pd.notnull(item["qtd_sistema"]) else 0
-                qtd_f = int(item["qtd_fisica"]) if pd.notnull(item["qtd_fisica"]) else 0
-                nota = str(item["nota"]) if pd.notnull(item["nota"]) and str(item["nota"]).strip() else ""
-                observacoes = str(item["observacoes"]) if pd.notnull(item.get("observacoes")) and str(item.get("observacoes", "")).strip() else ""
+                qtd_f = qtd_s + delta
+                cooperado = str(item["cooperado"]) if pd.notnull(item.get("cooperado")) and str(item.get("cooperado", "")).strip() else ""
 
-                _grp_name = observacoes if observacoes else "Sem observação"
+                _grp_name = cooperado if cooperado else "Sem cooperado"
                 _grp_color = _group_color_map.get(_grp_name, _PERSON_PALETTE[0])
 
                 # Cabeçalho de grupo ao agrupar por cooperado
                 if _agrupar:
                     _obs_group = _grp_name
                     if _obs_group != _prev_obs_group:
-                        _count_group = len(df_div[df_div["observacoes"].fillna("").astype(str).str.strip() == (observacoes if observacoes else "")])
+                        _count_group = len(df_div[df_div["cooperado"].fillna("").astype(str).str.strip() == (cooperado if cooperado else "")])
                         st.markdown(
                             f'<div style="margin:14px 0 6px;padding:6px 12px;background:{_grp_color["h_bg"]};border-left:4px solid {_grp_color["h_bd"]};border-radius:4px;">'
                             f'<span style="color:{_grp_color["h_tx"]};font-weight:700;font-size:0.82rem;">👤 {_obs_group}</span>'
@@ -5487,19 +5511,18 @@ if has_mestre:
                         f'<div style="background:{_grp_color["c_bg"]};border:1px solid {_grp_color["h_bd"]}33;border-left:3px solid {_grp_color["h_bd"]}88;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;">'
                         f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
-                        f'<span style="color:{status_cor};font-size:0.7rem;font-weight:700;">{status_label} {abs(diferenca)}</span></div>'
+                        f'<span style="color:{status_cor};font-size:0.7rem;font-weight:700;">{status_label} {abs(delta)}</span></div>'
                         f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
                         f'<span style="color:#64748b;font-size:0.78rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">Sistema: <b style="color:#94a3b8;">{qtd_s}</b> · Físico: <b style="color:#94a3b8;">{qtd_f}</b></span>'
-                        + (f'<span style="color:#64748b;font-size:0.65rem;">Obs: <i style="color:#94a3b8;">{nota}</i></span>' if nota else '')
-                        + (f'<span style="color:#64748b;font-size:0.75rem;">Observação: <i style="color:{_grp_color["h_tx"]};">{observacoes}</i></span>' if observacoes else '')
+                        + (f'<span style="color:#64748b;font-size:0.75rem;">Cooperado: <i style="color:{_grp_color["h_tx"]};">{cooperado}</i></span>' if cooperado else '')
                         + f'</div></div>',
                         unsafe_allow_html=True,
                     )
                 with col_btn:
-                    if st.button("✅", key=f"div_{item['codigo']}", help="Resolver divergência manualmente"):
-                        resolver_divergencia(str(item["codigo"]))
+                    if st.button("✅", key=f"div_{item['id']}", help="Resolver divergência manualmente"):
+                        resolver_divergencia(int(item["id"]))
                         st.rerun()
 
     with t3:
@@ -5575,21 +5598,24 @@ if has_mestre:
                         if not row_corr.empty:
                             qtd_atual = int(row_corr["qtd_sistema"].iloc[0])
                             cat_corr  = str(row_corr["categoria"].iloc[0])
-                            status_atual = str(row_corr["status"].iloc[0])
-                            div_atual = int(row_corr["diferenca"].iloc[0]) if pd.notnull(row_corr["diferenca"].iloc[0]) else 0
 
-                            _cor_status = {"sobra": "#22c55e", "falta": "#f87171"}.get(status_atual, "#64748b")
-                            _label_status = {"sobra": "sobra", "falta": "falta"}.get(status_atual, "ok")
+                            # Divergências já registradas para este produto
+                            _divs_prod = get_divergencias()
+                            _divs_prod = _divs_prod[_divs_prod["codigo"] == cod_corr] if not _divs_prod.empty else _divs_prod
+                            _n_divs = len(_divs_prod)
+                            _divs_resumo = ""
+                            if _n_divs > 0:
+                                _partes = [f"{r['cooperado'] or 'sem nome'} ({'+' if r['delta']>0 else ''}{int(r['delta'])})" for _, r in _divs_prod.iterrows()]
+                                _divs_resumo = " · ".join(_partes)
+
                             st.markdown(
                                 f'<div style="background:#111827;border:1px solid #1e293b;'
                                 f'border-radius:8px;padding:10px 14px;margin:6px 0;">'
                                 f'<span style="color:#94a3b8;font-size:0.75rem;">Sistema: </span>'
                                 f'<span style="color:#e0e6ed;font-weight:700;">{qtd_atual} un.</span>'
-                                f'&nbsp;&nbsp;'
-                                f'<span style="color:{_cor_status};font-size:0.7rem;font-weight:600;">{_label_status}'
-                                f'{f" ({div_atual:+d})" if div_atual != 0 else ""}</span>'
                                 f'&nbsp;&nbsp;<span style="color:#64748b;font-size:0.7rem;">{cat_corr}</span>'
-                                f'</div>',
+                                + (f'<br><span style="color:#f59e0b;font-size:0.7rem;">⚠️ {_n_divs} divergência(s) registrada(s): {_divs_resumo}</span>' if _n_divs > 0 else '')
+                                + f'</div>',
                                 unsafe_allow_html=True,
                             )
 
@@ -5604,12 +5630,11 @@ if has_mestre:
                                      "Sistema diz 11, físico tem 9 → digite −2.",
                             )
 
-                            obs_corr = st.text_area(
-                                "Observações",
+                            obs_corr = st.text_input(
+                                "Nome do cooperado",
                                 value="",
                                 key="repor_manual_obs",
-                                placeholder="Descreva o motivo da divergência (opcional)…",
-                                height=80,
+                                placeholder="Ex: Rubens Pinto, Maria Julia…",
                             )
 
                             if delta_corr != 0:
