@@ -580,7 +580,7 @@ function renderMap() {
   cor.textContent = 'CORREDOR DE CARREGAMENTO';
   var cart = document.createElement('span');
   cart.className = 'corridor-cart';
-  cart.textContent = '🚜';
+  cart.textContent = '🛻';
   cor.appendChild(cart);
   wh.appendChild(cor);
   wh.appendChild(buildSector('B', LAYOUT_B));
@@ -1376,7 +1376,7 @@ function renderMap(){
   const cor=document.createElement('div');
   cor.className='corridor'; cor.textContent='CORREDOR DE CARREGAMENTO';
   const cart=document.createElement('span');
-  cart.className='corridor-cart'; cart.textContent='🚜';
+  cart.className='corridor-cart'; cart.textContent='🛻';
   cor.appendChild(cart);
   wh.appendChild(cor);
   wh.appendChild(buildSector('B',LAYOUT_B));
