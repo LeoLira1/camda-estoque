@@ -246,6 +246,9 @@ main{padding:16px 20px;}
 
 .cell-lbl{font-size:5.5px;color:rgba(255,255,255,.18);position:absolute;
   bottom:1px;right:2px;pointer-events:none;line-height:1;}
+.cell-initial{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:rgba(0,0,0,0.45);pointer-events:none;line-height:1;
+  text-transform:uppercase;letter-spacing:0;}
 .cell-dot{position:absolute;top:2px;left:2px;width:4px;height:4px;
   border-radius:50%;background:var(--accent);pointer-events:none;}
 
@@ -994,6 +997,9 @@ main{padding:16px 20px;}
 
 /* Tiny label: "pos.lvl" */
 .cell-lbl{font-size:5.5px;color:rgba(255,255,255,.18);position:absolute;bottom:1px;right:2px;pointer-events:none;line-height:1;}
+.cell-initial{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;color:rgba(0,0,0,0.45);pointer-events:none;line-height:1;
+  text-transform:uppercase;letter-spacing:0;}
 
 /* Data dot */
 .cell-dot{position:absolute;top:2px;left:2px;width:4px;height:4px;border-radius:50%;background:var(--accent);pointer-events:none;}
@@ -1299,7 +1305,9 @@ function applyCellState(cell){
   /* keep cell-lbl child if present */
   const lblEl = cell.querySelector('.cell-lbl');
   const dotEl = cell.querySelector('.cell-dot');
+  const initEl = cell.querySelector('.cell-initial');
   if(dotEl) dotEl.remove();
+  if(initEl) initEl.remove();
   cell.className='cell';
   cell.style.background='';
   cell.style.borderColor='';
@@ -1310,6 +1318,11 @@ function applyCellState(cell){
         const col=getProdColor(d.product);
         cell.style.background=col.bd;
         cell.style.borderColor=col.bd;
+        /* initial letter */
+        const ini=document.createElement('span');
+        ini.className='cell-initial';
+        ini.textContent=d.product.trim()[0]||'';
+        cell.appendChild(ini);
       }
     } else if(d.status==='reserved'){
       cell.classList.add('reserved');
