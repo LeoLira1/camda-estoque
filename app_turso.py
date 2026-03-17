@@ -4378,6 +4378,110 @@ def get_produtos_parados(dias_min: int) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300)
+def get_esquecidos_com_validade(dias_min: int) -> pd.DataFrame:
+    """Herbicidas, fungicidas, inseticidas, inoculantes e fertilizantes sem movimentação há ≥ dias_min, com validade."""
+    _GRUPOS_ALVO = ("HERBICID", "FUNGICID", "INSETICID", "INOCULAN", "BIOLOGIC", "ADUBO", "FERTILIZ", "MATURAD")
+    try:
+        hoje = datetime.now(tz=_BRT).date()
+        rows = get_db().execute("""
+            SELECT
+                e.codigo,
+                e.produto,
+                e.categoria AS grupo,
+                e.qtd_sistema AS qtd_estoque,
+                COALESCE(MAX(v.data_upload), '') AS ultima_venda
+            FROM estoque_mestre e
+            LEFT JOIN vendas_historico v ON v.codigo = e.codigo
+            WHERE e.qtd_sistema > 0
+            GROUP BY e.codigo
+        """).fetchall()
+        if not rows:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "qtd_estoque", "ultima_venda"])
+
+        # Filtrar grupos alvo
+        mask = df["grupo"].str.upper().str.contains("|".join(_GRUPOS_ALVO), na=False)
+        df = df[mask].copy()
+
+        def _dias(ultima: str) -> int:
+            if not ultima:
+                return 9999
+            try:
+                return (hoje - date.fromisoformat(ultima)).days
+            except Exception:
+                return 9999
+
+        df["dias_parado"] = df["ultima_venda"].apply(_dias)
+        df = df[df["dias_parado"] >= dias_min].copy()
+
+        if df.empty:
+            return df
+
+        # Buscar validade_lotes
+        try:
+            vl_rows = get_db().execute(
+                "SELECT produto, lote, vencimento, quantidade FROM validade_lotes"
+            ).fetchall()
+        except Exception:
+            vl_rows = []
+
+        if vl_rows:
+            df_val = pd.DataFrame(vl_rows, columns=["vl_produto", "lote", "vencimento", "qtd_lote"])
+            df_val["vencimento"] = pd.to_datetime(df_val["vencimento"], errors="coerce")
+            df_val["vl_chave"] = df_val["vl_produto"].str.upper().str.strip()
+
+            # Criar chave para estoque (remove prefixo "CODE - " se existir)
+            def _chave_produto(nome: str) -> str:
+                if " - " in nome:
+                    nome = nome.split(" - ", 1)[1]
+                return nome.strip().upper()
+
+            df["em_chave"] = df["produto"].apply(_chave_produto)
+
+            # Mapa: chave → validade mais próxima (menor vencimento válido)
+            vl_map: dict = {}
+            for _, r in df_val.iterrows():
+                k = r["vl_chave"]
+                if k not in vl_map or (
+                    pd.notna(r["vencimento"]) and (
+                        pd.isna(vl_map[k]["vencimento"]) or r["vencimento"] < vl_map[k]["vencimento"]
+                    )
+                ):
+                    vl_map[k] = {"lote": r["lote"], "vencimento": r["vencimento"]}
+
+            def _get_validade(chave: str) -> dict:
+                if chave in vl_map:
+                    return vl_map[chave]
+                # Busca parcial (substring)
+                for k, v in vl_map.items():
+                    if len(chave) >= 6 and len(k) >= 6 and (chave in k or k in chave):
+                        return v
+                return {"lote": "", "vencimento": pd.NaT}
+
+            validades = df["em_chave"].apply(_get_validade)
+            df["lote"] = validades.apply(lambda x: x["lote"])
+            df["vencimento"] = validades.apply(lambda x: x["vencimento"])
+        else:
+            df["lote"] = ""
+            df["vencimento"] = pd.NaT
+
+        def _fmt_data(s: str) -> str:
+            if not s:
+                return "Nunca"
+            try:
+                return datetime.strptime(s, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                return s
+
+        df["ultima_venda_fmt"] = df["ultima_venda"].apply(_fmt_data)
+        return df.sort_values("dias_parado", ascending=False).reset_index(drop=True)
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=300)
 def get_giro_ruptura_grupos(data_inicio: str, data_fim: str) -> pd.DataFrame:
     """Retorna taxa de giro e % de ruptura por grupo de produtos."""
     try:
@@ -4534,7 +4638,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
     """.replace(",", "."), unsafe_allow_html=True)
 
     # ── Sub-tabs de gráficos ─────────────────────────────────────────────
-    vt1, vt2, vt3, vt4 = st.tabs(["📊 Por Grupo", "🚨 Estoque Crítico", "🔥 Taxa de Giro", "🏆 Top Produtos"])
+    vt1, vt2, vt3, vt4, vt5 = st.tabs(["📊 Por Grupo", "🚨 Estoque Crítico", "🔥 Taxa de Giro", "🏆 Top Produtos", "🌿 Esquecidos"])
 
     # ══════════════════════════════════════════════════════════════════════
     # TAB 1 — VENDAS POR GRUPO
@@ -4850,6 +4954,144 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
         else:
             st.info("Nenhum produto encontrado para o filtro selecionado.")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # TAB 5 — PRODUTOS ESQUECIDOS (sem movimentação)
+    # ══════════════════════════════════════════════════════════════════════
+    with vt5:
+        st.caption("Herbicidas, Fungicidas, Inseticidas, Inoculantes e Fertilizantes/Adubos sem movimentação de vendas — com datas de validade e estoque atual.")
+
+        col_dias_esq, _ = st.columns([1, 3])
+        with col_dias_esq:
+            dias_sem_venda = st.slider(
+                "Dias mínimos sem venda:", 30, 365, 90, step=30,
+                key="esquecidos_dias_slider",
+            )
+
+        df_esq = get_esquecidos_com_validade(dias_sem_venda)
+
+        if df_esq.empty:
+            st.success(f"Nenhum produto dos grupos alvo sem movimentação há mais de {dias_sem_venda} dias! 🎉")
+        else:
+            hoje_esq = datetime.now(tz=_BRT).date()
+
+            n_vencidos = 0
+            n_proximos = 0
+            if "vencimento" in df_esq.columns:
+                _val_datas = df_esq["vencimento"].dropna()
+                n_vencidos = int((_val_datas < pd.Timestamp(hoje_esq)).sum())
+                n_proximos = int((
+                    (_val_datas >= pd.Timestamp(hoje_esq)) &
+                    (_val_datas < pd.Timestamp(hoje_esq + timedelta(days=90)))
+                ).sum())
+
+            ke1, ke2, ke3, ke4 = st.columns(4)
+            with ke1:
+                st.markdown(
+                    f"""<div class="stat-card"><div class="stat-value amber">{len(df_esq)}</div>
+                    <div class="stat-label">🌿 Produtos Parados</div></div>""",
+                    unsafe_allow_html=True,
+                )
+            with ke2:
+                total_esq = int(df_esq["qtd_estoque"].sum())
+                st.markdown(
+                    f"""<div class="stat-card"><div class="stat-value blue">{total_esq:,}</div>
+                    <div class="stat-label">📦 Un. Imobilizadas</div></div>""".replace(",", "."),
+                    unsafe_allow_html=True,
+                )
+            with ke3:
+                st.markdown(
+                    f"""<div class="stat-card"><div class="stat-value red">{n_vencidos}</div>
+                    <div class="stat-label">💀 Vencidos</div></div>""",
+                    unsafe_allow_html=True,
+                )
+            with ke4:
+                st.markdown(
+                    f"""<div class="stat-card"><div class="stat-value purple">{n_proximos}</div>
+                    <div class="stat-label">⏰ Vencem em 90d</div></div>""",
+                    unsafe_allow_html=True,
+                )
+
+            # Filtro por grupo
+            col_fg_esq, _ = st.columns([1, 3])
+            with col_fg_esq:
+                grupos_esq = ["TODOS"] + sorted(df_esq["grupo"].unique().tolist())
+                grupo_esq_sel = st.selectbox("Filtrar por grupo:", grupos_esq, key="esquecidos_grupo_sel")
+
+            df_esq_show = df_esq.copy()
+            if grupo_esq_sel != "TODOS":
+                df_esq_show = df_esq_show[df_esq_show["grupo"] == grupo_esq_sel]
+
+            if not df_esq_show.empty:
+                # Gráfico de barras por grupo (apenas quando filtro = TODOS)
+                if grupo_esq_sel == "TODOS":
+                    df_esq_grupo = df_esq_show.groupby("grupo", as_index=False).agg(
+                        qtd_produtos=("codigo", "nunique"),
+                    ).sort_values("qtd_produtos", ascending=False)
+
+                    fig_esq = go.Figure()
+                    fig_esq.add_trace(go.Bar(
+                        y=df_esq_grupo["grupo"], x=df_esq_grupo["qtd_produtos"],
+                        orientation="h",
+                        marker=dict(
+                            color=[_get_color(g) for g in df_esq_grupo["grupo"]],
+                            cornerradius=4,
+                        ),
+                        text=df_esq_grupo["qtd_produtos"],
+                        textposition="outside", textfont=dict(size=10, color="#94a3b8"),
+                        hovertemplate="<b>%{y}</b><br>Produtos parados: %{x}<extra></extra>",
+                    ))
+                    fig_esq.update_layout(
+                        **_PLOTLY_LAYOUT,
+                        title=dict(text="🌿 SKUs Parados por Grupo (sem vendas)", font=dict(size=14)),
+                        height=max(280, len(df_esq_grupo) * 42),
+                        yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
+                        xaxis=dict(title="Nº de SKUs parados", gridcolor="#1e293b"),
+                        showlegend=False,
+                    )
+                    st.plotly_chart(fig_esq, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
+
+                # Montar tabela detalhada
+                df_tabela_esq = df_esq_show[["produto", "grupo", "qtd_estoque", "ultima_venda_fmt", "dias_parado"]].copy()
+
+                has_validade = "vencimento" in df_esq_show.columns and df_esq_show["vencimento"].notna().any()
+                if has_validade:
+                    def _fmt_venc(d) -> str:
+                        try:
+                            return pd.Timestamp(d).strftime("%d/%m/%Y") if pd.notna(d) else "—"
+                        except Exception:
+                            return "—"
+
+                    def _status_val(row) -> str:
+                        venc_str = row["Vencimento"]
+                        if venc_str == "—":
+                            return "—"
+                        try:
+                            dv = datetime.strptime(venc_str, "%d/%m/%Y").date()
+                            dias_v = (dv - hoje_esq).days
+                            if dias_v < 0:
+                                return "💀 VENCIDO"
+                            elif dias_v < 90:
+                                return f"⚠️ {dias_v}d"
+                            else:
+                                return f"✅ {dias_v}d"
+                        except Exception:
+                            return "—"
+
+                    df_tabela_esq["Vencimento"] = df_esq_show["vencimento"].apply(_fmt_venc)
+                    df_tabela_esq.columns = ["Produto", "Grupo", "Estoque", "Última Venda", "Dias Parado", "Vencimento"]
+                    df_tabela_esq["Status Val."] = df_tabela_esq.apply(_status_val, axis=1)
+                else:
+                    df_tabela_esq.columns = ["Produto", "Grupo", "Estoque", "Última Venda", "Dias Parado"]
+
+                st.dataframe(df_tabela_esq, hide_index=True, use_container_width=True, height=450)
+
+                if n_vencidos > 0:
+                    st.error(f"💀 **{n_vencidos} produto(s) VENCIDO(S)** na prateleira! Verifique imediatamente.")
+                if n_proximos > 0:
+                    st.warning(f"⏰ **{n_proximos} produto(s)** vencem nos próximos 90 dias.")
+            else:
+                st.info("Nenhum produto encontrado para o grupo selecionado.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
