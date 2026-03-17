@@ -30,22 +30,37 @@ def init_warehouse_table(conn):
     conn.commit()
 
 
+def _s(v, default="") -> str:
+    """Converte valor do libSQL para str seguro para JSON."""
+    if v is None:
+        return default
+    if isinstance(v, bytes):
+        try:
+            return v.decode("utf-8")
+        except Exception:
+            return default
+    return str(v)
+
+
 def _load_positions(conn) -> dict:
     """Carrega todas as posições do armazém do banco local."""
     try:
         rows = conn.execute(
             "SELECT addr, status, product, qty, lot, notes FROM warehouse_positions"
         ).fetchall()
-        return {
-            r[0]: {
-                "status":  r[1] or "free",
-                "product": r[2] or "",
-                "qty":     r[3] or "",
-                "lot":     r[4] or "",
-                "notes":   r[5] or "",
+        result = {}
+        for r in rows:
+            addr = _s(r[0])
+            if not addr:
+                continue
+            result[addr] = {
+                "status":  _s(r[1]) or "free",
+                "product": _s(r[2]),
+                "qty":     _s(r[3]),
+                "lot":     _s(r[4]),
+                "notes":   _s(r[5]),
             }
-            for r in rows
-        }
+        return result
     except Exception:
         return {}
 
@@ -57,19 +72,30 @@ def _load_products(conn) -> list:
         for r in conn.execute(
             "SELECT DISTINCT produto FROM estoque_mestre WHERE produto IS NOT NULL ORDER BY produto"
         ).fetchall():
-            if r[0]:
-                prods.add(r[0].strip())
+            v = _s(r[0]).strip()
+            if v:
+                prods.add(v)
     except Exception:
         pass
     try:
         for r in conn.execute(
-            "SELECT DISTINCT product FROM warehouse_positions WHERE product IS NOT NULL AND product != '' ORDER BY product"
+            "SELECT DISTINCT product FROM warehouse_positions"
+            " WHERE product IS NOT NULL AND product != '' ORDER BY product"
         ).fetchall():
-            if r[0]:
-                prods.add(r[0].strip())
+            v = _s(r[0]).strip()
+            if v:
+                prods.add(v)
     except Exception:
         pass
     return sorted(prods)
+
+
+def _safe_json(obj) -> str:
+    """json.dumps com fallback str() e escape de </script>."""
+    return (
+        json.dumps(obj, ensure_ascii=False, default=str)
+        .replace("</", "<\\/")   # previne fechar tag <script> no HTML
+    )
 
 
 def warehouse_tab(turso_url: str, turso_token: str, conn):
@@ -78,7 +104,10 @@ def warehouse_tab(turso_url: str, turso_token: str, conn):
     Dados carregados pelo Python (sem fetch inicial no browser),
     evitando problemas de CORS/latência.
     """
-    http_url = turso_url.replace("libsql://", "https://").rstrip("/")
+    try:
+        http_url = (turso_url or "").replace("libsql://", "https://").rstrip("/")
+    except Exception:
+        http_url = ""
 
     positions = _load_positions(conn)
     products  = _load_products(conn)
@@ -92,11 +121,11 @@ def warehouse_tab(turso_url: str, turso_token: str, conn):
 
     html = (
         _HTML_TEMPLATE
-        .replace("__TURSO_URL__",       http_url)
-        .replace("__TURSO_TOKEN__",     turso_token)
-        .replace("'__POSITIONS_JSON__'", json.dumps(positions))
-        .replace("'__PRODUCTS_JSON__'",  json.dumps(products))
-        .replace("'__PROD_POS_JSON__'",  json.dumps(prod_pos))
+        .replace("__TURSO_URL__",        http_url)
+        .replace("__TURSO_TOKEN__",      turso_token or "")
+        .replace("'__POSITIONS_JSON__'", _safe_json(positions))
+        .replace("'__PRODUCTS_JSON__'",  _safe_json(products))
+        .replace("'__PROD_POS_JSON__'",  _safe_json(prod_pos))
     )
     components.html(html, height=880, scrolling=False)
 
