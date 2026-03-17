@@ -27,6 +27,7 @@ from db_mapa import (
     sync_quantidades_from_estoque,
     get_posicoes_vazias,
 )
+from warehouse_tab import init_warehouse_table, warehouse_tab as _warehouse_tab
 from mapa_3d_component import render_rack_3d
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
@@ -968,6 +969,12 @@ def _get_connection():
     # ── Tabelas do Mapa Visual ──
     try:
         ensure_mapa_tables(conn)
+    except Exception:
+        pass
+
+    # ── Tabela do Mapa do Armazém (posições físicas A/B) ──
+    try:
+        init_warehouse_table(conn)
     except Exception:
         pass
 
@@ -5425,7 +5432,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12 = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos"])
+    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12, t_armazem = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "🏭 Mapa do Armazém"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -6761,6 +6768,8 @@ if has_mestre:
     with t12:
         build_principios_ativos_tab(df_mestre, df_pa)
 
+    with t_armazem:
+        _warehouse_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────
