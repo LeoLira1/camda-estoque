@@ -1308,7 +1308,7 @@ function applyCellState(cell){
       cell.classList.add('occupied');
       if(d.product){
         const col=getProdColor(d.product);
-        cell.style.background=col.bg;
+        cell.style.background=col.bd;
         cell.style.borderColor=col.bd;
       }
     } else if(d.status==='reserved'){
@@ -1320,9 +1320,15 @@ function applyCellState(cell){
       const dot=document.createElement('span');
       dot.className='cell-dot';
       if(d.product&&d.status==='occupied'){
-        dot.style.background=getProdColor(d.product).bd;
+        dot.style.background='rgba(0,0,0,0.5)';
       }
       cell.prepend(dot);
+    }
+    /* label contraste sobre fundo colorido */
+    if(lblEl&&d.status==='occupied'&&d.product){
+      lblEl.style.color='rgba(0,0,0,0.45)';
+    } else if(lblEl){
+      lblEl.style.color='';
     }
   }
   if(lblEl) cell.appendChild(lblEl);
