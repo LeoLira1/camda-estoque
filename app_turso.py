@@ -6769,7 +6769,7 @@ if has_mestre:
         build_principios_ativos_tab(df_mestre, df_pa)
 
     with t_armazem:
-        _warehouse_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN)
+        _warehouse_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, get_db())
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────

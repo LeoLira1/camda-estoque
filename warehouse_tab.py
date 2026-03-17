@@ -10,6 +10,7 @@ Layout físico do armazém:
   Corredor de Carregamento separa visualmente os setores A e B.
 """
 
+import json
 import streamlit.components.v1 as components
 
 
@@ -29,11 +30,73 @@ def init_warehouse_table(conn):
     conn.commit()
 
 
-def warehouse_tab(turso_url: str, turso_token: str):
-    """Renderiza a aba Mapa do Armazém via st.components.v1.html."""
+def _load_positions(conn) -> dict:
+    """Carrega todas as posições do armazém do banco local."""
+    try:
+        rows = conn.execute(
+            "SELECT addr, status, product, qty, lot, notes FROM warehouse_positions"
+        ).fetchall()
+        return {
+            r[0]: {
+                "status":  r[1] or "free",
+                "product": r[2] or "",
+                "qty":     r[3] or "",
+                "lot":     r[4] or "",
+                "notes":   r[5] or "",
+            }
+            for r in rows
+        }
+    except Exception:
+        return {}
+
+
+def _load_products(conn) -> list:
+    """Carrega lista de produtos do estoque e do mapa para autocomplete."""
+    prods = set()
+    try:
+        for r in conn.execute(
+            "SELECT DISTINCT produto FROM estoque_mestre WHERE produto IS NOT NULL ORDER BY produto"
+        ).fetchall():
+            if r[0]:
+                prods.add(r[0].strip())
+    except Exception:
+        pass
+    try:
+        for r in conn.execute(
+            "SELECT DISTINCT product FROM warehouse_positions WHERE product IS NOT NULL AND product != '' ORDER BY product"
+        ).fetchall():
+            if r[0]:
+                prods.add(r[0].strip())
+    except Exception:
+        pass
+    return sorted(prods)
+
+
+def warehouse_tab(turso_url: str, turso_token: str, conn):
+    """Renderiza a aba Mapa do Armazém via st.components.v1.html.
+
+    Dados carregados pelo Python (sem fetch inicial no browser),
+    evitando problemas de CORS/latência.
+    """
     http_url = turso_url.replace("libsql://", "https://").rstrip("/")
-    html = _HTML_TEMPLATE.replace("__TURSO_URL__", http_url).replace(
-        "__TURSO_TOKEN__", turso_token
+
+    positions = _load_positions(conn)
+    products  = _load_products(conn)
+
+    # Build productPositions map  {name: [addr, ...]}
+    prod_pos: dict = {}
+    for addr, data in positions.items():
+        p = data.get("product", "")
+        if p:
+            prod_pos.setdefault(p, []).append(addr)
+
+    html = (
+        _HTML_TEMPLATE
+        .replace("__TURSO_URL__",       http_url)
+        .replace("__TURSO_TOKEN__",     turso_token)
+        .replace("'__POSITIONS_JSON__'", json.dumps(positions))
+        .replace("'__PRODUCTS_JSON__'",  json.dumps(products))
+        .replace("'__PROD_POS_JSON__'",  json.dumps(prod_pos))
     )
     components.html(html, height=880, scrolling=False)
 
@@ -741,54 +804,22 @@ function parseRows(result) {
 }
 
 /* ────────────────────────────────────────────────────────────────────────
-   INIT
+   PRELOADED DATA  (injected by Python — no fetch needed on load)
 ──────────────────────────────────────────────────────────────────────── */
-async function init() {
+const _PRE_POSITIONS = '__POSITIONS_JSON__';  // {addr: {status,product,qty,lot,notes}}
+const _PRE_PRODUCTS  = '__PRODUCTS_JSON__';   // string[]
+const _PRE_PROD_POS  = '__PROD_POS_JSON__';   // {name: addr[]}
+
+/* ────────────────────────────────────────────────────────────────────────
+   INIT  (synchronous — data already here)
+──────────────────────────────────────────────────────────────────────── */
+function init() {
   try {
-    // Ensure table exists
-    await tursoExec(
-      'CREATE TABLE IF NOT EXISTS warehouse_positions (' +
-      'addr TEXT PRIMARY KEY, status TEXT DEFAULT \'free\',' +
-      'product TEXT DEFAULT \'\', qty TEXT DEFAULT \'\',' +
-      'lot TEXT DEFAULT \'\', notes TEXT DEFAULT \'\',' +
-      'updated_at TEXT DEFAULT \'\')'
-    );
+    // Use Python-preloaded data — instant, no CORS issues
+    posData       = _PRE_POSITIONS;
+    prodList      = _PRE_PRODUCTS;
+    prodPositions = _PRE_PROD_POS;
 
-    // Load warehouse positions + products in parallel
-    const [posRes, estRes, allocRes] = await Promise.all([
-      tursoExec('SELECT addr, status, product, qty, lot, notes FROM warehouse_positions'),
-      tursoExec('SELECT DISTINCT produto FROM estoque_mestre WHERE produto IS NOT NULL ORDER BY produto')
-        .catch(() => ({cols: [], rows: []})),
-      tursoExec('SELECT product, addr FROM warehouse_positions WHERE product IS NOT NULL AND product != \'\' ORDER BY product')
-    ]);
-
-    // Build posData
-    posData = {};
-    for (const r of parseRows(posRes)) {
-      posData[r.addr] = {
-        status:  r.status  || 'free',
-        product: r.product || '',
-        qty:     r.qty     || '',
-        lot:     r.lot     || '',
-        notes:   r.notes   || ''
-      };
-    }
-
-    // Build product list
-    const prodSet = new Set();
-    for (const r of parseRows(estRes))  if (r.produto)  prodSet.add(r.produto.trim());
-    for (const r of parseRows(allocRes)) if (r.product) prodSet.add(r.product.trim());
-    prodList = Array.from(prodSet).sort();
-
-    // Build productPositions
-    prodPositions = {};
-    for (const r of parseRows(allocRes)) {
-      if (!r.product) continue;
-      if (!prodPositions[r.product]) prodPositions[r.product] = [];
-      prodPositions[r.product].push(r.addr);
-    }
-
-    // Init Fuse
     fuseInst = new Fuse(prodList.map(p => ({name: p})), {
       keys: ['name'], threshold: 0.42, includeScore: true
     });
@@ -798,7 +829,7 @@ async function init() {
 
   } catch (err) {
     document.getElementById('loading').innerHTML =
-      '<span style="color:var(--red)">&#9888; Erro ao conectar: ' + err.message + '</span>';
+      '<span style="color:var(--red)">&#9888; Erro ao inicializar: ' + err.message + '</span>';
     console.error('Warehouse init error:', err);
   }
 }
