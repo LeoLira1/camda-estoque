@@ -411,30 +411,26 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 1px;
     }
     /* ── Treemap tiles ─────────────────────────────────────────────────── */
-    .tm-wrap { display: flex; flex-wrap: wrap; gap: 2px; }
+    .tm-wrap { display: flex; flex-wrap: wrap; gap: 10px; }
     .tm-tile {
-        width: 110px; height: 60px;
-        border-radius: 4px; padding: 4px; margin: 2px;
+        width: 150px; height: auto; min-height: 120px;
+        border-radius: 12px; padding: 0; margin: 0;
         display: flex; flex-direction: column;
-        justify-content: center; align-items: center;
+        justify-content: flex-start; align-items: flex-start;
         overflow: visible; box-sizing: border-box;
         position: relative; cursor: pointer; outline: none;
     }
     .tm-name {
-        font-size: 0.55rem; font-weight: 700; text-align: center; width: 100%;
+        font-size: 0.875rem; font-weight: 600; text-align: left; width: 100%;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        margin-bottom: 4px; color: #e8eaf0;
     }
     .tm-info {
-        font-size: 0.65rem; opacity: 0.9;
+        font-size: 1.625rem; line-height: 1.1;
         font-family: 'JetBrains Mono', monospace;
-        font-weight: bold; margin-top: 2px;
+        font-weight: 700; margin-bottom: 8px;
     }
     .tm-av { font-size: 0.5rem; font-weight: 700; margin-top: 2px; }
-    .tm-tile[data-diff]::after {
-        content: attr(data-diff);
-        position: absolute; bottom: 2px; right: 3px;
-        font-size: 0.42rem; font-weight: 700; opacity: 0.8;
-    }
     /* ── Streamlit tabs: sempre scrollável ─────────────────────────────── */
     .stTabs [data-baseweb="tab-list"] {
         flex-wrap: nowrap !important;
@@ -478,7 +474,7 @@ st.markdown("""
             font-size: 0.65rem !important;
             border-radius: 6px !important;
         }
-        .tm-tile { width: calc(33.33% - 6px); min-width: 90px; height: 58px; }
+        .tm-tile { width: calc(50% - 5px); min-width: 130px; height: auto; min-height: 110px; }
     }
     /* ── Syne em números grandes ──────────────────────────────────────── */
     .stat-value {
@@ -491,11 +487,13 @@ st.markdown("""
     }
     .tm-tile {
         animation: cardPop 0.4s ease both;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition: all 0.25s ease;
     }
     .tm-tile:hover {
-        transform: translateY(-4px) scale(1.02) !important;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+        background: #1f2337 !important;
+        border-color: rgba(255,255,255,0.12) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3) !important;
         z-index: 1;
     }
     .tm-cod {
@@ -3975,6 +3973,19 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
     for _, row in df.iterrows():
         categories.setdefault(row["categoria"], []).append(row)
 
+    # Category badge style map
+    _CAT_STYLES = {
+        "HERBICIDA":    ("rgba(34,197,94,0.12)",   "#22c55e"),
+        "FUNGICIDA":    ("rgba(59,130,246,0.12)",   "#3b82f6"),
+        "INSETICIDA":   ("rgba(168,85,247,0.12)",   "#a855f7"),
+        "FERTILIZANTE": ("rgba(234,179,8,0.12)",    "#eab308"),
+        "SEMENTE":      ("rgba(249,115,22,0.12)",   "#f97316"),
+        "ACARICIDA":    ("rgba(6,182,212,0.12)",    "#06b6d4"),
+        "ADJUVANTE":    ("rgba(100,116,139,0.12)",  "#94a3b8"),
+        "OUTROS":       ("rgba(100,116,139,0.12)",  "#94a3b8"),
+    }
+    _CAT_DEFAULT = ("rgba(100,116,139,0.12)", "#94a3b8")
+
     parts = []
     for cat in sort_categorias(list(categories.keys())):
         rows = categories[cat]
@@ -3984,36 +3995,77 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             qs = int(r["qtd_sistema"])
             qf = int(r["qtd_fisica"]) if pd.notnull(r.get("qtd_fisica")) else qs
             diff = int(r["diferenca"]) if pd.notnull(r.get("diferenca")) else 0
-
-            if diff == 0:
-                bg, txt = "#00d68f", "#0a2e1a"
-                data_diff = ""
-            elif diff < 0:
-                bg, txt = "#ff4757", "#fff"
-                data_diff = f'data-diff="▼{abs(diff)}"'
-            else:
-                bg, txt = "#ffa502", "#fff"
-                data_diff = f'data-diff="▲{diff}"'
             info = str(qs)
 
             contagem = str(r.get("ultima_contagem", ""))
-            border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
+            sem_contagem = not contagem or contagem in ("", "nan", "None")
 
             # Aviso de avarias abertas
             qtd_av = avarias_map.get(str(r["codigo"]), 0)
+
+            # Status → border color, bg, qty color
             if qtd_av > 0:
-                bg, txt = "#a55eea", "#fff"
-                av_html = f'<div class="tm-av">⚠ {qtd_av} av.</div>'
+                border_color = "#f97316"
+                card_bg = "linear-gradient(135deg, rgba(249,115,22,0.08), #1a1d2e)"
+                qty_color = "#f97316"
+            elif diff == 0:
+                border_color = "#22c55e"
+                card_bg = "#1a1d2e"
+                qty_color = "#e8eaf0"
+            elif diff < 0:
+                border_color = "#ef4444"
+                card_bg = "linear-gradient(135deg, rgba(239,68,68,0.08), #1a1d2e)"
+                qty_color = "#ef4444"
             else:
-                av_html = ""
+                border_color = "#06b6d4"
+                card_bg = "#1a1d2e"
+                qty_color = "#06b6d4"
+
+            # Category badge
+            cat_upper = str(r["categoria"]).strip().upper()
+            cat_bg_c, cat_fg_c = _CAT_STYLES.get(cat_upper, _CAT_DEFAULT)
+            cat_badge = (
+                f'<div style="display:inline-flex;align-items:center;gap:5px;'
+                f'font-size:9px;text-transform:uppercase;letter-spacing:1.2px;'
+                f'font-weight:600;padding:3px 8px;border-radius:6px;'
+                f'background:{cat_bg_c};color:{cat_fg_c};margin-bottom:10px;flex-shrink:0;">'
+                f'<span style="width:6px;height:6px;border-radius:50%;background:{border_color};flex-shrink:0;"></span>'
+                f'{cat_upper}</div>'
+            )
+
+            # Diff / avaria badge (top-right)
+            if qtd_av > 0:
+                badge_html = (
+                    f'<div style="position:absolute;top:10px;right:10px;'
+                    f'font-size:10px;font-weight:600;font-family:\'JetBrains Mono\',monospace;'
+                    f'padding:2px 7px;border-radius:6px;'
+                    f'background:rgba(249,115,22,0.12);color:#f97316;">⚠ {qtd_av} av.</div>'
+                )
+            elif diff != 0:
+                sign = "▲" if diff > 0 else "▼"
+                bdg_bg = "rgba(6,182,212,0.12)" if diff > 0 else "rgba(239,68,68,0.12)"
+                bdg_fg = "#06b6d4" if diff > 0 else "#ef4444"
+                badge_html = (
+                    f'<div style="position:absolute;top:10px;right:10px;'
+                    f'font-size:10px;font-weight:600;font-family:\'JetBrains Mono\',monospace;'
+                    f'padding:2px 7px;border-radius:6px;'
+                    f'background:{bdg_bg};color:{bdg_fg};">{sign}{abs(diff)}</div>'
+                )
+            else:
+                badge_html = ""
+
+            # Dashed border overlay for products without stock count
+            opacity_style = "opacity:0.55;" if sem_contagem else ""
 
             prods.append(
-                f'<div class="tm-tile" tabindex="0" {data_diff} style="background:{bg};color:{txt};'
-                f'border:1px solid rgba(0,0,0,0.1);{border}" title="{r["codigo"]} — {r["produto"]}">'
+                f'<div class="tm-tile" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
+                f' style="background:{card_bg};border:1px solid rgba(255,255,255,0.06);'
+                f'border-left:3px solid {border_color};border-radius:12px;padding:14px;{opacity_style}">'
+                f'{cat_badge}'
+                f'{badge_html}'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
-                f'<div class="tm-info">{info}</div>'
+                f'<div class="tm-info" style="color:{qty_color};">{info}</div>'
                 f'<div class="tm-cod">{r["codigo"]}</div>'
-                f'{av_html}'
                 f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}</div>'
                 f'</div>'
             )
@@ -5501,39 +5553,7 @@ if _wd_dash:
 else:
     _whtml = ""
 
-st.markdown(f'''
-<style>
-.camda-header-wrap {{ position: relative; width: 100%; margin-bottom: 0.8rem; }}
-.camda-header {{
-    width: 100%; height: 220px;
-    background-image: url(https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/banner.jpg?v=20260228);
-    background-size: cover;
-    background-position: center;
-    border-radius: 14px;
-    overflow: hidden;
-}}
-.wco {{
-    position: absolute; top: 12px; right: 16px;
-    color: #fff; font-family: Outfit,sans-serif;
-    border-radius: 18px; padding: 12px 15px 11px;
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    text-align: center; min-width: 128px;
-}}
-@media (max-width: 640px) {{
-    .camda-header {{ height: 140px; }}
-    .wco {{ top: 6px; right: 6px; padding: 8px 10px 8px; border-radius: 14px; min-width: 100px; }}
-    .wco > div:nth-child(2) {{ font-size: 1.6rem !important; }}
-    .wco > div:nth-child(3) {{ font-size: 1.4rem !important; }}
-}}
-</style>
-<div class="camda-header-wrap">
-  <div class="camda-header"></div>
-  {_whtml}
-</div>
-
-''', unsafe_allow_html=True)
+st.markdown('<div style="margin-bottom:0.4rem;"></div>', unsafe_allow_html=True)
 
 # ── Alertas automáticos (abaixo do clima) ────────────────────────────────────
 if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != datetime.now(tz=_BRT).date().isoformat():
