@@ -256,8 +256,17 @@ main{padding:16px 20px;}
   background:#0a1520;border:1px solid var(--border);
   border-left:3px solid var(--blue);border-radius:4px;margin:10px 0;
   font-size:9px;color:var(--text2);letter-spacing:.15em;
-  text-transform:uppercase;padding:0 20px;gap:10px;}
+  text-transform:uppercase;padding:0 20px;gap:10px;
+  position:relative;overflow:hidden;}
 .corridor::before,.corridor::after{content:'\\25B6';color:var(--blue);opacity:.4;font-size:7px;}
+.corridor-cart{position:absolute;left:-40px;top:50%;transform:translateY(-50%);
+  font-size:18px;animation:cartRide 6s linear infinite;pointer-events:none;}
+@keyframes cartRide{
+  0%{left:-40px;opacity:1;}
+  85%{opacity:1;}
+  95%{opacity:0;}
+  100%{left:calc(100% + 40px);opacity:0;}
+}
 
 #tip{position:fixed;background:var(--surf2);border:1px solid var(--border);
   border-radius:6px;padding:6px 10px;font-size:10px;color:var(--text);
@@ -569,6 +578,10 @@ function renderMap() {
   var cor = document.createElement('div');
   cor.className = 'corridor';
   cor.textContent = 'CORREDOR DE CARREGAMENTO';
+  var cart = document.createElement('span');
+  cart.className = 'corridor-cart';
+  cart.textContent = '🚜';
+  cor.appendChild(cart);
   wh.appendChild(cor);
   wh.appendChild(buildSector('B', LAYOUT_B));
 }
@@ -1008,8 +1021,17 @@ main{padding:16px 20px;}
 .corridor{display:flex;align-items:center;justify-content:center;height:38px;
   background:#0a1520;border:1px solid var(--border);border-left:3px solid var(--blue);
   border-radius:4px;margin:10px 0;font-size:9px;color:var(--text2);
-  letter-spacing:.15em;text-transform:uppercase;padding:0 20px;gap:10px;}
+  letter-spacing:.15em;text-transform:uppercase;padding:0 20px;gap:10px;
+  position:relative;overflow:hidden;}
 .corridor::before,.corridor::after{content:'▶';color:var(--blue);opacity:.4;font-size:7px;}
+.corridor-cart{position:absolute;left:-40px;top:50%;transform:translateY(-50%);
+  font-size:18px;animation:cartRide 6s linear infinite;pointer-events:none;}
+@keyframes cartRide{
+  0%{left:-40px;opacity:1;}
+  85%{opacity:1;}
+  95%{opacity:0;}
+  100%{left:calc(100% + 40px);opacity:0;}
+}
 
 /* ── TOOLTIP ── */
 #tip{position:fixed;background:var(--surf2);border:1px solid var(--border);border-radius:6px;
@@ -1353,6 +1375,9 @@ function renderMap(){
   wh.appendChild(buildSector('A',LAYOUT_A));
   const cor=document.createElement('div');
   cor.className='corridor'; cor.textContent='CORREDOR DE CARREGAMENTO';
+  const cart=document.createElement('span');
+  cart.className='corridor-cart'; cart.textContent='🚜';
+  cor.appendChild(cart);
   wh.appendChild(cor);
   wh.appendChild(buildSector('B',LAYOUT_B));
 }
