@@ -935,7 +935,7 @@ main{padding:16px 20px;}
   background:transparent;color:var(--text2);font-family:'JetBrains Mono',monospace;
   font-size:10px;cursor:pointer;transition:all .15s;}
 .filter-btn:hover,.filter-btn.active{background:var(--surf2);color:var(--text);border-color:var(--accent);}
-.search-wrap{margin-left:auto;position:relative;}
+.search-wrap{position:relative;margin-left:6px;}
 .search-box{background:var(--surf);border:1px solid var(--border);border-radius:20px;
   padding:5px 14px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:10px;
   outline:none;width:180px;transition:border-color .15s;}
@@ -1081,14 +1081,23 @@ main{padding:16px 20px;}
     <div class="stat-item"><strong id="s-occ"  style="color:var(--blue)">0</strong>ocupadas</div>
     <div class="stat-item"><strong id="s-res"  style="color:var(--warn)">0</strong>reservadas</div>
     <div class="stat-item"><strong id="s-dmg"  style="color:var(--danger)">0</strong>avarias</div>
+    <div class="stat-item" style="border-left:1px solid var(--border);padding-left:16px;">
+      <strong id="s-pct" style="color:var(--warn);font-size:15px;">0%</strong>
+      <span style="font-size:9px;">ocupado</span>
+      <div id="occ-bar" style="height:4px;background:var(--border);border-radius:2px;margin-top:3px;min-width:80px;position:relative;">
+        <div id="occ-fill" style="height:100%;width:0%;background:linear-gradient(90deg,var(--blue),var(--warn));border-radius:2px;transition:width .5s;"></div>
+      </div>
+    </div>
   </div>
 </header>
 
 <!-- LEGEND -->
 <div class="legend">
   <div class="leg-item"><div class="leg-dot" style="background:var(--free);border-color:var(--free-bd)"></div>Livre</div>
-  <div class="leg-item"><div class="leg-dot" style="background:var(--occ);border-color:var(--occ-bd)"></div>Ocupado</div>
-  <div class="leg-item"><div class="leg-dot" style="background:var(--res);border-color:var(--res-bd)"></div>Reservado</div>
+  <div class="leg-item"><div class="leg-dot" style="background:#0d2a1a;border-color:#4ade80"></div><span>Ocupado</span></div>
+  <div class="leg-item"><div class="leg-dot" style="background:#0d1a35;border-color:#60a5fa"></div></div>
+  <div class="leg-item"><div class="leg-dot" style="background:#2a1a08;border-color:#f59e0b"></div><span style="color:var(--text2);font-size:9px;">&#8592; cor por produto</span></div>
+  <div class="leg-item" style="margin-left:6px;"><div class="leg-dot" style="background:var(--res);border-color:var(--res-bd)"></div>Reservado</div>
   <div class="leg-item"><div class="leg-dot" style="background:var(--dmg);border-color:var(--dmg-bd)"></div>Avaria</div>
   <div class="hint">&#128161; Clique para editar &middot; Ctrl+Enter salva &middot; Esc fecha</div>
 </div>
@@ -1182,6 +1191,24 @@ const LAYOUT_B = [
   {t:'rack',col:4}
 ];
 
+/* ── PRODUCT COLORS ──────────────────────────────────────── */
+const PROD_COLORS=[
+  {bg:'#0d2a1a',bd:'#4ade80'},{bg:'#0d1a35',bd:'#60a5fa'},
+  {bg:'#2a1a08',bd:'#f59e0b'},{bg:'#2a0d10',bd:'#f87171'},
+  {bg:'#1a0d2a',bd:'#a78bfa'},{bg:'#0d2218',bd:'#34d399'},
+  {bg:'#2a1808',bd:'#fb923c'},{bg:'#2a0d22',bd:'#e879f9'},
+  {bg:'#0d2228',bd:'#22d3ee'},{bg:'#2a2208',bd:'#facc15'},
+  {bg:'#0d2020',bd:'#6ee7b7'},{bg:'#2a1018',bd:'#fda4af'},
+  {bg:'#1a2008',bd:'#bef264'},{bg:'#081a2a',bd:'#38bdf8'},
+  {bg:'#2a1a20',bd:'#fb7185'},{bg:'#0d1a20',bd:'#93c5fd'},
+];
+function prodColorIdx(name){
+  let h=0;
+  for(let i=0;i<name.length;i++) h=(Math.imul(h,31)+name.charCodeAt(i))>>>0;
+  return h%PROD_COLORS.length;
+}
+function getProdColor(name){return PROD_COLORS[prodColorIdx(name)];}
+
 /* ── STATE ───────────────────────────────────────────────── */
 let curAddr   = null;
 let curStatus = 'free';
@@ -1274,13 +1301,28 @@ function applyCellState(cell){
   const dotEl = cell.querySelector('.cell-dot');
   if(dotEl) dotEl.remove();
   cell.className='cell';
+  cell.style.background='';
+  cell.style.borderColor='';
   if(d){
-    if(d.status==='occupied') cell.classList.add('occupied');
-    else if(d.status==='reserved') cell.classList.add('reserved');
-    else if(d.status==='damaged')  cell.classList.add('damaged');
+    if(d.status==='occupied'){
+      cell.classList.add('occupied');
+      if(d.product){
+        const col=getProdColor(d.product);
+        cell.style.background=col.bg;
+        cell.style.borderColor=col.bd;
+      }
+    } else if(d.status==='reserved'){
+      cell.classList.add('reserved');
+    } else if(d.status==='damaged'){
+      cell.classList.add('damaged');
+    }
     if(d.product||d.notes){
       const dot=document.createElement('span');
-      dot.className='cell-dot'; cell.prepend(dot);
+      dot.className='cell-dot';
+      if(d.product&&d.status==='occupied'){
+        dot.style.background=getProdColor(d.product).bd;
+      }
+      cell.prepend(dot);
     }
   }
   if(lblEl) cell.appendChild(lblEl);
@@ -1318,11 +1360,17 @@ function updateStats(){
     else if(st==='damaged')dmg++;
     else free++;
   }
-  document.getElementById('s-total').textContent=ALL_ADDRS.length;
+  const total=ALL_ADDRS.length;
+  const usadas=occ+res;
+  const pct=total>0?Math.round(usadas/total*100):0;
+  document.getElementById('s-total').textContent=total;
   document.getElementById('s-free').textContent=free;
   document.getElementById('s-occ').textContent=occ;
   document.getElementById('s-res').textContent=res;
   document.getElementById('s-dmg').textContent=dmg;
+  document.getElementById('s-pct').textContent=pct+'%';
+  const fill=document.getElementById('occ-fill');
+  if(fill){fill.style.width=pct+'%';}
 }
 
 /* ── FILTER ──────────────────────────────────────────────── */
