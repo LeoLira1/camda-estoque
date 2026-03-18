@@ -5,6 +5,8 @@ import '../../core/utils/number_utils.dart';
 import '../../core/services/cache_service.dart';
 import '../../data/models/produto.dart';
 import '../../data/repositories/estoque_repository.dart';
+import '../../data/models/avaria.dart';
+import '../../data/repositories/avarias_repository.dart';
 import '../../shared/widgets/stat_card.dart';
 import '../../shared/widgets/loading_widget.dart' as lw;
 
@@ -17,6 +19,7 @@ class EstoqueScreen extends StatefulWidget {
 
 class _EstoqueScreenState extends State<EstoqueScreen> {
   final _repo = EstoqueRepository();
+  final _avariasRepo = AvariasRepository();
   final _searchCtrl = TextEditingController();
 
   List<Produto> _all = [];
@@ -27,8 +30,14 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
   bool _loading = true;
   String? _error;
   bool _isOffline = false;
+  Set<String> _avariaCodigos = {};
 
   static const _statusOptions = ['Todos', 'ok', 'falta', 'sobra'];
+
+  /// Palavras-chave que ativam filtro automático por status/avaria.
+  static const _keywordFalta = {'falta', 'faltando'};
+  static const _keywordSobra = {'sobra', 'sobrando'};
+  static const _keywordAvaria = {'avaria', 'avarias'};
 
   @override
   void initState() {
@@ -49,11 +58,14 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
       final results = await Future.wait([
         _repo.getAll(),
         _repo.getCategorias(),
+        _avariasRepo.getAll(apenasAbertas: true),
       ]);
       if (!mounted) return;
+      final avarias = results[2] as List<Avaria>;
       setState(() {
         _all = results[0] as List<Produto>;
         _categorias = ['Todos', ...(results[1] as List<String>)];
+        _avariaCodigos = avarias.map((a) => a.codigo).toSet();
         _loading = false;
         _isOffline = CacheService.isOffline;
       });
@@ -64,10 +76,25 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
     }
   }
 
+  /// Retorna o modo de filtro ativado pela palavra-chave digitada, ou null.
+  /// 'falta' | 'sobra' | 'avaria' | null
+  String? _detectKeyword(String query) {
+    if (_keywordFalta.contains(query)) return 'falta';
+    if (_keywordSobra.contains(query)) return 'sobra';
+    if (_keywordAvaria.contains(query)) return 'avaria';
+    return null;
+  }
+
   void _applyFilter() {
     final query = _searchCtrl.text.trim().toLowerCase();
+    final keyword = _detectKeyword(query);
     setState(() {
       _filtered = _all.where((p) {
+        // Atalho por palavra-chave — ignora filtros de chip/categoria
+        if (keyword == 'falta') return p.status == 'falta';
+        if (keyword == 'sobra') return p.status == 'sobra';
+        if (keyword == 'avaria') return _avariaCodigos.contains(p.codigo);
+
         final matchSearch = query.isEmpty ||
             p.produto.toLowerCase().contains(query) ||
             p.codigo.toLowerCase().contains(query) ||
@@ -118,7 +145,7 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
             controller: _searchCtrl,
             style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
             decoration: InputDecoration(
-              hintText: 'Buscar produto, código ou categoria...',
+              hintText: 'Buscar ou digitar: falta, sobra, avaria...',
               prefixIcon: const Icon(Icons.search, color: AppColors.textMuted, size: 18),
               suffixIcon: _searchCtrl.text.isNotEmpty
                   ? IconButton(
@@ -129,6 +156,7 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
               isDense: true,
             ),
           ),
+          _buildKeywordBanner(),
           const SizedBox(height: 8),
           // Filtros de status e categoria
           SingleChildScrollView(
@@ -175,6 +203,45 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildKeywordBanner() {
+    final keyword = _detectKeyword(_searchCtrl.text.trim().toLowerCase());
+    if (keyword == null) return const SizedBox.shrink();
+
+    final (label, color, icon) = switch (keyword) {
+      'falta'  => ('Mostrando produtos faltando', AppColors.red, Icons.remove_circle_outline),
+      'sobra'  => ('Mostrando produtos sobrando', AppColors.amber, Icons.add_circle_outline),
+      'avaria' => ('Mostrando produtos com avaria', AppColors.statusAvaria, Icons.warning_amber_outlined),
+      _        => ('', AppColors.blue, Icons.info_outline),
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: color, size: 14),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(fontSize: 12, color: color, fontWeight: FontWeight.w600),
+            ),
+            const Spacer(),
+            Text(
+              '${_filtered.length} produto(s)',
+              style: TextStyle(fontSize: 11, color: color.withOpacity(0.8)),
+            ),
+          ],
+        ),
       ),
     );
   }
