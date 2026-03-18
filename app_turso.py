@@ -5639,39 +5639,53 @@ if has_mestre:
     df_view = df_mestre
     pa_match_info = ""
     if search_term:
-        # Busca padrão por nome/código (contém), excluindo registros AUTO_
-        # AUTO_ são artefatos de import mal-parseado e não devem poluir a busca
-        mask_nome_cod = (
-            df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
-            | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
-        ) & ~df_view["codigo"].str.startswith("AUTO_")
+        _st_lower = search_term.strip().lower()
+        # ── Palavras-chave de status ──────────────────────────────────────────
+        if _st_lower in ("falta", "faltando"):
+            df_view = df_view[df_view["status"] == "falta"]
+            st.caption(f"🔴 **{len(df_view)}** produto(s) faltando")
+        elif _st_lower in ("sobra", "sobrando"):
+            df_view = df_view[df_view["status"] == "sobra"]
+            st.caption(f"🟡 **{len(df_view)}** produto(s) sobrando")
+        elif _st_lower in ("avaria", "avarias"):
+            _df_av_k = listar_avarias(apenas_abertas=True)
+            _cod_av = set(_df_av_k["codigo"].tolist()) if not _df_av_k.empty else set()
+            df_view = df_view[df_view["codigo"].isin(_cod_av)]
+            st.caption(f"🔴 **{len(df_view)}** produto(s) com avaria em aberto")
+        else:
+            # Busca padrão por nome/código (contém), excluindo registros AUTO_
+            # AUTO_ são artefatos de import mal-parseado e não devem poluir a busca
+            mask_nome_cod = (
+                df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
+                | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
+            ) & ~df_view["codigo"].str.startswith("AUTO_")
 
-        # Busca por princípio ativo usando o mesmo match multi-etapa da aba 🧬
-        mask_pa = pd.Series([False] * len(df_view), index=df_view.index)
-        if has_pa:
-            _idx_search = _build_pa_lookup(_mapa_pa_search)
-            _term_up = search_term.upper()
-            mask_pa = df_view["produto"].apply(
-                lambda x: _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
-            )
+            # Busca por princípio ativo usando o mesmo match multi-etapa da aba 🧬
+            mask_pa = pd.Series([False] * len(df_view), index=df_view.index)
+            if has_pa:
+                _idx_search = _build_pa_lookup(_mapa_pa_search)
+                _term_up = search_term.upper()
+                mask_pa = df_view["produto"].apply(
+                    lambda x: _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
+                )
 
-        mask = mask_nome_cod | mask_pa
-        n_pa = int((mask_pa & ~mask_nome_cod).sum())
-        if n_pa > 0 and not mask_nome_cod.any():
-            # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
-            pa_found = sorted({
-                _lookup_pa_from_index(str(x), *_idx_search)
-                for x in df_view.loc[mask_pa, "produto"]
-                if _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
-            })
-            pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
-        elif n_pa > 0:
-            pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
+            mask = mask_nome_cod | mask_pa
+            n_pa = int((mask_pa & ~mask_nome_cod).sum())
+            if n_pa > 0 and not mask_nome_cod.any():
+                # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
+                pa_found = sorted({
+                    _lookup_pa_from_index(str(x), *_idx_search)
+                    for x in df_view.loc[mask_pa, "produto"]
+                    if _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
+                })
+                pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
+            elif n_pa > 0:
+                pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
 
-        df_view = df_view[mask]
+            df_view = df_view[mask]
 
-        if pa_match_info:
-            st.caption(pa_match_info)
+            if pa_match_info:
+                st.caption(pa_match_info)
 
     n_ok = (df_view["status"] == "ok").sum()
     _df_divs = get_divergencias()
