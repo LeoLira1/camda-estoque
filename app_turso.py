@@ -2297,10 +2297,25 @@ def registrar_divergencia_manual(codigo: str, delta: int, cooperado: str = "") -
 
 
 def resolver_divergencia(div_id: int):
-    """Remove uma divergência específica da lista pelo seu id."""
+    """Remove uma divergência específica da lista pelo seu id.
+    Se não restar nenhuma outra divergência para o mesmo produto,
+    reseta estoque_mestre para status='ok'.
+    """
     try:
         conn = get_db()
+        row = conn.execute("SELECT codigo FROM divergencias WHERE id = ?", [div_id]).fetchone()
         conn.execute("DELETE FROM divergencias WHERE id = ?", [div_id])
+        if row:
+            codigo = row[0]
+            remaining = conn.execute(
+                "SELECT COUNT(*) FROM divergencias WHERE codigo = ?", [codigo]
+            ).fetchone()[0]
+            if remaining == 0:
+                now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute(
+                    "UPDATE estoque_mestre SET status = 'ok', diferenca = 0, qtd_fisica = qtd_sistema, ultima_contagem = ? WHERE codigo = ? AND status IN ('falta', 'sobra')",
+                    [now, codigo],
+                )
         conn.commit()
         sync_db()
     except Exception as e:
