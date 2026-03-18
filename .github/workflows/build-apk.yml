@@ -13,6 +13,9 @@ jobs:
     name: Build Release APK
     runs-on: ubuntu-latest
 
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -45,9 +48,14 @@ jobs:
         working-directory: camda-app
         run: flutter build apk --release
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
+      - name: Rename APK
+        run: |
+          cp camda-app/build/app/outputs/flutter-apk/app-release.apk camda-app-v${{ github.run_number }}.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: camda-app-release-${{ github.run_number }}
-          path: camda-app/build/app/outputs/flutter-apk/app-release.apk
-          retention-days: 30
+          tag_name: v${{ github.run_number }}
+          name: "Camda App v${{ github.run_number }}"
+          files: camda-app-v${{ github.run_number }}.apk
+          body: "Build automático #${{ github.run_number }}"
