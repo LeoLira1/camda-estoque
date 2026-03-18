@@ -97,7 +97,9 @@ class _ContagemScreenState extends State<ContagemScreen>
 
   Future<void> _marcarDivergente(ContagemItem item) async {
     int qtdDiv = item.qtdDivergencia;
-    final motivoCtrl = TextEditingController(text: item.motivo);
+    // Pré-preenche com motivo salvo; se vazio, usa a nota do produto (cooperado)
+    final motivoInicial = item.motivo.isNotEmpty ? item.motivo : item.notaProduto;
+    final motivoCtrl = TextEditingController(text: motivoInicial);
 
     await showDialog(
       context: context,
@@ -105,6 +107,28 @@ class _ContagemScreenState extends State<ContagemScreen>
         return AlertDialog(
           title: Text('Divergência — ${item.produto}', maxLines: 2, overflow: TextOverflow.ellipsis),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Exibe nota do produto como referência do cooperado
+            if (item.notaProduto.isNotEmpty)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.blue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: AppColors.blue.withOpacity(0.25)),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.person_outline, size: 14, color: AppColors.blue),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      item.notaProduto,
+                      style: const TextStyle(fontSize: 12, color: AppColors.blue, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ]),
+              ),
             Row(children: [
               const Text('Diferença:', style: TextStyle(color: AppColors.textSecondary)),
               const Spacer(),

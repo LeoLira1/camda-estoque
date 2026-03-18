@@ -9,11 +9,13 @@ class ContagemRepository {
 
   Future<List<ContagemItem>> getAll() async {
     final result = await _client.query('''
-      SELECT id, upload_id, codigo, produto, categoria, qtd_estoque,
-             status, COALESCE(motivo,'') as motivo,
-             COALESCE(qtd_divergencia, 0) as qtd_divergencia, registrado_em
-      FROM contagem_itens
-      ORDER BY produto ASC
+      SELECT ci.id, ci.upload_id, ci.codigo, ci.produto, ci.categoria, ci.qtd_estoque,
+             ci.status, COALESCE(ci.motivo,'') as motivo,
+             COALESCE(ci.qtd_divergencia, 0) as qtd_divergencia, ci.registrado_em,
+             COALESCE(em.nota, '') as nota_produto
+      FROM contagem_itens ci
+      LEFT JOIN estoque_mestre em ON UPPER(TRIM(em.codigo)) = UPPER(TRIM(ci.codigo))
+      ORDER BY ci.produto ASC
     ''');
     if (result.hasError) throw TursoException(result.error!);
     return result.toMaps().map(ContagemItem.fromMap).toList();
