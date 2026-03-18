@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/date_utils.dart';
 import '../../core/utils/number_utils.dart';
 import '../../data/models/contagem_item.dart';
 import '../../data/repositories/contagem_repository.dart';
 import '../../shared/widgets/loading_widget.dart' as lw;
-import '../../shared/widgets/stat_card.dart';
 import '../../shared/widgets/glass_card.dart';
 
 class ContagemScreen extends StatefulWidget {
@@ -105,7 +105,6 @@ class _ContagemScreenState extends State<ContagemScreen>
         return AlertDialog(
           title: Text('Divergência — ${item.produto}', maxLines: 2, overflow: TextOverflow.ellipsis),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
-            // Quantidade divergente
             Row(children: [
               const Text('Diferença:', style: TextStyle(color: AppColors.textSecondary)),
               const Spacer(),
@@ -157,82 +156,127 @@ class _ContagemScreenState extends State<ContagemScreen>
 
   @override
   Widget build(BuildContext context) {
-    final r = _resumo;
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Contagem Física'),
-        actions: [
-          IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh, size: 20)),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: [
-            Tab(text: 'Pendentes (${_loading ? '...' : _todos.where((i) => i.isPendente).length})'),
-            Tab(text: 'OK (${_loading ? '...' : _todos.where((i) => i.isOk).length})'),
-            Tab(text: 'Divergentes (${_loading ? '...' : _todos.where((i) => i.isDivergente).length})'),
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildHeader(),
+            if (_loading)
+              const Expanded(child: lw.LoadingWidget(message: 'Carregando contagem...'))
+            else if (_error != null)
+              Expanded(child: lw.ErrorWidget(message: _error!, onRetry: _loadData))
+            else
+              Expanded(
+                child: Column(
+                  children: [
+                    if (_resumo != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+                        child: _buildProgressBar(_resumo!),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                      child: _buildSearch(),
+                    ),
+                    _buildTabBar(),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _buildList(showOkBtn: true, showDivBtn: true, showResetBtn: false),
+                          _buildList(showOkBtn: false, showDivBtn: false, showResetBtn: true),
+                          _buildList(showOkBtn: false, showDivBtn: true, showResetBtn: true),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
           ],
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          labelPadding: const EdgeInsets.symmetric(horizontal: 6),
         ),
       ),
-      body: _loading
-          ? const lw.LoadingWidget(message: 'Carregando contagem...')
-          : _error != null
-              ? lw.ErrorWidget(message: _error!, onRetry: _loadData)
-              : Column(children: [
-                  if (r != null) _buildProgressBar(r),
-                  _buildSearch(),
-                  Expanded(
-                    child: TabBarView(
-                      controller: _tabController,
-                      children: [
-                        _buildList(showOkBtn: true, showDivBtn: true, showResetBtn: false),
-                        _buildList(showOkBtn: false, showDivBtn: false, showResetBtn: true),
-                        _buildList(showOkBtn: false, showDivBtn: true, showResetBtn: true),
-                      ],
-                    ),
-                  ),
-                ]),
     );
+  }
+
+  Widget _buildHeader() {
+    final now = CamdaDateUtils.nowBRT();
+    final hora = CamdaDateUtils.formatTime(now);
+    final diaNome = CamdaDateUtils.diaSemanaFull(now);
+    final data = CamdaDateUtils.formatDate(now);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ShaderMask(
+                shaderCallback: (bounds) =>
+                    AppColors.greenGradient.createShader(bounds),
+                child: const Text(
+                  'Contagem Física',
+                  style: TextStyle(
+                    fontFamily: 'Outfit',
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: _loadData,
+                icon: const Icon(Icons.refresh, color: AppColors.textMuted, size: 20),
+                tooltip: 'Atualizar',
+              ),
+            ],
+          ),
+          Text(
+            '$diaNome · $data · $hora',
+            style: const TextStyle(
+              fontFamily: 'JetBrainsMono',
+              fontSize: 11,
+              color: AppColors.textDisabled,
+            ),
+          ),
+        ],
+      ),
+    ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.1, end: 0);
   }
 
   Widget _buildProgressBar(ContagemResumo r) {
     final pct = r.pctConcluido;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
-      child: GlassCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        child: Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Text('Progresso da contagem', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
-              Text('${(pct * 100).toStringAsFixed(0)}%', style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.green)),
-            ]),
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: pct,
-                minHeight: 6,
-                backgroundColor: AppColors.surfaceBorder,
-                valueColor: const AlwaysStoppedAnimation(AppColors.green),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Row(children: [
-              _statPill('${r.ok}', 'OK', AppColors.green),
-              const SizedBox(width: 8),
-              _statPill('${r.divergentes}', 'Div.', AppColors.amber),
-              const SizedBox(width: 8),
-              _statPill('${r.pendentes}', 'Pend.', AppColors.textMuted),
-              const Spacer(),
-              Text('${r.total} itens', style: const TextStyle(fontSize: 10, color: AppColors.textDisabled)),
-            ]),
-          ])),
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          const Text('Progresso da contagem', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary)),
+          Text('${(pct * 100).toStringAsFixed(0)}%', style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.green)),
         ]),
-      ),
-    ).animate().fadeIn(duration: 400.ms);
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: LinearProgressIndicator(
+            value: pct,
+            minHeight: 6,
+            backgroundColor: AppColors.surfaceBorder,
+            valueColor: const AlwaysStoppedAnimation(AppColors.green),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          _statPill('${r.ok}', 'OK', AppColors.green),
+          const SizedBox(width: 8),
+          _statPill('${r.divergentes}', 'Divergentes', AppColors.amber),
+          const SizedBox(width: 8),
+          _statPill('${r.pendentes}', 'Pendentes', AppColors.textMuted),
+          const Spacer(),
+          Text('${r.total} itens', style: const TextStyle(fontSize: 10, color: AppColors.textDisabled)),
+        ]),
+      ]),
+    ).animate().fadeIn(duration: 500.ms, delay: 100.ms);
   }
 
   Widget _statPill(String value, String label, Color color) {
@@ -244,21 +288,53 @@ class _ContagemScreenState extends State<ContagemScreen>
   }
 
   Widget _buildSearch() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      child: TextField(
-        controller: _searchCtrl,
-        style: const TextStyle(color: AppColors.textPrimary, fontSize: 13),
-        decoration: InputDecoration(
-          hintText: 'Buscar produto...',
-          prefixIcon: const Icon(Icons.search, color: AppColors.textMuted, size: 18),
-          isDense: true,
-          suffixIcon: _searchQuery.isNotEmpty
-              ? IconButton(icon: const Icon(Icons.clear, size: 16, color: AppColors.textMuted), onPressed: () => _searchCtrl.clear())
-              : null,
-        ),
+    return TextField(
+      controller: _searchCtrl,
+      style: const TextStyle(color: AppColors.textPrimary, fontSize: 14),
+      decoration: InputDecoration(
+        hintText: 'Buscar produto, código ou categoria...',
+        prefixIcon: const Icon(Icons.search, color: AppColors.textMuted, size: 18),
+        isDense: true,
+        suffixIcon: _searchQuery.isNotEmpty
+            ? IconButton(icon: const Icon(Icons.clear, size: 16, color: AppColors.textMuted), onPressed: () => _searchCtrl.clear())
+            : null,
       ),
     );
+  }
+
+  Widget _buildTabBar() {
+    final pendentes = _todos.where((i) => i.isPendente).length;
+    final ok = _todos.where((i) => i.isOk).length;
+    final divergentes = _todos.where((i) => i.isDivergente).length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.surfaceBorder),
+      ),
+      child: TabBar(
+        controller: _tabController,
+        indicator: BoxDecoration(
+          color: AppColors.green.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: AppColors.green.withOpacity(0.4)),
+        ),
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.transparent,
+        labelColor: AppColors.green,
+        unselectedLabelColor: AppColors.textMuted,
+        labelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 11, fontWeight: FontWeight.w700),
+        unselectedLabelStyle: const TextStyle(fontFamily: 'Outfit', fontSize: 11, fontWeight: FontWeight.w500),
+        padding: const EdgeInsets.all(4),
+        tabs: [
+          Tab(text: 'Pendentes ($pendentes)'),
+          Tab(text: 'OK ($ok)'),
+          Tab(text: 'Div. ($divergentes)'),
+        ],
+      ),
+    ).animate().fadeIn(duration: 400.ms, delay: 150.ms);
   }
 
   Widget _buildList({
@@ -279,7 +355,7 @@ class _ContagemScreenState extends State<ContagemScreen>
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
       itemCount: items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 6),
       itemBuilder: (context, i) {
