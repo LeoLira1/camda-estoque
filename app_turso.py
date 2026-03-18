@@ -5642,10 +5642,14 @@ if has_mestre:
         _st_lower = search_term.strip().lower()
         # ── Palavras-chave de status ──────────────────────────────────────────
         if _st_lower in ("falta", "faltando"):
-            df_view = df_view[df_view["status"] == "falta"]
+            _df_divs_f = get_divergencias()
+            _div_codes_falta = set(_df_divs_f[_df_divs_f["status"] == "falta"]["codigo"].tolist()) if not _df_divs_f.empty else set()
+            df_view = df_view[(df_view["status"] == "falta") | (df_view["codigo"].isin(_div_codes_falta))]
             st.caption(f"🔴 **{len(df_view)}** produto(s) faltando")
         elif _st_lower in ("sobra", "sobrando"):
-            df_view = df_view[df_view["status"] == "sobra"]
+            _df_divs_s = get_divergencias()
+            _div_codes_sobra = set(_df_divs_s[_df_divs_s["status"] == "sobra"]["codigo"].tolist()) if not _df_divs_s.empty else set()
+            df_view = df_view[(df_view["status"] == "sobra") | (df_view["codigo"].isin(_div_codes_sobra))]
             st.caption(f"🟡 **{len(df_view)}** produto(s) sobrando")
         elif _st_lower in ("avaria", "avarias"):
             _df_av_k = listar_avarias(apenas_abertas=True)
