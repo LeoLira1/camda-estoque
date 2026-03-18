@@ -12,7 +12,7 @@ class ContagemRepository {
       SELECT ci.id, ci.upload_id, ci.codigo, ci.produto, ci.categoria, ci.qtd_estoque,
              ci.status, COALESCE(ci.motivo,'') as motivo,
              COALESCE(ci.qtd_divergencia, 0) as qtd_divergencia, ci.registrado_em,
-             COALESCE(NULLIF(TRIM(em.cooperado),''), NULLIF(TRIM(em.nota),''), '') as nota_produto
+             COALESCE(NULLIF(TRIM(em.observacoes),''), NULLIF(TRIM(em.nota),''), '') as nota_produto
       FROM contagem_itens ci
       LEFT JOIN estoque_mestre em ON UPPER(TRIM(em.codigo)) = UPPER(TRIM(ci.codigo))
       ORDER BY ci.produto ASC
