@@ -16,6 +16,9 @@ class GlassCard extends StatelessWidget {
   final double? width;
   final double? height;
   final Gradient? gradient;
+  /// Desativa o BackdropFilter blur. Use false em listas roláveis para evitar
+  /// flicker no mobile (BackdropFilter cria camada de compositing por frame).
+  final bool enableBlur;
 
   const GlassCard({
     super.key,
@@ -31,6 +34,7 @@ class GlassCard extends StatelessWidget {
     this.width,
     this.height,
     this.gradient,
+    this.enableBlur = true,
   });
 
   @override
@@ -38,27 +42,34 @@ class GlassCard extends StatelessWidget {
     final bg = backgroundColor ?? Colors.white;
     final bd = borderColor ?? Colors.white;
 
-    Widget card = ClipRRect(
-      borderRadius: BorderRadius.circular(borderRadius),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-        child: Container(
-          width: width,
-          height: height,
-          decoration: BoxDecoration(
-            gradient: gradient,
-            color: gradient == null ? bg.withOpacity(backgroundOpacity) : null,
-            borderRadius: BorderRadius.circular(borderRadius),
-            border: Border.all(
-              color: bd.withOpacity(borderOpacity),
-              width: 1,
-            ),
-          ),
-          padding: padding,
-          child: child,
+    final container = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        gradient: gradient,
+        color: gradient == null ? bg.withOpacity(backgroundOpacity) : null,
+        borderRadius: BorderRadius.circular(borderRadius),
+        border: Border.all(
+          color: bd.withOpacity(borderOpacity),
+          width: 1,
         ),
       ),
+      padding: padding,
+      child: child,
     );
+
+    Widget card;
+    if (enableBlur) {
+      card = ClipRRect(
+        borderRadius: BorderRadius.circular(borderRadius),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+          child: container,
+        ),
+      );
+    } else {
+      card = container;
+    }
 
     if (onTap != null) {
       card = GestureDetector(onTap: onTap, child: card);
