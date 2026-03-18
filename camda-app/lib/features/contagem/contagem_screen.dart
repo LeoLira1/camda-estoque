@@ -96,7 +96,7 @@ class _ContagemScreenState extends State<ContagemScreen>
   }
 
   Future<void> _marcarDivergente(ContagemItem item) async {
-    int qtdDiv = 0;
+    int qtdDiv = item.qtdDivergencia;
     final motivoCtrl = TextEditingController(text: item.motivo);
 
     await showDialog(
