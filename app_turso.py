@@ -445,8 +445,6 @@ st.markdown("""
         background: rgba(255,255,255,0.04) !important;
         border: 1px solid rgba(255,255,255,0.08) !important;
         border-radius: 8px !important;
-        backdrop-filter: blur(8px) !important;
-        -webkit-backdrop-filter: blur(8px) !important;
         padding: 6px 14px !important;
         font-weight: 500 !important;
         transition: background 0.2s, border-color 0.2s !important;
@@ -456,8 +454,6 @@ st.markdown("""
         color: #cde8f8 !important;
         background: rgba(123,175,212,0.16) !important;
         border: 1px solid rgba(123,175,212,0.35) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
     }
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
     .stTabs [data-baseweb="tab-border"] { display: none !important; }
