@@ -5553,9 +5553,7 @@ if _wd_dash:
 else:
     _whtml = ""
 
-st.markdown('<div style="margin-bottom:0.4rem;"></div>', unsafe_allow_html=True)
-
-# ── Alertas automáticos (abaixo do clima) ────────────────────────────────────
+# ── Alertas automáticos (computados aqui, renderizados abaixo da busca) ──────
 if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != datetime.now(tz=_BRT).date().isoformat():
     st.session_state["alertas_cache"] = checar_e_registrar_alertas()
     st.session_state["alertas_cache_date"] = datetime.now(tz=_BRT).date().isoformat()
@@ -5563,43 +5561,6 @@ if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cach
 _alertas = st.session_state["alertas_cache"]
 _al_val  = _alertas.get("validade_30d", [])
 _al_pend = _alertas.get("pendencia_5d", [])
-
-if _al_val or _al_pend:
-    _pills = []
-    if _al_pend:
-        n = len(_al_pend)
-        _pills.append(
-            f'<div class="al-pill al-pend">🔴 <b>{n} pendência{"s" if n > 1 else ""}</b>'
-            f' sem entrega há mais de 5 dias</div>'
-        )
-    if _al_val:
-        _urgentes = [a for a in _al_val if a["dias_restantes"] <= 7]
-        _normais  = [a for a in _al_val if a["dias_restantes"] > 7]
-        if _urgentes:
-            _nomes = ", ".join(dict.fromkeys(a["produto"] for a in _urgentes[:3]))
-            if len(_urgentes) > 3:
-                _nomes += f" +{len(_urgentes) - 3}"
-            _pills.append(
-                f'<div class="al-pill al-urgente">🟠 <b>{len(_urgentes)} lote{"s" if len(_urgentes) > 1 else ""}'
-                f' ≤7 dias:</b> {_nomes}</div>'
-            )
-        if _normais:
-            _pills.append(
-                f'<div class="al-pill al-aviso">🟡 <b>{len(_normais)} lote{"s" if len(_normais) > 1 else ""}'
-                f'</b> vence em até 30 dias</div>'
-            )
-    st.markdown(
-        """
-        <style>
-        .al-wrap{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px 0;}
-        .al-pill{padding:6px 14px;border-radius:20px;font-size:0.82rem;font-family:Outfit,sans-serif;line-height:1.4;}
-        .al-pend{background:rgba(255,71,87,0.12);color:#ff4757;border:1px solid rgba(255,71,87,0.35);}
-        .al-urgente{background:rgba(255,140,0,0.12);color:#ff8c00;border:1px solid rgba(255,140,0,0.4);}
-        .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
-        </style>
-        """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
-        unsafe_allow_html=True,
-    )
 
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
@@ -5636,6 +5597,44 @@ if has_mestre:
         setTimeout(disableAutocomplete, 800);
     })();
     </script>""", height=0)
+
+    # ── Alertas (abaixo da busca, compacto) ──────────────────────────────────
+    if _al_val or _al_pend:
+        _pills = []
+        if _al_pend:
+            n = len(_al_pend)
+            _pills.append(
+                f'<div class="al-pill al-pend">🔴 <b>{n} pendência{"s" if n > 1 else ""}</b>'
+                f' sem entrega há mais de 5 dias</div>'
+            )
+        if _al_val:
+            _urgentes = [a for a in _al_val if a["dias_restantes"] <= 7]
+            _normais  = [a for a in _al_val if a["dias_restantes"] > 7]
+            if _urgentes:
+                _nomes = ", ".join(dict.fromkeys(a["produto"] for a in _urgentes[:3]))
+                if len(_urgentes) > 3:
+                    _nomes += f" +{len(_urgentes) - 3}"
+                _pills.append(
+                    f'<div class="al-pill al-urgente">🟠 <b>{len(_urgentes)} lote{"s" if len(_urgentes) > 1 else ""}'
+                    f' ≤7 dias:</b> {_nomes}</div>'
+                )
+            if _normais:
+                _pills.append(
+                    f'<div class="al-pill al-aviso">🟡 <b>{len(_normais)} lote{"s" if len(_normais) > 1 else ""}'
+                    f'</b> vence em até 30 dias</div>'
+                )
+        st.markdown(
+            """
+            <style>
+            .al-wrap{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 4px 0;}
+            .al-pill{padding:4px 12px;border-radius:20px;font-size:0.78rem;font-family:Outfit,sans-serif;line-height:1.4;}
+            .al-pend{background:rgba(255,71,87,0.12);color:#ff4757;border:1px solid rgba(255,71,87,0.35);}
+            .al-urgente{background:rgba(255,140,0,0.12);color:#ff8c00;border:1px solid rgba(255,140,0,0.4);}
+            .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
+            </style>
+            """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
+            unsafe_allow_html=True,
+        )
 
     df_view = df_mestre
     pa_match_info = ""
