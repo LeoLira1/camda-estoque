@@ -230,6 +230,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return GlassCard(
       borderRadius: 14,
+      enableBlur: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -422,6 +423,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     return GlassCard(
       borderRadius: 14,
+      enableBlur: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -488,6 +490,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildRecentActivity() {
     return GlassCard(
       borderRadius: 14,
+      enableBlur: false,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
