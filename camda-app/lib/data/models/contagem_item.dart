@@ -10,6 +10,8 @@ class ContagemItem {
   final String motivo;
   final int qtdDivergencia;
   final String registradoEm;
+  /// Nota/observação persistente do produto em estoque_mestre (ex: nome do cooperado).
+  final String notaProduto;
 
   const ContagemItem({
     required this.id,
@@ -22,6 +24,7 @@ class ContagemItem {
     this.motivo = '',
     this.qtdDivergencia = 0,
     this.registradoEm = '',
+    this.notaProduto = '',
   });
 
   bool get isPendente => status == 'pendente';
@@ -40,6 +43,7 @@ class ContagemItem {
       motivo: map['motivo']?.toString() ?? '',
       qtdDivergencia: _toInt(map['qtd_divergencia']),
       registradoEm: map['registrado_em']?.toString() ?? '',
+      notaProduto: map['nota_produto']?.toString() ?? '',
     );
   }
 
