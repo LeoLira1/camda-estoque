@@ -14,12 +14,21 @@ class TursoClient {
   static TursoClient? _instance;
   static TursoClient get instance => _instance ??= TursoClient._();
 
+  static const _fallbackUrl = 'libsql://camda-estoque-leolira1.aws-us-east-2.turso.io';
+  static const _fallbackToken = 'eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzA5MjIyMjYsImlkIjoiMWQzNzAwYTQtYzk0ZC00ZTA1LWJlZWQtMTliYTI1NDA4M2I3IiwicmlkIjoiMzMzMDc1MzctMzljYy00YzY5LWI4YTUtZmQ3NDViMTEyMTNjIn0.xHobJm3csz1tw_JrSoktjHgp5GxeQvwGGir6xrDy-YhrmO28RY7POinttER0IKmYgKfxHXY7Fi8Oa_6M5JRxAQ';
+
   String get _baseUrl {
-    final raw = dotenv.env['TURSO_DATABASE_URL'] ?? '';
+    var raw = (dotenv.env['TURSO_DATABASE_URL'] ?? _fallbackUrl).trim();
+    // Strip surrounding quotes that may be present in .env files
+    if (raw.length >= 2 &&
+        ((raw.startsWith('"') && raw.endsWith('"')) ||
+         (raw.startsWith("'") && raw.endsWith("'")))) {
+      raw = raw.substring(1, raw.length - 1);
+    }
     // Turso HTTP API usa https://, mas a URL pode vir como libsql://
     return raw.replaceFirst(RegExp(r'^libsql://'), 'https://');
   }
-  String get _token => dotenv.env['TURSO_AUTH_TOKEN'] ?? '';
+  String get _token => dotenv.env['TURSO_AUTH_TOKEN'] ?? _fallbackToken;
 
   bool get isConfigured => _baseUrl.isNotEmpty && _token.isNotEmpty;
 

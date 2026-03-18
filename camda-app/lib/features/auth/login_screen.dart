@@ -18,7 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _error = false;
   bool _obscure = true;
 
-  String get _password => dotenv.env['CAMDA_PASSWORD'] ?? 'forca';
+  String get _password => dotenv.env['CAMDA_PASSWORD'] ?? 'força';
 
   @override
   void dispose() {

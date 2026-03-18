@@ -411,30 +411,26 @@ st.markdown("""
         text-transform: uppercase; letter-spacing: 1px;
     }
     /* ── Treemap tiles ─────────────────────────────────────────────────── */
-    .tm-wrap { display: flex; flex-wrap: wrap; gap: 2px; }
+    .tm-wrap { display: flex; flex-wrap: wrap; gap: 10px; }
     .tm-tile {
-        width: 110px; height: 60px;
-        border-radius: 4px; padding: 4px; margin: 2px;
+        width: 150px; height: auto; min-height: 120px;
+        border-radius: 12px; padding: 0; margin: 0;
         display: flex; flex-direction: column;
-        justify-content: center; align-items: center;
+        justify-content: flex-start; align-items: flex-start;
         overflow: visible; box-sizing: border-box;
         position: relative; cursor: pointer; outline: none;
     }
     .tm-name {
-        font-size: 0.55rem; font-weight: 700; text-align: center; width: 100%;
+        font-size: 0.875rem; font-weight: 600; text-align: left; width: 100%;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        margin-bottom: 4px; color: #e8eaf0;
     }
     .tm-info {
-        font-size: 0.65rem; opacity: 0.9;
+        font-size: 1.625rem; line-height: 1.1;
         font-family: 'JetBrains Mono', monospace;
-        font-weight: bold; margin-top: 2px;
+        font-weight: 700; margin-bottom: 8px;
     }
     .tm-av { font-size: 0.5rem; font-weight: 700; margin-top: 2px; }
-    .tm-tile[data-diff]::after {
-        content: attr(data-diff);
-        position: absolute; bottom: 2px; right: 3px;
-        font-size: 0.42rem; font-weight: 700; opacity: 0.8;
-    }
     /* ── Streamlit tabs: sempre scrollável ─────────────────────────────── */
     .stTabs [data-baseweb="tab-list"] {
         flex-wrap: nowrap !important;
@@ -449,8 +445,6 @@ st.markdown("""
         background: rgba(255,255,255,0.04) !important;
         border: 1px solid rgba(255,255,255,0.08) !important;
         border-radius: 8px !important;
-        backdrop-filter: blur(8px) !important;
-        -webkit-backdrop-filter: blur(8px) !important;
         padding: 6px 14px !important;
         font-weight: 500 !important;
         transition: background 0.2s, border-color 0.2s !important;
@@ -460,8 +454,6 @@ st.markdown("""
         color: #cde8f8 !important;
         background: rgba(123,175,212,0.16) !important;
         border: 1px solid rgba(123,175,212,0.35) !important;
-        backdrop-filter: blur(12px) !important;
-        -webkit-backdrop-filter: blur(12px) !important;
     }
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
     .stTabs [data-baseweb="tab-border"] { display: none !important; }
@@ -478,7 +470,7 @@ st.markdown("""
             font-size: 0.65rem !important;
             border-radius: 6px !important;
         }
-        .tm-tile { width: calc(33.33% - 6px); min-width: 90px; height: 58px; }
+        .tm-tile { width: calc(50% - 5px); min-width: 130px; height: auto; min-height: 110px; }
     }
     /* ── Syne em números grandes ──────────────────────────────────────── */
     .stat-value {
@@ -491,11 +483,13 @@ st.markdown("""
     }
     .tm-tile {
         animation: cardPop 0.4s ease both;
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        transition: all 0.25s ease;
     }
     .tm-tile:hover {
-        transform: translateY(-4px) scale(1.02) !important;
-        box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+        background: #1f2337 !important;
+        border-color: rgba(255,255,255,0.12) !important;
+        transform: translateY(-2px) !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.3) !important;
         z-index: 1;
     }
     .tm-cod {
@@ -2299,10 +2293,25 @@ def registrar_divergencia_manual(codigo: str, delta: int, cooperado: str = "") -
 
 
 def resolver_divergencia(div_id: int):
-    """Remove uma divergência específica da lista pelo seu id."""
+    """Remove uma divergência específica da lista pelo seu id.
+    Se não restar nenhuma outra divergência para o mesmo produto,
+    reseta estoque_mestre para status='ok'.
+    """
     try:
         conn = get_db()
+        row = conn.execute("SELECT codigo FROM divergencias WHERE id = ?", [div_id]).fetchone()
         conn.execute("DELETE FROM divergencias WHERE id = ?", [div_id])
+        if row:
+            codigo = row[0]
+            remaining = conn.execute(
+                "SELECT COUNT(*) FROM divergencias WHERE codigo = ?", [codigo]
+            ).fetchone()[0]
+            if remaining == 0:
+                now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+                conn.execute(
+                    "UPDATE estoque_mestre SET status = 'ok', diferenca = 0, qtd_fisica = qtd_sistema, ultima_contagem = ? WHERE codigo = ? AND status IN ('falta', 'sobra')",
+                    [now, codigo],
+                )
         conn.commit()
         sync_db()
     except Exception as e:
@@ -3975,6 +3984,19 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
     for _, row in df.iterrows():
         categories.setdefault(row["categoria"], []).append(row)
 
+    # Category badge style map
+    _CAT_STYLES = {
+        "HERBICIDA":    ("rgba(34,197,94,0.12)",   "#22c55e"),
+        "FUNGICIDA":    ("rgba(59,130,246,0.12)",   "#3b82f6"),
+        "INSETICIDA":   ("rgba(168,85,247,0.12)",   "#a855f7"),
+        "FERTILIZANTE": ("rgba(234,179,8,0.12)",    "#eab308"),
+        "SEMENTE":      ("rgba(249,115,22,0.12)",   "#f97316"),
+        "ACARICIDA":    ("rgba(6,182,212,0.12)",    "#06b6d4"),
+        "ADJUVANTE":    ("rgba(100,116,139,0.12)",  "#94a3b8"),
+        "OUTROS":       ("rgba(100,116,139,0.12)",  "#94a3b8"),
+    }
+    _CAT_DEFAULT = ("rgba(100,116,139,0.12)", "#94a3b8")
+
     parts = []
     for cat in sort_categorias(list(categories.keys())):
         rows = categories[cat]
@@ -3984,36 +4006,77 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             qs = int(r["qtd_sistema"])
             qf = int(r["qtd_fisica"]) if pd.notnull(r.get("qtd_fisica")) else qs
             diff = int(r["diferenca"]) if pd.notnull(r.get("diferenca")) else 0
-
-            if diff == 0:
-                bg, txt = "#00d68f", "#0a2e1a"
-                data_diff = ""
-            elif diff < 0:
-                bg, txt = "#ff4757", "#fff"
-                data_diff = f'data-diff="▼{abs(diff)}"'
-            else:
-                bg, txt = "#ffa502", "#fff"
-                data_diff = f'data-diff="▲{diff}"'
             info = str(qs)
 
             contagem = str(r.get("ultima_contagem", ""))
-            border = "border:2px dashed #64748b!important;opacity:0.6;" if not contagem or contagem in ("", "nan", "None") else ""
+            sem_contagem = not contagem or contagem in ("", "nan", "None")
 
             # Aviso de avarias abertas
             qtd_av = avarias_map.get(str(r["codigo"]), 0)
+
+            # Status → border color, bg, qty color
             if qtd_av > 0:
-                bg, txt = "#a55eea", "#fff"
-                av_html = f'<div class="tm-av">⚠ {qtd_av} av.</div>'
+                border_color = "#f97316"
+                card_bg = "linear-gradient(135deg, rgba(249,115,22,0.08), #1a1d2e)"
+                qty_color = "#f97316"
+            elif diff == 0:
+                border_color = "#22c55e"
+                card_bg = "#1a1d2e"
+                qty_color = "#e8eaf0"
+            elif diff < 0:
+                border_color = "#ef4444"
+                card_bg = "linear-gradient(135deg, rgba(239,68,68,0.08), #1a1d2e)"
+                qty_color = "#ef4444"
             else:
-                av_html = ""
+                border_color = "#06b6d4"
+                card_bg = "#1a1d2e"
+                qty_color = "#06b6d4"
+
+            # Category badge
+            cat_upper = str(r["categoria"]).strip().upper()
+            cat_bg_c, cat_fg_c = _CAT_STYLES.get(cat_upper, _CAT_DEFAULT)
+            cat_badge = (
+                f'<div style="display:inline-flex;align-items:center;gap:5px;'
+                f'font-size:9px;text-transform:uppercase;letter-spacing:1.2px;'
+                f'font-weight:600;padding:3px 8px;border-radius:6px;'
+                f'background:{cat_bg_c};color:{cat_fg_c};margin-bottom:10px;flex-shrink:0;">'
+                f'<span style="width:6px;height:6px;border-radius:50%;background:{border_color};flex-shrink:0;"></span>'
+                f'{cat_upper}</div>'
+            )
+
+            # Diff / avaria badge (top-right)
+            if qtd_av > 0:
+                badge_html = (
+                    f'<div style="position:absolute;top:10px;right:10px;'
+                    f'font-size:10px;font-weight:600;font-family:\'JetBrains Mono\',monospace;'
+                    f'padding:2px 7px;border-radius:6px;'
+                    f'background:rgba(249,115,22,0.12);color:#f97316;">⚠ {qtd_av} av.</div>'
+                )
+            elif diff != 0:
+                sign = "▲" if diff > 0 else "▼"
+                bdg_bg = "rgba(6,182,212,0.12)" if diff > 0 else "rgba(239,68,68,0.12)"
+                bdg_fg = "#06b6d4" if diff > 0 else "#ef4444"
+                badge_html = (
+                    f'<div style="position:absolute;top:10px;right:10px;'
+                    f'font-size:10px;font-weight:600;font-family:\'JetBrains Mono\',monospace;'
+                    f'padding:2px 7px;border-radius:6px;'
+                    f'background:{bdg_bg};color:{bdg_fg};">{sign}{abs(diff)}</div>'
+                )
+            else:
+                badge_html = ""
+
+            # Dashed border overlay for products without stock count
+            opacity_style = "opacity:0.55;" if sem_contagem else ""
 
             prods.append(
-                f'<div class="tm-tile" tabindex="0" {data_diff} style="background:{bg};color:{txt};'
-                f'border:1px solid rgba(0,0,0,0.1);{border}" title="{r["codigo"]} — {r["produto"]}">'
+                f'<div class="tm-tile" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
+                f' style="background:{card_bg};border:1px solid rgba(255,255,255,0.06);'
+                f'border-left:3px solid {border_color};border-radius:12px;padding:14px;{opacity_style}">'
+                f'{cat_badge}'
+                f'{badge_html}'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
-                f'<div class="tm-info">{info}</div>'
+                f'<div class="tm-info" style="color:{qty_color};">{info}</div>'
                 f'<div class="tm-cod">{r["codigo"]}</div>'
-                f'{av_html}'
                 f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}</div>'
                 f'</div>'
             )
@@ -5501,41 +5564,7 @@ if _wd_dash:
 else:
     _whtml = ""
 
-st.markdown(f'''
-<style>
-.camda-header-wrap {{ position: relative; width: 100%; margin-bottom: 0.8rem; }}
-.camda-header {{
-    width: 100%; height: 220px;
-    background-image: url(https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/banner.jpg?v=20260228);
-    background-size: cover;
-    background-position: center;
-    border-radius: 14px;
-    overflow: hidden;
-}}
-.wco {{
-    position: absolute; top: 12px; right: 16px;
-    color: #fff; font-family: Outfit,sans-serif;
-    border-radius: 18px; padding: 12px 15px 11px;
-    background: transparent;
-    border: none;
-    box-shadow: none;
-    text-align: center; min-width: 128px;
-}}
-@media (max-width: 640px) {{
-    .camda-header {{ height: 140px; }}
-    .wco {{ top: 6px; right: 6px; padding: 8px 10px 8px; border-radius: 14px; min-width: 100px; }}
-    .wco > div:nth-child(2) {{ font-size: 1.6rem !important; }}
-    .wco > div:nth-child(3) {{ font-size: 1.4rem !important; }}
-}}
-</style>
-<div class="camda-header-wrap">
-  <div class="camda-header"></div>
-  {_whtml}
-</div>
-
-''', unsafe_allow_html=True)
-
-# ── Alertas automáticos (abaixo do clima) ────────────────────────────────────
+# ── Alertas automáticos (computados aqui, renderizados abaixo da busca) ──────
 if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != datetime.now(tz=_BRT).date().isoformat():
     st.session_state["alertas_cache"] = checar_e_registrar_alertas()
     st.session_state["alertas_cache_date"] = datetime.now(tz=_BRT).date().isoformat()
@@ -5543,43 +5572,6 @@ if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cach
 _alertas = st.session_state["alertas_cache"]
 _al_val  = _alertas.get("validade_30d", [])
 _al_pend = _alertas.get("pendencia_5d", [])
-
-if _al_val or _al_pend:
-    _pills = []
-    if _al_pend:
-        n = len(_al_pend)
-        _pills.append(
-            f'<div class="al-pill al-pend">🔴 <b>{n} pendência{"s" if n > 1 else ""}</b>'
-            f' sem entrega há mais de 5 dias</div>'
-        )
-    if _al_val:
-        _urgentes = [a for a in _al_val if a["dias_restantes"] <= 7]
-        _normais  = [a for a in _al_val if a["dias_restantes"] > 7]
-        if _urgentes:
-            _nomes = ", ".join(dict.fromkeys(a["produto"] for a in _urgentes[:3]))
-            if len(_urgentes) > 3:
-                _nomes += f" +{len(_urgentes) - 3}"
-            _pills.append(
-                f'<div class="al-pill al-urgente">🟠 <b>{len(_urgentes)} lote{"s" if len(_urgentes) > 1 else ""}'
-                f' ≤7 dias:</b> {_nomes}</div>'
-            )
-        if _normais:
-            _pills.append(
-                f'<div class="al-pill al-aviso">🟡 <b>{len(_normais)} lote{"s" if len(_normais) > 1 else ""}'
-                f'</b> vence em até 30 dias</div>'
-            )
-    st.markdown(
-        """
-        <style>
-        .al-wrap{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0 14px 0;}
-        .al-pill{padding:6px 14px;border-radius:20px;font-size:0.82rem;font-family:Outfit,sans-serif;line-height:1.4;}
-        .al-pend{background:rgba(255,71,87,0.12);color:#ff4757;border:1px solid rgba(255,71,87,0.35);}
-        .al-urgente{background:rgba(255,140,0,0.12);color:#ff8c00;border:1px solid rgba(255,140,0,0.4);}
-        .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
-        </style>
-        """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
-        unsafe_allow_html=True,
-    )
 
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
@@ -5617,42 +5609,98 @@ if has_mestre:
     })();
     </script>""", height=0)
 
+    # ── Alertas (abaixo da busca, compacto) ──────────────────────────────────
+    if _al_val or _al_pend:
+        _pills = []
+        if _al_pend:
+            n = len(_al_pend)
+            _pills.append(
+                f'<div class="al-pill al-pend">🔴 <b>{n} pendência{"s" if n > 1 else ""}</b>'
+                f' sem entrega há mais de 5 dias</div>'
+            )
+        if _al_val:
+            _urgentes = [a for a in _al_val if a["dias_restantes"] <= 7]
+            _normais  = [a for a in _al_val if a["dias_restantes"] > 7]
+            if _urgentes:
+                _nomes = ", ".join(dict.fromkeys(a["produto"] for a in _urgentes[:3]))
+                if len(_urgentes) > 3:
+                    _nomes += f" +{len(_urgentes) - 3}"
+                _pills.append(
+                    f'<div class="al-pill al-urgente">🟠 <b>{len(_urgentes)} lote{"s" if len(_urgentes) > 1 else ""}'
+                    f' ≤7 dias:</b> {_nomes}</div>'
+                )
+            if _normais:
+                _pills.append(
+                    f'<div class="al-pill al-aviso">🟡 <b>{len(_normais)} lote{"s" if len(_normais) > 1 else ""}'
+                    f'</b> vence em até 30 dias</div>'
+                )
+        st.markdown(
+            """
+            <style>
+            .al-wrap{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 4px 0;}
+            .al-pill{padding:4px 12px;border-radius:20px;font-size:0.78rem;font-family:Outfit,sans-serif;line-height:1.4;}
+            .al-pend{background:rgba(255,71,87,0.12);color:#ff4757;border:1px solid rgba(255,71,87,0.35);}
+            .al-urgente{background:rgba(255,140,0,0.12);color:#ff8c00;border:1px solid rgba(255,140,0,0.4);}
+            .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
+            </style>
+            """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
+            unsafe_allow_html=True,
+        )
+
     df_view = df_mestre
     pa_match_info = ""
     if search_term:
-        # Busca padrão por nome/código (contém), excluindo registros AUTO_
-        # AUTO_ são artefatos de import mal-parseado e não devem poluir a busca
-        mask_nome_cod = (
-            df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
-            | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
-        ) & ~df_view["codigo"].str.startswith("AUTO_")
+        _st_lower = search_term.strip().lower()
+        # ── Palavras-chave de status ──────────────────────────────────────────
+        if _st_lower in ("falta", "faltando"):
+            _df_divs_f = get_divergencias()
+            _div_codes_falta = set(_df_divs_f[_df_divs_f["status"] == "falta"]["codigo"].tolist()) if not _df_divs_f.empty else set()
+            df_view = df_view[(df_view["status"] == "falta") | (df_view["codigo"].isin(_div_codes_falta))]
+            st.caption(f"🔴 **{len(df_view)}** produto(s) faltando")
+        elif _st_lower in ("sobra", "sobrando"):
+            _df_divs_s = get_divergencias()
+            _div_codes_sobra = set(_df_divs_s[_df_divs_s["status"] == "sobra"]["codigo"].tolist()) if not _df_divs_s.empty else set()
+            df_view = df_view[(df_view["status"] == "sobra") | (df_view["codigo"].isin(_div_codes_sobra))]
+            st.caption(f"🟡 **{len(df_view)}** produto(s) sobrando")
+        elif _st_lower in ("avaria", "avarias"):
+            _df_av_k = listar_avarias(apenas_abertas=True)
+            _cod_av = set(_df_av_k["codigo"].tolist()) if not _df_av_k.empty else set()
+            df_view = df_view[df_view["codigo"].isin(_cod_av)]
+            st.caption(f"🔴 **{len(df_view)}** produto(s) com avaria em aberto")
+        else:
+            # Busca padrão por nome/código (contém), excluindo registros AUTO_
+            # AUTO_ são artefatos de import mal-parseado e não devem poluir a busca
+            mask_nome_cod = (
+                df_view["produto"].str.contains(search_term, case=False, na=False, regex=False)
+                | df_view["codigo"].str.contains(search_term, case=False, na=False, regex=False)
+            ) & ~df_view["codigo"].str.startswith("AUTO_")
 
-        # Busca por princípio ativo usando o mesmo match multi-etapa da aba 🧬
-        mask_pa = pd.Series([False] * len(df_view), index=df_view.index)
-        if has_pa:
-            _idx_search = _build_pa_lookup(_mapa_pa_search)
-            _term_up = search_term.upper()
-            mask_pa = df_view["produto"].apply(
-                lambda x: _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
-            )
+            # Busca por princípio ativo usando o mesmo match multi-etapa da aba 🧬
+            mask_pa = pd.Series([False] * len(df_view), index=df_view.index)
+            if has_pa:
+                _idx_search = _build_pa_lookup(_mapa_pa_search)
+                _term_up = search_term.upper()
+                mask_pa = df_view["produto"].apply(
+                    lambda x: _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
+                )
 
-        mask = mask_nome_cod | mask_pa
-        n_pa = int((mask_pa & ~mask_nome_cod).sum())
-        if n_pa > 0 and not mask_nome_cod.any():
-            # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
-            pa_found = sorted({
-                _lookup_pa_from_index(str(x), *_idx_search)
-                for x in df_view.loc[mask_pa, "produto"]
-                if _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
-            })
-            pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
-        elif n_pa > 0:
-            pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
+            mask = mask_nome_cod | mask_pa
+            n_pa = int((mask_pa & ~mask_nome_cod).sum())
+            if n_pa > 0 and not mask_nome_cod.any():
+                # Busca encontrou apenas por P.A. — mostrar qual P.A. foi encontrado
+                pa_found = sorted({
+                    _lookup_pa_from_index(str(x), *_idx_search)
+                    for x in df_view.loc[mask_pa, "produto"]
+                    if _term_up in _lookup_pa_from_index(str(x), *_idx_search).upper()
+                })
+                pa_match_info = f"🧬 Princípio ativo: **{', '.join(pa_found[:3])}** → {n_pa} produto(s)"
+            elif n_pa > 0:
+                pa_match_info = f"🧬 Inclui {n_pa} produto(s) por princípio ativo"
 
-        df_view = df_view[mask]
+            df_view = df_view[mask]
 
-        if pa_match_info:
-            st.caption(pa_match_info)
+            if pa_match_info:
+                st.caption(pa_match_info)
 
     n_ok = (df_view["status"] == "ok").sum()
     _df_divs = get_divergencias()

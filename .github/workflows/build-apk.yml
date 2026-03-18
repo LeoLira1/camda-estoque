@@ -1,137 +1,52 @@
-name: 🤖 Build APK Android
+name: Build APK
 
 on:
   push:
     branches:
       - main
-      - 'claude/**'
+      - master
   workflow_dispatch:
-    inputs:
-      release:
-        description: 'Publicar como release oficial?'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-
-permissions:
-  contents: write
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build:
-    name: Build APK
+    name: Build Release APK
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout ────────────────────────────────────────────────────────
-      - name: 📥 Checkout código
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      # ── 2. Java (requerido pelo Android SDK) ───────────────────────────────
-      - name: ☕ Configurar Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # ── 3. Flutter SDK ─────────────────────────────────────────────────────
-      - name: 🐦 Configurar Flutter
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
           channel: stable
           cache: true
 
-      # ── 4. Credenciais (.env) ──────────────────────────────────────────────
-      - name: 🔐 Criar arquivo .env com credenciais
+      - name: Create .env file
         working-directory: camda-app
         run: |
-          printf 'TURSO_DATABASE_URL=%s\nTURSO_AUTH_TOKEN=%s\nCAMDA_PASSWORD=%s\n' \
-            "${{ secrets.TURSO_DATABASE_URL }}" \
-            "${{ secrets.TURSO_AUTH_TOKEN }}" \
-            "${{ secrets.CAMDA_PASSWORD }}" > .env
+          echo 'TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}' >> .env
+          echo 'TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}' >> .env
+          echo 'CAMDA_PASSWORD=${{ secrets.CAMDA_PASSWORD }}' >> .env
 
-      # ── 5. Dependências ────────────────────────────────────────────────────
-      - name: 📦 Instalar dependências Flutter
+      - name: Install dependencies
         working-directory: camda-app
         run: flutter pub get
 
-      # ── 6. Análise estática (não bloqueia o build) ─────────────────────────
-      - name: 🔍 Análise estática
-        working-directory: camda-app
-        run: flutter analyze --no-fatal-infos || true
-
-      # ── 7. Build APK ───────────────────────────────────────────────────────
-      - name: 🔨 Build APK release
+      - name: Build APK (release)
         working-directory: camda-app
         run: flutter build apk --release
 
-      # ── 8. Nomear APK com versão e data ────────────────────────────────────
-      - name: 📝 Preparar APK para entrega
-        id: apk_info
-        run: |
-          VERSION=$(grep '^version:' camda-app/pubspec.yaml | sed 's/version: //' | tr -d '[:space:]')
-          DATE=$(date +'%Y%m%d')
-          BRANCH="${GITHUB_REF_NAME//\//-}"
-          APK_NAME="camda-estoque-v${VERSION}-${DATE}.apk"
-
-          cp camda-app/build/app/outputs/flutter-apk/app-release.apk "camda-app/${APK_NAME}"
-          cp camda-app/build/app/outputs/flutter-apk/app-release.apk "camda-app/camda-estoque-latest.apk"
-
-          echo "apk_name=${APK_NAME}" >> $GITHUB_OUTPUT
-          echo "version=${VERSION}"   >> $GITHUB_OUTPUT
-          echo "date=${DATE}"         >> $GITHUB_OUTPUT
-          echo "branch=${BRANCH}"     >> $GITHUB_OUTPUT
-          echo "✅ APK gerado: ${APK_NAME} ($(du -sh camda-app/${APK_NAME} | cut -f1))"
-
-      # ── 9. Upload como Artifact (disponível por 30 dias) ───────────────────
-      - name: 📤 Upload APK como Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: CAMDA-APK-${{ steps.apk_info.outputs.branch }}
-          path: camda-app/${{ steps.apk_info.outputs.apk_name }}
+          name: camda-app-release-${{ github.run_number }}
+          path: camda-app/build/app/outputs/flutter-apk/app-release.apk
           retention-days: 30
-
-      # ── 10. Commit do APK no repositório ──────────────────────────────────
-      - name: 💾 Commit APK no repositório
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add camda-app/camda-estoque-latest.apk
-          git add "camda-app/${{ steps.apk_info.outputs.apk_name }}"
-          git diff --staged --quiet || \
-            git commit -m "build: APK ${{ steps.apk_info.outputs.apk_name }} [skip ci]" && \
-            git push
-
-      # ── 11. GitHub Release (apenas no main ou quando solicitado) ───────────
-      - name: 🚀 Criar GitHub Release
-        if: github.ref == 'refs/heads/main' || github.event.inputs.release == 'true'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.apk_info.outputs.version }}-${{ steps.apk_info.outputs.date }}
-          name: "CAMDA Estoque v${{ steps.apk_info.outputs.version }} — ${{ steps.apk_info.outputs.date }}"
-          body: |
-            ## 📱 CAMDA Estoque — Build Automático
-
-            | Campo | Valor |
-            |---|---|
-            | **Versão** | `${{ steps.apk_info.outputs.version }}` |
-            | **Data** | `${{ steps.apk_info.outputs.date }}` |
-            | **Branch** | `${{ steps.apk_info.outputs.branch }}` |
-            | **Commit** | `${{ github.sha }}` |
-
-            ### ⬇️ Como instalar no Android
-            1. Baixe o arquivo `.apk` abaixo (seção **Assets**)
-            2. No celular: **Configurações → Segurança → Instalar apps desconhecidos** → ativar para o gerenciador de arquivos
-            3. Abra o arquivo `.apk` baixado e confirme a instalação
-            4. Faça login com a senha configurada
-          files: camda-app/${{ steps.apk_info.outputs.apk_name }}
-          draft: false
-          prerelease: ${{ github.ref != 'refs/heads/main' }}
