@@ -93,6 +93,19 @@ class EstoqueRepository {
     return maps.isEmpty ? null : Produto.fromMap(maps.first);
   }
 
+  /// Retorna set de códigos que possuem divergência ativa por status.
+  Future<Set<String>> getDivergenciaCodigos({required String status}) async {
+    final result = await _client.query(
+      'SELECT DISTINCT codigo FROM divergencias WHERE status = ?',
+      [status],
+    );
+    if (result.hasError) return {};
+    return result.rows
+        .map((r) => r.first?.toString() ?? '')
+        .where((c) => c.isNotEmpty)
+        .toSet();
+  }
+
   /// Retorna lista de categorias distintas.
   Future<List<String>> getCategorias() async {
     final result = await _client.query(

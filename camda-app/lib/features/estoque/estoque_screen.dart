@@ -31,6 +31,8 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
   String? _error;
   bool _isOffline = false;
   Set<String> _avariaCodigos = {};
+  Set<String> _divFaltaCodigos = {};
+  Set<String> _divSobraCodigos = {};
 
   static const _statusOptions = ['Todos', 'ok', 'falta', 'sobra'];
 
@@ -59,6 +61,8 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
         _repo.getAll(),
         _repo.getCategorias(),
         _avariasRepo.getAll(apenasAbertas: true),
+        _repo.getDivergenciaCodigos(status: 'falta'),
+        _repo.getDivergenciaCodigos(status: 'sobra'),
       ]);
       if (!mounted) return;
       final avarias = results[2] as List<Avaria>;
@@ -66,6 +70,8 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
         _all = results[0] as List<Produto>;
         _categorias = ['Todos', ...(results[1] as List<String>)];
         _avariaCodigos = avarias.map((a) => a.codigo).toSet();
+        _divFaltaCodigos = results[3] as Set<String>;
+        _divSobraCodigos = results[4] as Set<String>;
         _loading = false;
         _isOffline = CacheService.isOffline;
       });
@@ -91,8 +97,8 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
     setState(() {
       _filtered = _all.where((p) {
         // Atalho por palavra-chave — ignora filtros de chip/categoria
-        if (keyword == 'falta') return p.status == 'falta';
-        if (keyword == 'sobra') return p.status == 'sobra';
+        if (keyword == 'falta') return p.status == 'falta' || _divFaltaCodigos.contains(p.codigo);
+        if (keyword == 'sobra') return p.status == 'sobra' || _divSobraCodigos.contains(p.codigo);
         if (keyword == 'avaria') return _avariaCodigos.contains(p.codigo);
 
         final matchSearch = query.isEmpty ||
@@ -100,7 +106,10 @@ class _EstoqueScreenState extends State<EstoqueScreen> {
             p.codigo.toLowerCase().contains(query) ||
             p.categoria.toLowerCase().contains(query);
         final matchCat = _categoriaFiltro == 'Todos' || p.categoria == _categoriaFiltro;
-        final matchStatus = _statusFiltro == 'Todos' || p.status == _statusFiltro;
+        final matchStatus = _statusFiltro == 'Todos' ||
+            p.status == _statusFiltro ||
+            (_statusFiltro == 'falta' && _divFaltaCodigos.contains(p.codigo)) ||
+            (_statusFiltro == 'sobra' && _divSobraCodigos.contains(p.codigo));
         return matchSearch && matchCat && matchStatus;
       }).toList();
     });
