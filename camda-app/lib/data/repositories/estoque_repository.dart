@@ -33,7 +33,12 @@ class EstoqueRepository {
       args.add(categoria);
     }
     if (status != null && status.isNotEmpty) {
-      conditions.add('status = ?');
+      // Igual ao Streamlit: inclui produtos com status direto OU com registro
+      // na tabela divergencias (ex: falta de cooperado sem alterar estoque_mestre)
+      conditions.add(
+        "(status = ? OR codigo IN (SELECT DISTINCT codigo FROM divergencias WHERE status = ?))"
+      );
+      args.add(status);
       args.add(status);
     }
     if (_produtosIgnorados.isNotEmpty) {
