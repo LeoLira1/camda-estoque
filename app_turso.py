@@ -3967,7 +3967,7 @@ def render_mapa_visual(conn):
     st.plotly_chart(fig_hm, use_container_width=True)
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None) -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None) -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
@@ -3978,6 +3978,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
     if avarias_map is None:
         avarias_map = {}
+    if divergencias_map is None:
+        divergencias_map = {}
 
     # Agrupar por categoria
     categories = {}
@@ -4068,8 +4070,11 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Dashed border overlay for products without stock count
             opacity_style = "opacity:0.55;" if sem_contagem else ""
 
+            cod_str = str(r["codigo"])
+            has_div = cod_str in divergencias_map
             prods.append(
                 f'<div class="tm-tile" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
+                f' data-codigo="{cod_str}"'
                 f' style="background:{card_bg};border:1px solid rgba(255,255,255,0.06);'
                 f'border-left:3px solid {border_color};border-radius:12px;padding:14px;{opacity_style}">'
                 f'{cat_badge}'
@@ -4090,7 +4095,65 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             f'<div class="tm-wrap">{"".join(prods)}</div></div>'
         )
 
-    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>'
+    import json as _json
+    divs_json = _json.dumps(divergencias_map, ensure_ascii=False)
+
+    modal_html = f'''
+<div id="tm-div-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99999;align-items:center;justify-content:center;">
+  <div id="tm-div-modal" style="background:#1a1d2e;border:1px solid #2d3748;border-radius:16px;padding:24px;min-width:320px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.6);position:relative;animation:cardPop 0.25s ease both;">
+    <button onclick="document.getElementById('tm-div-overlay').style.display='none'" style="position:absolute;top:12px;right:14px;background:none;border:none;color:#64748b;font-size:1.2rem;cursor:pointer;line-height:1;">✕</button>
+    <div id="tm-div-title" style="font-size:0.65rem;color:#64748b;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Divergências</div>
+    <div id="tm-div-produto" style="font-size:1rem;font-weight:700;color:#e8eaf0;margin-bottom:16px;"></div>
+    <div id="tm-div-body"></div>
+  </div>
+</div>
+<script>
+(function(){{
+  var DIVS = {divs_json};
+  function esc(s){{ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
+  function openDivModal(tile){{
+    var cod = tile.getAttribute('data-codigo');
+    var nome = tile.querySelector('.tm-name') ? tile.querySelector('.tm-name').innerText : cod;
+    var entries = DIVS[cod];
+    if(!entries || entries.length === 0) return;
+    document.getElementById('tm-div-produto').innerHTML = esc(nome) + ' <span style="font-size:0.65rem;color:#64748b;font-family:monospace;">' + esc(cod) + '</span>';
+    var html = '<div style="display:flex;flex-direction:column;gap:8px;">';
+    entries.forEach(function(e){{
+      var deltaColor = e.delta < 0 ? '#ef4444' : '#06b6d4';
+      var deltaSign  = e.delta < 0 ? '▼' : '▲';
+      var statusLabel = e.status === 'falta' ? 'Falta' : 'Sobra';
+      html += '<div style="background:#111827;border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;">';
+      html += '<div>';
+      html += '<div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">Cooperado</div>';
+      html += '<div style="font-size:0.9rem;font-weight:600;color:#e8eaf0;">' + esc(e.cooperado) + '</div>';
+      html += '</div>';
+      html += '<div style="text-align:right;flex-shrink:0;">';
+      html += '<div style="font-size:0.65rem;color:#64748b;margin-bottom:2px;">' + esc(statusLabel) + '</div>';
+      html += '<div style="font-size:1rem;font-weight:700;color:' + deltaColor + ';font-family:monospace;">' + deltaSign + Math.abs(e.delta) + '</div>';
+      html += '</div>';
+      html += '</div>';
+    }});
+    html += '</div>';
+    document.getElementById('tm-div-body').innerHTML = html;
+    var overlay = document.getElementById('tm-div-overlay');
+    overlay.style.display = 'flex';
+  }}
+  document.addEventListener('click', function(ev){{
+    var tile = ev.target.closest('.tm-tile[data-codigo]');
+    if(tile){{ ev.stopPropagation(); openDivModal(tile); return; }}
+    var overlay = document.getElementById('tm-div-overlay');
+    if(overlay && !overlay.querySelector('#tm-div-modal').contains(ev.target)){{
+      overlay.style.display = 'none';
+    }}
+  }});
+  document.addEventListener('keydown', function(ev){{
+    if(ev.key === 'Escape') document.getElementById('tm-div-overlay').style.display = 'none';
+  }});
+}})();
+</script>
+'''
+
+    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>{modal_html}'
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -5728,7 +5791,19 @@ if has_mestre:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
         df_av_mapa = listar_avarias(apenas_abertas=True)
         av_map = df_av_mapa.groupby("codigo")["qtd_avariada"].sum().to_dict() if not df_av_mapa.empty else {}
-        st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map), unsafe_allow_html=True)
+        # Monta dict codigo -> lista de cooperados com divergência
+        df_divs_mapa = get_divergencias()
+        divs_map = {}
+        if not df_divs_mapa.empty:
+            for _, drow in df_divs_mapa.iterrows():
+                cod = str(drow["codigo"])
+                entry = {
+                    "cooperado": str(drow["cooperado"]) if drow["cooperado"] else "—",
+                    "delta": int(drow["delta"]),
+                    "status": str(drow["status"]),
+                }
+                divs_map.setdefault(cod, []).append(entry)
+        st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map, divergencias_map=divs_map), unsafe_allow_html=True)
 
     with t2:
         df_div = get_divergencias()
