@@ -4071,7 +4071,6 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             opacity_style = "opacity:0.55;" if sem_contagem else ""
 
             cod_str = str(r["codigo"])
-            has_div = cod_str in divergencias_map
             prods.append(
                 f'<div class="tm-tile" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
                 f' data-codigo="{cod_str}"'
@@ -4095,65 +4094,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             f'<div class="tm-wrap">{"".join(prods)}</div></div>'
         )
 
-    import json as _json
-    divs_json = _json.dumps(divergencias_map, ensure_ascii=False)
-
-    modal_html = f'''
-<div id="tm-div-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99999;align-items:center;justify-content:center;">
-  <div id="tm-div-modal" style="background:#1a1d2e;border:1px solid #2d3748;border-radius:16px;padding:24px;min-width:320px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.6);position:relative;animation:cardPop 0.25s ease both;">
-    <button onclick="document.getElementById('tm-div-overlay').style.display='none'" style="position:absolute;top:12px;right:14px;background:none;border:none;color:#64748b;font-size:1.2rem;cursor:pointer;line-height:1;">✕</button>
-    <div id="tm-div-title" style="font-size:0.65rem;color:#64748b;font-family:'JetBrains Mono',monospace;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Divergências</div>
-    <div id="tm-div-produto" style="font-size:1rem;font-weight:700;color:#e8eaf0;margin-bottom:16px;"></div>
-    <div id="tm-div-body"></div>
-  </div>
-</div>
-<script>
-(function(){{
-  var DIVS = {divs_json};
-  function esc(s){{ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
-  function openDivModal(tile){{
-    var cod = tile.getAttribute('data-codigo');
-    var nome = tile.querySelector('.tm-name') ? tile.querySelector('.tm-name').innerText : cod;
-    var entries = DIVS[cod];
-    if(!entries || entries.length === 0) return;
-    document.getElementById('tm-div-produto').innerHTML = esc(nome) + ' <span style="font-size:0.65rem;color:#64748b;font-family:monospace;">' + esc(cod) + '</span>';
-    var html = '<div style="display:flex;flex-direction:column;gap:8px;">';
-    entries.forEach(function(e){{
-      var deltaColor = e.delta < 0 ? '#ef4444' : '#06b6d4';
-      var deltaSign  = e.delta < 0 ? '▼' : '▲';
-      var statusLabel = e.status === 'falta' ? 'Falta' : 'Sobra';
-      html += '<div style="background:#111827;border-radius:10px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;">';
-      html += '<div>';
-      html += '<div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">Cooperado</div>';
-      html += '<div style="font-size:0.9rem;font-weight:600;color:#e8eaf0;">' + esc(e.cooperado) + '</div>';
-      html += '</div>';
-      html += '<div style="text-align:right;flex-shrink:0;">';
-      html += '<div style="font-size:0.65rem;color:#64748b;margin-bottom:2px;">' + esc(statusLabel) + '</div>';
-      html += '<div style="font-size:1rem;font-weight:700;color:' + deltaColor + ';font-family:monospace;">' + deltaSign + Math.abs(e.delta) + '</div>';
-      html += '</div>';
-      html += '</div>';
-    }});
-    html += '</div>';
-    document.getElementById('tm-div-body').innerHTML = html;
-    var overlay = document.getElementById('tm-div-overlay');
-    overlay.style.display = 'flex';
-  }}
-  document.addEventListener('click', function(ev){{
-    var tile = ev.target.closest('.tm-tile[data-codigo]');
-    if(tile){{ ev.stopPropagation(); openDivModal(tile); return; }}
-    var overlay = document.getElementById('tm-div-overlay');
-    if(overlay && !overlay.querySelector('#tm-div-modal').contains(ev.target)){{
-      overlay.style.display = 'none';
-    }}
-  }});
-  document.addEventListener('keydown', function(ev){{
-    if(ev.key === 'Escape') document.getElementById('tm-div-overlay').style.display = 'none';
-  }});
-}})();
-</script>
-'''
-
-    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>{modal_html}'
+    return f'<div style="display:flex;flex-direction:column;min-height:450px;">{"".join(parts)}</div>'
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -5804,6 +5745,87 @@ if has_mestre:
                 }
                 divs_map.setdefault(cod, []).append(entry)
         st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map, divergencias_map=divs_map), unsafe_allow_html=True)
+
+        # Injeta modal de cooperados via components.v1.html (st.markdown bloqueia <script>)
+        import json as _json
+        import streamlit.components.v1 as _comp
+        _divs_json = _json.dumps(divs_map, ensure_ascii=False)
+        _comp.html(f"""
+<script>
+(function() {{
+  var doc = window.parent.document;
+  var DIVS = {_divs_json};
+
+  // Remove e recria o overlay para garantir dados atualizados
+  var old = doc.getElementById('tm-div-overlay');
+  if (old) old.remove();
+
+  var overlay = doc.createElement('div');
+  overlay.id = 'tm-div-overlay';
+  overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99999;align-items:center;justify-content:center;';
+  overlay.innerHTML = [
+    '<div id="tm-div-modal" style="background:#1a1d2e;border:1px solid #2d3748;border-radius:16px;',
+    'padding:24px;min-width:320px;max-width:480px;width:90%;',
+    'box-shadow:0 20px 60px rgba(0,0,0,0.6);position:relative;">',
+      '<button id="tm-div-close" style="position:absolute;top:12px;right:14px;background:none;border:none;',
+      'color:#64748b;font-size:1.2rem;cursor:pointer;line-height:1;">&#x2715;</button>',
+      '<div style="font-size:0.65rem;color:#64748b;font-family:monospace;letter-spacing:1px;',
+      'text-transform:uppercase;margin-bottom:4px;">Divergências</div>',
+      '<div id="tm-div-produto" style="font-size:1rem;font-weight:700;color:#e8eaf0;margin-bottom:16px;"></div>',
+      '<div id="tm-div-body"></div>',
+    '</div>'
+  ].join('');
+  doc.body.appendChild(overlay);
+
+  doc.getElementById('tm-div-close').addEventListener('click', function() {{
+    overlay.style.display = 'none';
+  }});
+  overlay.addEventListener('click', function(ev) {{
+    if (ev.target === overlay) overlay.style.display = 'none';
+  }});
+  doc.addEventListener('keydown', function(ev) {{
+    if (ev.key === 'Escape') overlay.style.display = 'none';
+  }});
+
+  function esc(s) {{ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
+
+  function openModal(tile) {{
+    var cod  = tile.getAttribute('data-codigo');
+    var nome = (tile.querySelector('.tm-name') || {{}}).innerText || cod;
+    var entries = DIVS[cod];
+    if (!entries || entries.length === 0) return;
+    doc.getElementById('tm-div-produto').innerHTML =
+      esc(nome) + ' <span style="font-size:0.65rem;color:#64748b;font-family:monospace;">' + esc(cod) + '</span>';
+    var html = '<div style="display:flex;flex-direction:column;gap:8px;">';
+    entries.forEach(function(e) {{
+      var clr  = e.delta < 0 ? '#ef4444' : '#06b6d4';
+      var sign = e.delta < 0 ? '&#9660;' : '&#9650;';
+      var lbl  = e.status === 'falta' ? 'Falta' : 'Sobra';
+      html += '<div style="background:#111827;border-radius:10px;padding:12px 14px;' +
+              'display:flex;align-items:center;justify-content:space-between;gap:12px;">';
+      html += '<div><div style="font-size:0.75rem;color:#94a3b8;margin-bottom:2px;">Cooperado</div>' +
+              '<div style="font-size:0.9rem;font-weight:600;color:#e8eaf0;">' + esc(e.cooperado) + '</div></div>';
+      html += '<div style="text-align:right;flex-shrink:0;">' +
+              '<div style="font-size:0.65rem;color:#64748b;margin-bottom:2px;">' + lbl + '</div>' +
+              '<div style="font-size:1rem;font-weight:700;color:' + clr + ';font-family:monospace;">' +
+              sign + Math.abs(e.delta) + '</div></div>';
+      html += '</div>';
+    }});
+    html += '</div>';
+    doc.getElementById('tm-div-body').innerHTML = html;
+    overlay.style.display = 'flex';
+  }}
+
+  // Remove listener anterior se existir
+  if (doc._tmClickHandler) doc.removeEventListener('click', doc._tmClickHandler);
+  doc._tmClickHandler = function(ev) {{
+    var tile = ev.target.closest ? ev.target.closest('.tm-tile[data-codigo]') : null;
+    if (tile) {{ openModal(tile); return; }}
+  }};
+  doc.addEventListener('click', doc._tmClickHandler);
+}})();
+</script>
+""", height=0)
 
     with t2:
         df_div = get_divergencias()
