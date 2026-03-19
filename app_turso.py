@@ -912,6 +912,18 @@ def _get_connection():
             criado_em TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS historico_divergencias (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            categoria TEXT NOT NULL,
+            cooperado TEXT DEFAULT '',
+            delta INTEGER NOT NULL,
+            status TEXT NOT NULL,
+            criado_em TEXT NOT NULL
+        )
+    """)
     conn.commit()
 
     # ── Migrações (roda 1x) ──
@@ -2279,9 +2291,14 @@ def registrar_divergencia_manual(codigo: str, delta: int, cooperado: str = "") -
             return (False, f"Código '{codigo}' não encontrado.")
         produto, categoria = row
         status = "sobra" if delta > 0 else "falta"
+        agora = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         conn.execute(
             "INSERT INTO divergencias (codigo, produto, categoria, delta, status, cooperado, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (codigo, produto, categoria, delta, status, cooperado.strip(), datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")),
+            (codigo, produto, categoria, delta, status, cooperado.strip(), agora),
+        )
+        conn.execute(
+            "INSERT INTO historico_divergencias (codigo, produto, categoria, cooperado, delta, status, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (codigo, produto, categoria, cooperado.strip(), delta, status, agora),
         )
         conn.commit()
         sync_db()
@@ -2332,6 +2349,44 @@ def get_divergencias() -> pd.DataFrame:
         return pd.DataFrame(rows, columns=["id", "codigo", "produto", "categoria", "delta", "status", "cooperado", "criado_em", "qtd_sistema"])
     except Exception:
         return pd.DataFrame(columns=["id", "codigo", "produto", "categoria", "delta", "status", "cooperado", "criado_em", "qtd_sistema"])
+
+
+def get_historico_divergencias() -> pd.DataFrame:
+    """Retorna todo o histórico de divergências registradas (nunca apagadas automaticamente)."""
+    try:
+        conn = get_db()
+        rows = conn.execute(
+            "SELECT id, codigo, produto, categoria, cooperado, delta, status, criado_em "
+            "FROM historico_divergencias ORDER BY criado_em DESC"
+        ).fetchall()
+        return pd.DataFrame(rows, columns=["id", "codigo", "produto", "categoria", "cooperado", "delta", "status", "criado_em"])
+    except Exception:
+        return pd.DataFrame(columns=["id", "codigo", "produto", "categoria", "cooperado", "delta", "status", "criado_em"])
+
+
+def apagar_historico_divergencia(hist_id: int):
+    """Remove um registro específico do histórico."""
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM historico_divergencias WHERE id = ?", [hist_id])
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao apagar histórico: {e}")
+
+
+def apagar_todo_historico_divergencias():
+    """Apaga todo o histórico de divergências."""
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM historico_divergencias")
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao apagar histórico: {e}")
+
+
+_SENHA_HISTORICO = "força"  # mesma senha de acesso ao dashboard
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -6687,6 +6742,100 @@ if has_mestre:
             '</div>',
             unsafe_allow_html=True
         )
+
+        # ── Histórico de Divergências ────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("### 📋 Histórico de Divergências")
+
+        df_hist = get_historico_divergencias()
+
+        if df_hist.empty:
+            st.info("Nenhuma divergência registrada ainda.")
+        else:
+            # ── CSS da tabela ────────────────────────────────────────────────
+            st.markdown("""
+            <style>
+            .hdiv-table{width:100%;border-collapse:collapse;font-size:0.82rem;}
+            .hdiv-table th{background:#111827;color:#64748b;font-size:0.65rem;font-weight:700;
+                text-transform:uppercase;letter-spacing:1px;padding:8px 12px;text-align:left;
+                border-bottom:2px solid #1e293b;}
+            .hdiv-table td{padding:8px 12px;border-bottom:1px solid #1e293b;color:#cbd5e1;vertical-align:middle;}
+            .hdiv-table tr:hover td{background:rgba(255,255,255,0.02);}
+            .hdiv-falta{color:#ef4444;font-weight:700;font-family:monospace;}
+            .hdiv-sobra{color:#06b6d4;font-weight:700;font-family:monospace;}
+            .hdiv-badge-falta{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.65rem;font-weight:700;
+                background:rgba(239,68,68,0.12);color:#ef4444;border:1px solid rgba(239,68,68,0.3);}
+            .hdiv-badge-sobra{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.65rem;font-weight:700;
+                background:rgba(6,182,212,0.12);color:#06b6d4;border:1px solid rgba(6,182,212,0.3);}
+            .hdiv-cod{font-family:monospace;font-size:0.75rem;color:#94a3b8;}
+            </style>
+            """, unsafe_allow_html=True)
+
+            # ── Cabeçalho com contagem e botão limpar ────────────────────────
+            hd_col1, hd_col2 = st.columns([3, 1])
+            with hd_col1:
+                st.caption(f"{len(df_hist)} registro(s) no histórico")
+            with hd_col2:
+                if st.button("🗑️ Limpar tudo", key="hist_btn_limpar_tudo", type="secondary"):
+                    st.session_state["hist_limpar_tudo"] = True
+
+            # ── Confirmação de "limpar tudo" com senha ────────────────────────
+            if st.session_state.get("hist_limpar_tudo"):
+                with st.container():
+                    st.warning("⚠️ Isso apagará **todo** o histórico de divergências. Confirme a senha:")
+                    lc1, lc2, lc3 = st.columns([2, 1, 1])
+                    with lc1:
+                        senha_lt = st.text_input("Senha", type="password", key="hist_senha_limpar", label_visibility="collapsed", placeholder="🔑 Senha para confirmar")
+                    with lc2:
+                        if st.button("Confirmar", key="hist_confirmar_limpar", type="primary"):
+                            if senha_lt == _SENHA_HISTORICO:
+                                apagar_todo_historico_divergencias()
+                                st.session_state.pop("hist_limpar_tudo", None)
+                                st.session_state.pop("hist_senha_limpar", None)
+                                st.success("✅ Histórico apagado.")
+                                st.rerun()
+                            else:
+                                st.error("❌ Senha incorreta.")
+                    with lc3:
+                        if st.button("Cancelar", key="hist_cancelar_limpar"):
+                            st.session_state.pop("hist_limpar_tudo", None)
+                            st.rerun()
+
+            # ── Tabela ────────────────────────────────────────────────────────
+            rows_html = ""
+            for _, hr in df_hist.iterrows():
+                sinal = "▼" if hr["delta"] < 0 else "▲"
+                cls_delta = "hdiv-falta" if hr["delta"] < 0 else "hdiv-sobra"
+                cls_badge = "hdiv-badge-falta" if hr["status"] == "falta" else "hdiv-badge-sobra"
+                status_label = "Falta" if hr["status"] == "falta" else "Sobra"
+                coop = str(hr["cooperado"]) if hr["cooperado"] else "—"
+                try:
+                    data_fmt = datetime.strptime(str(hr["criado_em"]), "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%Y %H:%M")
+                except Exception:
+                    data_fmt = str(hr["criado_em"])
+                rows_html += (
+                    f'<tr>'
+                    f'<td><span class="hdiv-cod">{hr["codigo"]}</span></td>'
+                    f'<td>{hr["produto"]}</td>'
+                    f'<td style="color:#64748b;">{hr["categoria"]}</td>'
+                    f'<td>{coop}</td>'
+                    f'<td><span class="{cls_delta}">{sinal}{abs(int(hr["delta"]))}</span></td>'
+                    f'<td><span class="{cls_badge}">{status_label}</span></td>'
+                    f'<td style="color:#475569;font-size:0.75rem;font-family:monospace;">{data_fmt}</td>'
+                    f'</tr>'
+                )
+
+            st.markdown(
+                f'<div style="overflow-x:auto;border-radius:12px;border:1px solid #1e293b;">'
+                f'<table class="hdiv-table">'
+                f'<thead><tr>'
+                f'<th>Código</th><th>Produto</th><th>Categoria</th>'
+                f'<th>Cooperado</th><th>Delta</th><th>Status</th><th>Data</th>'
+                f'</tr></thead>'
+                f'<tbody>{rows_html}</tbody>'
+                f'</table></div>',
+                unsafe_allow_html=True
+            )
 
     with t9:
         st.markdown("""
