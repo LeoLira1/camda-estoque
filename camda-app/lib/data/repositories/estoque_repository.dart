@@ -112,32 +112,28 @@ class EstoqueRepository {
         ? 'WHERE UPPER(TRIM(produto)) NOT IN ($ph)'
         : '';
     try {
-      final results = await Future.wait([
-        _client.query('''
+      final result = await _client.query('''
           SELECT
             COUNT(*) as total,
             SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) as ok,
-            SUM(qtd_sistema) as total_itens
+            SUM(qtd_sistema) as total_itens,
+            SUM(CASE WHEN status = 'falta'
+                          OR codigo IN (SELECT DISTINCT codigo FROM divergencias WHERE status = 'falta')
+                     THEN 1 ELSE 0 END) as faltas,
+            SUM(CASE WHEN status = 'sobra'
+                          OR codigo IN (SELECT DISTINCT codigo FROM divergencias WHERE status = 'sobra')
+                     THEN 1 ELSE 0 END) as sobras
           FROM estoque_mestre
           $whereClause
-        ''', [..._produtosIgnorados]),
-        _client.query(
-          "SELECT SUM(CASE WHEN status='falta' THEN 1 ELSE 0 END) as faltas, "
-          "SUM(CASE WHEN status='sobra' THEN 1 ELSE 0 END) as sobras FROM divergencias",
-        ),
-      ]);
-      final r1 = results[0];
-      final r2 = results[1];
-      if (r1.hasError) throw TursoException(r1.error!);
-      if (r2.hasError) throw TursoException(r2.error!);
-      final row1 = r1.toMaps().firstOrNull ?? {};
-      final row2 = r2.toMaps().firstOrNull ?? {};
+        ''', [..._produtosIgnorados]);
+      if (result.hasError) throw TursoException(result.error!);
+      final row = result.toMaps().firstOrNull ?? {};
       return EstoqueResumo(
-        total: _toInt(row1['total']),
-        faltas: _toInt(row2['faltas']),
-        sobras: _toInt(row2['sobras']),
-        ok: _toInt(row1['ok']),
-        totalItens: _toInt(row1['total_itens']),
+        total: _toInt(row['total']),
+        faltas: _toInt(row['faltas']),
+        sobras: _toInt(row['sobras']),
+        ok: _toInt(row['ok']),
+        totalItens: _toInt(row['total_itens']),
       );
     } catch (_) {
       // Calcula resumo a partir do cache local se rede falhar
