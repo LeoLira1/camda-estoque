@@ -2197,6 +2197,101 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 st.session_state["pa_chart_ver"] += 1
                 st.rerun()
 
+    # ── 12.5. Pesquisa por Fabricante ────────────────────────────────────────
+    st.markdown("---")
+    with st.expander("🏭 Pesquisa por Fabricante", expanded=False):
+        _categorias_fab = sorted(df_enr["categoria"].dropna().unique().tolist())
+        if not _categorias_fab:
+            st.info("Nenhuma categoria/fabricante encontrada nos dados do estoque.")
+        else:
+            _fab_opcoes = ["Selecione um fabricante..."] + _categorias_fab
+            _fab_sel_pa = st.selectbox(
+                "Fabricante",
+                _fab_opcoes,
+                key="pa_fab_search",
+                label_visibility="collapsed",
+            )
+
+            if _fab_sel_pa == "Selecione um fabricante...":
+                st.markdown(
+                    '<div style="color:#6B7280;font-size:0.85rem;text-align:center;padding:16px 0;">'
+                    "Selecione um fabricante para ver seus produtos e volumes em estoque"
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
+            else:
+                df_fab_pa = df_enr[df_enr["categoria"] == _fab_sel_pa].copy()
+                df_fab_pa = df_fab_pa.sort_values("quantidade", ascending=False)
+
+                _n_prods_fab   = df_fab_pa["produto"].nunique()
+                _total_qty_fab = float(df_fab_pa["quantidade"].sum())
+                _total_vol_l   = float(df_fab_pa["volume_litros"].sum(skipna=True))
+                _total_vol_k   = float(df_fab_pa["volume_kg"].sum(skipna=True))
+                _n_pa_fab = df_fab_pa[
+                    df_fab_pa["principio_ativo"] != "Não identificado"
+                ]["principio_ativo"].nunique()
+
+                ff1, ff2, ff3, ff4 = st.columns(4)
+                ff1.metric("Produtos", _n_prods_fab)
+                ff2.metric("P.A. distintos", _n_pa_fab)
+                ff3.metric("Total em estoque", f"{int(_total_qty_fab):,} un.".replace(",", "."))
+                _vol_txt_fab = _fmt_volume(
+                    _total_vol_l if _total_vol_l > 0 else None,
+                    _total_vol_k if _total_vol_k > 0 else None,
+                    _total_qty_fab,
+                )
+                ff4.metric("Volume total", _vol_txt_fab)
+
+                st.markdown(
+                    f"<div style='font-size:0.85rem;color:#6B7280;margin:8px 0;'>"
+                    f"<b>{_n_prods_fab}</b> produto(s) de <b>{_fab_sel_pa}</b> em estoque</div>",
+                    unsafe_allow_html=True,
+                )
+
+                _mini_fab = ""
+                for _i, (_, _r) in enumerate(df_fab_pa.iterrows()):
+                    _cor = _PA_PALETTE[_i % len(_PA_PALETTE)]
+                    _pct = (_r["quantidade"] / _total_qty_fab * 100) if _total_qty_fab > 0 else 0
+                    _vol_l_r = _r.get("volume_litros")
+                    _vol_k_r = _r.get("volume_kg")
+                    _lit_emb_r = _r.get("litros_emb")
+                    _kg_emb_r  = _r.get("kg_emb")
+                    if pd.notna(_vol_l_r) and _vol_l_r is not None:
+                        _lf = str(int(_lit_emb_r)) if _lit_emb_r == int(_lit_emb_r) else f"{_lit_emb_r:.3f}".rstrip("0")
+                        _vol_str_r = f"{int(_r['quantidade'])} un × {_lf}L = {int(_vol_l_r):,}L".replace(",", ".")
+                    elif pd.notna(_vol_k_r) and _vol_k_r is not None:
+                        _kf = str(int(_kg_emb_r)) if _kg_emb_r == int(_kg_emb_r) else f"{_kg_emb_r:.3f}".rstrip("0")
+                        _vkf = f"{int(_vol_k_r):,}".replace(",", ".") if _vol_k_r >= 1 else f"{_vol_k_r:.1f}"
+                        _vol_str_r = f"{int(_r['quantidade'])} un × {_kf}kg = {_vkf}kg"
+                    else:
+                        _vol_str_r = f"{int(_r['quantidade'])} un"
+                    _pa_str_r = _r["principio_ativo"] if _r["principio_ativo"] != "Não identificado" else "—"
+                    _cod_r = str(_r.get("codigo", ""))
+                    _cod_html_r = (
+                        f'<span style="color:#6B7280;font-size:10px;margin-left:6px">[{_cod_r}]</span>'
+                        if _cod_r and not _cod_r.startswith("AUTO_") else ""
+                    )
+                    _mini_fab += (
+                        f'<div style="margin-bottom:10px">'
+                        f'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'
+                        f'<span style="color:#F9FAFB">{_r["produto"]}{_cod_html_r}</span>'
+                        f'<span style="color:{_cor};font-weight:700">{_vol_str_r}</span>'
+                        f'</div>'
+                        f'<div style="font-size:10px;color:#6B7280;margin-bottom:4px">🧬 {_pa_str_r}</div>'
+                        f'<div style="background:#1F2937;border-radius:4px;height:6px;overflow:hidden">'
+                        f'<div style="width:{_pct:.1f}%;height:100%;background:{_cor};border-radius:4px"></div>'
+                        f'</div>'
+                        f'</div>'
+                    )
+
+                st.markdown(
+                    '<div style="background:#111827;border:1px solid #1F2937;'
+                    'border-radius:12px;padding:16px;">'
+                    + _mini_fab +
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+
     # ── 13. Produtos sem P.A. mapeado ─────────────────────────────────────────
     if n_nao_id > 0:
         st.caption(
