@@ -1,12 +1,45 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
-import '../../core/utils/date_utils.dart';
 import '../../core/utils/number_utils.dart';
 import '../../data/models/validade_lote.dart';
 import '../../data/repositories/validade_repository.dart';
 import '../../shared/widgets/loading_widget.dart' as lw;
 import '../../shared/widgets/stat_card.dart';
+
+// Opções de filtro de dias
+enum _DiasFiltro {
+  todos,
+  vencidos,
+  ate30,
+  ate60,
+  ate90,
+  ok,
+}
+
+extension _DiasFiltroLabel on _DiasFiltro {
+  String get label {
+    switch (this) {
+      case _DiasFiltro.todos:   return 'Todos';
+      case _DiasFiltro.vencidos: return 'Vencidos';
+      case _DiasFiltro.ate30:   return '≤ 30 dias';
+      case _DiasFiltro.ate60:   return '≤ 60 dias';
+      case _DiasFiltro.ate90:   return '≤ 90 dias';
+      case _DiasFiltro.ok:      return 'OK (> 90 dias)';
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case _DiasFiltro.todos:    return AppColors.textMuted;
+      case _DiasFiltro.vencidos: return AppColors.red;
+      case _DiasFiltro.ate30:    return AppColors.amber;
+      case _DiasFiltro.ate60:    return const Color(0xFFFFCC44);
+      case _DiasFiltro.ate90:    return AppColors.cyan;
+      case _DiasFiltro.ok:       return AppColors.green;
+    }
+  }
+}
 
 class ValidadeScreen extends StatefulWidget {
   const ValidadeScreen({super.key});
@@ -15,32 +48,21 @@ class ValidadeScreen extends StatefulWidget {
   State<ValidadeScreen> createState() => _ValidadeScreenState();
 }
 
-class _ValidadeScreenState extends State<ValidadeScreen>
-    with SingleTickerProviderStateMixin {
+class _ValidadeScreenState extends State<ValidadeScreen> {
   final _repo = ValidadeRepository();
-  late TabController _tabController;
 
   List<ValidadeLote> _todos = [];
   List<String> _grupos = [];
   String _grupoFiltro = 'Todos';
+  _DiasFiltro _diasFiltro = _DiasFiltro.todos;
   ValidadeResumo? _resumo;
   bool _loading = true;
   String? _error;
 
-  // 6 abas: Vencidos | 7d | 30d | 60d | 90d | OK
-  static const _tabDias = [-1, 7, 30, 60, 90, 0];
-
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
     _loadData();
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadData() async {
@@ -64,19 +86,34 @@ class _ValidadeScreenState extends State<ValidadeScreen>
     }
   }
 
-  List<ValidadeLote> get _filteredAll {
-    if (_grupoFiltro == 'Todos') return _todos;
-    return _todos.where((l) => l.grupo == _grupoFiltro).toList();
-  }
+  List<ValidadeLote> get _filtered {
+    var list = _grupoFiltro == 'Todos'
+        ? _todos
+        : _todos.where((l) => l.grupo == _grupoFiltro).toList();
 
-  /// -1 = vencidos, 0 = OK (>90d), X = vencendo em até X dias
-  List<ValidadeLote> _itemsParaTab(int dias) {
-    if (dias == -1) return _filteredAll.where((l) => l.isVencido).toList();
-    if (dias == 0)  return _filteredAll.where((l) => !l.isVencido && l.diasParaVencer > 90).toList();
-    return _filteredAll
-        .where((l) => !l.isVencido && l.diasParaVencer <= dias)
-        .toList()
-      ..sort((a, b) => a.diasParaVencer.compareTo(b.diasParaVencer));
+    switch (_diasFiltro) {
+      case _DiasFiltro.todos:
+        return list;
+      case _DiasFiltro.vencidos:
+        return list.where((l) => l.isVencido).toList();
+      case _DiasFiltro.ate30:
+        return list
+            .where((l) => !l.isVencido && l.diasParaVencer <= 30)
+            .toList()
+          ..sort((a, b) => a.diasParaVencer.compareTo(b.diasParaVencer));
+      case _DiasFiltro.ate60:
+        return list
+            .where((l) => !l.isVencido && l.diasParaVencer <= 60)
+            .toList()
+          ..sort((a, b) => a.diasParaVencer.compareTo(b.diasParaVencer));
+      case _DiasFiltro.ate90:
+        return list
+            .where((l) => !l.isVencido && l.diasParaVencer <= 90)
+            .toList()
+          ..sort((a, b) => a.diasParaVencer.compareTo(b.diasParaVencer));
+      case _DiasFiltro.ok:
+        return list.where((l) => !l.isVencido && l.diasParaVencer > 90).toList();
+    }
   }
 
   @override
@@ -88,20 +125,6 @@ class _ValidadeScreenState extends State<ValidadeScreen>
         actions: [
           IconButton(onPressed: _loadData, icon: const Icon(Icons.refresh, size: 20)),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: true,
-          tabAlignment: TabAlignment.start,
-          tabs: [
-            _buildTabLabel('Vencidos', AppColors.red),
-            _buildTabLabel('≤ 7 dias', AppColors.statusAvaria),
-            _buildTabLabel('≤ 30 dias', AppColors.amber),
-            _buildTabLabel('≤ 60 dias', const Color(0xFFFFCC44)),
-            _buildTabLabel('≤ 90 dias', AppColors.cyan),
-            _buildTabLabel('OK', AppColors.green),
-          ],
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-        ),
       ),
       body: _loading
           ? const lw.LoadingWidget(message: 'Carregando validade...')
@@ -110,26 +133,10 @@ class _ValidadeScreenState extends State<ValidadeScreen>
               : Column(
                   children: [
                     if (_resumo != null) _buildResumoBar(),
-                    _buildGrupoFilter(),
-                    Expanded(
-                      child: TabBarView(
-                        controller: _tabController,
-                        children: _tabDias
-                            .map((dias) => _buildList(_itemsParaTab(dias), dias))
-                            .toList(),
-                      ),
-                    ),
+                    _buildFilters(),
+                    Expanded(child: _buildList()),
                   ],
                 ),
-    );
-  }
-
-  Tab _buildTabLabel(String text, Color color) {
-    return Tab(
-      child: Text(
-        text,
-        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color),
-      ),
     );
   }
 
@@ -138,21 +145,9 @@ class _ValidadeScreenState extends State<ValidadeScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: StatCardRow(cards: [
-        StatCard(
-          value: r.vencidos.toString(),
-          label: 'Vencidos',
-          valueColor: AppColors.red,
-        ),
-        StatCard(
-          value: r.criticos.toString(),
-          label: 'Críticos',
-          valueColor: AppColors.statusAvaria,
-        ),
-        StatCard(
-          value: r.alertas.toString(),
-          label: 'Alertas',
-          valueColor: AppColors.amber,
-        ),
+        StatCard(value: r.vencidos.toString(), label: 'Vencidos', valueColor: AppColors.red),
+        StatCard(value: r.criticos.toString(), label: 'Críticos', valueColor: AppColors.statusAvaria),
+        StatCard(value: r.alertas.toString(), label: 'Alertas', valueColor: AppColors.amber),
         StatCard(
           value: (r.total - r.vencidos - r.criticos - r.alertas).toString(),
           label: 'OK',
@@ -162,46 +157,132 @@ class _ValidadeScreenState extends State<ValidadeScreen>
     );
   }
 
-  Widget _buildGrupoFilter() {
-    if (_grupos.length <= 1) return const SizedBox.shrink();
+  Widget _buildFilters() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: SizedBox(
-        height: 32,
-        child: ListView(
-          scrollDirection: Axis.horizontal,
-          children: _grupos
-              .map((g) => Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: ChoiceChip(
-                      label: Text(g, style: const TextStyle(fontSize: 11)),
-                      selected: _grupoFiltro == g,
-                      selectedColor: AppColors.blue,
-                      onSelected: (_) => setState(() => _grupoFiltro = g),
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      child: Row(
+        children: [
+          Expanded(child: _buildDiasDropdown()),
+          const SizedBox(width: 10),
+          if (_grupos.length > 1) Expanded(child: _buildCategoriaDropdown()),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiasDropdown() {
+    final color = _diasFiltro.color;
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.5)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<_DiasFiltro>(
+          value: _diasFiltro,
+          isExpanded: true,
+          icon: Icon(Icons.keyboard_arrow_down, size: 18, color: color),
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: color,
+            fontFamily: 'Outfit',
+          ),
+          dropdownColor: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(10),
+          items: _DiasFiltro.values.map((f) {
+            return DropdownMenuItem(
+              value: f,
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: f.color,
+                      shape: BoxShape.circle,
                     ),
-                  ))
-              .toList(),
+                  ),
+                  Text(f.label, style: TextStyle(color: f.color, fontSize: 12)),
+                ],
+              ),
+            );
+          }).toList(),
+          onChanged: (v) {
+            if (v != null) setState(() => _diasFiltro = v);
+          },
         ),
       ),
     );
   }
 
-  Widget _buildList(List<ValidadeLote> items, int dias) {
+  Widget _buildCategoriaDropdown() {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: _grupoFiltro == 'Todos'
+              ? AppColors.textDisabled.withOpacity(0.4)
+              : AppColors.blue.withOpacity(0.5),
+        ),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _grupoFiltro,
+          isExpanded: true,
+          icon: Icon(
+            Icons.keyboard_arrow_down,
+            size: 18,
+            color: _grupoFiltro == 'Todos' ? AppColors.textMuted : AppColors.blue,
+          ),
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: _grupoFiltro == 'Todos' ? AppColors.textMuted : AppColors.blue,
+            fontFamily: 'Outfit',
+          ),
+          dropdownColor: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(10),
+          items: _grupos.map((g) {
+            final isSelected = g == _grupoFiltro;
+            return DropdownMenuItem(
+              value: g,
+              child: Text(
+                g,
+                style: TextStyle(
+                  color: isSelected ? AppColors.blue : AppColors.textMuted,
+                  fontSize: 12,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          }).toList(),
+          onChanged: (v) {
+            if (v != null) setState(() => _grupoFiltro = v);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildList() {
+    final items = _filtered;
     if (items.isEmpty) {
-      final msg = dias == -1
-          ? 'Nenhum lote vencido.'
-          : dias == 0
-              ? 'Nenhum lote OK (> 90 dias).'
-              : 'Nenhum lote vencendo em $dias dias.';
       return lw.EmptyWidget(
-        message: msg,
+        message: 'Nenhum lote encontrado para os filtros selecionados.',
         icon: Icons.event_available_outlined,
       );
     }
 
     return ListView.separated(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
       itemCount: items.length,
       separatorBuilder: (_, __) => const SizedBox(height: 6),
       itemBuilder: (context, i) => _LoteTile(lote: items[i])
