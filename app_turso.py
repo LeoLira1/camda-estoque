@@ -4570,8 +4570,19 @@ def get_esquecidos_com_validade(dias_min: int) -> pd.DataFrame:
             except Exception:
                 return 9999
 
+        # Normaliza nome do produto (remove prefixo tipo "CODE - " se existir)
+        def _chave_produto(nome: str) -> str:
+            if " - " in nome:
+                nome = nome.split(" - ", 1)[1]
+            return nome.strip().upper()
+
         df["dias_parado"] = df["ultima_venda"].apply(_dias)
-        df = df[df["dias_parado"] >= dias_min].copy()
+        df["_nome_chave"] = df["produto"].apply(_chave_produto)
+
+        # Deduplica por nome normalizado: se qualquer código do produto foi vendido
+        # recentemente, todos os códigos desse produto saem dos "esquecidos".
+        _min_dias = df.groupby("_nome_chave")["dias_parado"].transform("min")
+        df = df[_min_dias >= dias_min].copy()
 
         if df.empty:
             return df
@@ -4589,13 +4600,7 @@ def get_esquecidos_com_validade(dias_min: int) -> pd.DataFrame:
             df_val["vencimento"] = pd.to_datetime(df_val["vencimento"], errors="coerce")
             df_val["vl_chave"] = df_val["vl_produto"].str.upper().str.strip()
 
-            # Criar chave para estoque (remove prefixo "CODE - " se existir)
-            def _chave_produto(nome: str) -> str:
-                if " - " in nome:
-                    nome = nome.split(" - ", 1)[1]
-                return nome.strip().upper()
-
-            df["em_chave"] = df["produto"].apply(_chave_produto)
+            df["em_chave"] = df["_nome_chave"]
 
             # Mapa: chave → validade mais próxima (menor vencimento válido)
             vl_map: dict = {}
