@@ -611,37 +611,49 @@ st.markdown("""
 import streamlit.components.v1 as _stc_global
 _stc_global.html("""<script>
 (function() {
-  function disablePasswordManager() {
-    try {
-      var doc = window.parent.document;
-      // Desabilita em todos os inputs
-      doc.querySelectorAll('input, select, textarea').forEach(function(el) {
-        el.setAttribute('autocomplete', 'off');
-        el.setAttribute('autocorrect', 'off');
-        el.setAttribute('autocapitalize', 'off');
-        el.setAttribute('spellcheck', 'false');
-        el.setAttribute('data-lpignore', 'true');
-        el.setAttribute('data-form-type', 'other');
-      });
-      // Desabilita em todos os forms
-      doc.querySelectorAll('form').forEach(function(f) {
-        f.setAttribute('autocomplete', 'off');
-      });
-      // Remove atributos name que ativam o gerenciador de senhas
-      doc.querySelectorAll('input[type="password"]').forEach(function(el) {
-        el.setAttribute('autocomplete', 'new-password');
-        el.setAttribute('name', 'camda_field_' + Math.random().toString(36).substr(2,9));
-      });
-    } catch(e) {}
+  // Tenta acessar tanto window.parent quanto window.top
+  var _docs = [];
+  try { if (window.parent && window.parent.document) _docs.push(window.parent.document); } catch(e) {}
+  try { if (window.top && window.top.document && window.top.document !== (_docs[0]||null)) _docs.push(window.top.document); } catch(e) {}
+  if (_docs.length === 0) return;
+
+  function applyAttrs(el) {
+    el.setAttribute('autocomplete', 'new-password');
+    el.setAttribute('autocorrect', 'off');
+    el.setAttribute('autocapitalize', 'off');
+    el.setAttribute('spellcheck', 'false');
+    el.setAttribute('data-lpignore', 'true');
+    el.setAttribute('data-form-type', 'other');
+    el.setAttribute('data-1p-ignore', 'true');
   }
+
+  function disablePasswordManager() {
+    _docs.forEach(function(doc) {
+      try {
+        doc.querySelectorAll('input, select, textarea').forEach(applyAttrs);
+        doc.querySelectorAll('form').forEach(function(f) {
+          f.setAttribute('autocomplete', 'off');
+        });
+      } catch(e) {}
+    });
+  }
+
+  // Roda imediatamente e com interval agressivo nos primeiros 2 min
   disablePasswordManager();
-  setTimeout(disablePasswordManager, 200);
-  setTimeout(disablePasswordManager, 600);
-  setTimeout(disablePasswordManager, 1500);
-  var _obs = new MutationObserver(function() { disablePasswordManager(); });
-  try {
-    _obs.observe(window.parent.document.body, { childList: true, subtree: true });
-  } catch(e) {}
+  var _count = 0;
+  var _iv = setInterval(function() {
+    disablePasswordManager();
+    _count++;
+    if (_count > 400) clearInterval(_iv); // para após ~2min
+  }, 300);
+
+  // MutationObserver como backup
+  _docs.forEach(function(doc) {
+    try {
+      var obs = new MutationObserver(disablePasswordManager);
+      obs.observe(doc.body, { childList: true, subtree: true });
+    } catch(e) {}
+  });
 })();
 </script>""", height=0)
 
@@ -5923,6 +5935,29 @@ if has_mestre:
                 _filtro_obs = st.selectbox("Cooperado", ["Todos"] + coop_unicos, key="div_filtro_obs")
             with _c2:
                 _agrupar = st.checkbox("Agrupar", value=True, key="div_agrupar")
+            # Injeta JS local para suprimir popup de gerenciador de senhas no selectbox
+            import streamlit.components.v1 as _stc_div
+            _stc_div.html("""<script>
+            (function(){
+              function _fix(){
+                var _ds=[];
+                try{if(window.parent&&window.parent.document)_ds.push(window.parent.document);}catch(e){}
+                try{if(window.top&&window.top.document&&window.top.document!==(_ds[0]||null))_ds.push(window.top.document);}catch(e){}
+                _ds.forEach(function(d){
+                  try{
+                    d.querySelectorAll('input,select,textarea').forEach(function(el){
+                      el.setAttribute('autocomplete','new-password');
+                      el.setAttribute('data-lpignore','true');
+                      el.setAttribute('data-form-type','other');
+                      el.setAttribute('data-1p-ignore','true');
+                    });
+                  }catch(e){}
+                });
+              }
+              _fix();
+              [50,150,300,600,1000,2000].forEach(function(t){setTimeout(_fix,t);});
+            })();
+            </script>""", height=0)
 
             if _filtro_obs != "Todos":
                 df_div = df_div[df_div["cooperado"].fillna("").astype(str).str.strip() == _filtro_obs]
