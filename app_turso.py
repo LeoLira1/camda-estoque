@@ -7163,6 +7163,96 @@ if has_mestre:
                 df_show = df_show[df_show["STATUS"] != "OK"]
             df_show = df_show.sort_values("DIAS")
 
+            # ── Pesquisa por Fabricante ───────────────────────────────────────
+            st.markdown("---")
+            _badge_map = {
+                "VENCIDO":  '<span class="val-badge val-vencido">🔴 VENCIDO</span>',
+                "≤30 dias": '<span class="val-badge val-30">🟠 ≤30 dias</span>',
+                "≤60 dias": '<span class="val-badge val-60">🟡 ≤60 dias</span>',
+                "≤90 dias": '<span class="val-badge val-90">⚪ ≤90 dias</span>',
+                "OK":       '<span class="val-badge val-ok">🟢 OK</span>',
+            }
+            _status_order = {"VENCIDO": 0, "≤30 dias": 1, "≤60 dias": 2, "≤90 dias": 3, "OK": 4}
+
+            with st.expander("🏭 Pesquisa por Fabricante", expanded=False):
+                fabricantes_lista = ["Selecione um fabricante..."] + sorted(
+                    df_val_db["GRUPO"].dropna().unique().tolist()
+                )
+                fab_pesquisa = st.selectbox(
+                    "Fabricante",
+                    fabricantes_lista,
+                    key="val_fab_search",
+                    label_visibility="collapsed",
+                )
+
+                if fab_pesquisa == "Selecione um fabricante...":
+                    st.markdown(
+                        '<div style="color:#64748b;font-size:0.85rem;text-align:center;padding:16px 0;">'
+                        "Selecione um fabricante para ver seus produtos e estoque"
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
+                else:
+                    df_fab = df_val_db[df_val_db["GRUPO"] == fab_pesquisa].copy()
+                    n_produtos_fab = df_fab["PRODUTO"].nunique()
+                    total_qty_fab  = int(df_fab["QUANTIDADE"].sum())
+                    total_val_fab  = float(df_fab["VALOR"].sum())
+                    n_venc_fab     = int((df_fab["STATUS"] == "VENCIDO").sum())
+
+                    fm1, fm2, fm3, fm4 = st.columns(4)
+                    fm1.metric("Produtos únicos", n_produtos_fab)
+                    fm2.metric("Total em estoque", f"{total_qty_fab:,} un.".replace(",", "."))
+                    fm3.metric("Valor total", f"R$ {total_val_fab:,.2f}")
+                    fm4.metric("Lotes vencidos", n_venc_fab)
+
+                    # Agrupa por produto: pior status, total de lotes, qtd e valor
+                    df_fab_grp = df_fab.groupby("PRODUTO").agg(
+                        LOTES=("LOTE", "count"),
+                        QUANTIDADE=("QUANTIDADE", "sum"),
+                        VALOR=("VALOR", "sum"),
+                    ).reset_index()
+                    _pior_status = (
+                        df_fab.groupby("PRODUTO")["STATUS"]
+                        .apply(lambda x: min(x.tolist(), key=lambda s: _status_order.get(s, 99)))
+                        .reset_index()
+                        .rename(columns={"STATUS": "PIOR_STATUS"})
+                    )
+                    df_fab_grp = df_fab_grp.merge(_pior_status, on="PRODUTO")
+                    df_fab_grp = df_fab_grp.sort_values(
+                        "PIOR_STATUS", key=lambda col: col.map(_status_order)
+                    )
+
+                    st.markdown(
+                        f"<div style='font-size:0.85rem;color:#94a3b8;margin-bottom:8px;'>"
+                        f"<b>{n_produtos_fab}</b> produto(s) de <b>{fab_pesquisa}</b> no estoque</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                    for _, row in df_fab_grp.iterrows():
+                        prod_nome_f = (
+                            str(row["PRODUTO"]).split(" - ", 1)[-1]
+                            if " - " in str(row["PRODUTO"])
+                            else str(row["PRODUTO"])
+                        )
+                        badge_f = _badge_map.get(row["PIOR_STATUS"], row["PIOR_STATUS"])
+                        st.markdown(
+                            f"""
+                            <div class="val-row" style="margin:4px 0;">
+                                <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px;">
+                                    <span class="val-prod">{prod_nome_f}</span>
+                                    {badge_f}
+                                </div>
+                                <div class="val-meta">
+                                    {int(row['LOTES'])} lote(s)
+                                    &nbsp;·&nbsp; Qtd: {int(row['QUANTIDADE'])} un
+                                    &nbsp;·&nbsp; Valor: R$ {float(row['VALOR']):,.2f}
+                                </div>
+                            </div>
+                            """,
+                            unsafe_allow_html=True,
+                        )
+
+            st.markdown("---")
             # ── Gráfico por grupo (valor em risco) ────────────────────────────
             df_risco_grp = (
                 df_val_db[df_val_db["STATUS"].isin(["VENCIDO","≤30 dias","≤60 dias","≤90 dias"])]
