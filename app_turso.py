@@ -332,16 +332,26 @@ if not st.session_state.authenticated:
         (function(){
             function disablePwdManager(){
                 try{
-                    var inputs = window.parent.document.querySelectorAll('input[type="password"]');
-                    inputs.forEach(function(el){
+                    var doc = window.parent.document;
+                    doc.querySelectorAll('input, select, textarea').forEach(function(el){
+                        el.setAttribute('autocomplete','off');
+                        el.setAttribute('data-lpignore','true');
+                        el.setAttribute('data-form-type','other');
+                    });
+                    doc.querySelectorAll('input[type="password"]').forEach(function(el){
                         el.setAttribute('autocomplete','new-password');
-                        el.setAttribute('name','camda_pwd_' + Math.random());
+                        el.setAttribute('name','camda_pwd_' + Math.random().toString(36).substr(2,9));
+                    });
+                    doc.querySelectorAll('form').forEach(function(f){
+                        f.setAttribute('autocomplete','off');
                     });
                 }catch(e){}
             }
             disablePwdManager();
             setTimeout(disablePwdManager, 300);
             setTimeout(disablePwdManager, 800);
+            var _obs = new MutationObserver(disablePwdManager);
+            try{ _obs.observe(window.parent.document.body,{childList:true,subtree:true}); }catch(e){}
         })();
         </script>""", height=0)
         with st.form("form_login"):
@@ -598,28 +608,42 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Injetar JS: desabilitar gerenciador de senhas em todos os inputs ──────────
-st.markdown("""
-<script>
+import streamlit.components.v1 as _stc_global
+_stc_global.html("""<script>
 (function() {
   function disablePasswordManager() {
     try {
       var doc = window.parent.document;
-      doc.querySelectorAll('input').forEach(function(el) {
+      // Desabilita em todos os inputs
+      doc.querySelectorAll('input, select, textarea').forEach(function(el) {
         el.setAttribute('autocomplete', 'off');
         el.setAttribute('autocorrect', 'off');
         el.setAttribute('autocapitalize', 'off');
         el.setAttribute('spellcheck', 'false');
+        el.setAttribute('data-lpignore', 'true');
+        el.setAttribute('data-form-type', 'other');
+      });
+      // Desabilita em todos os forms
+      doc.querySelectorAll('form').forEach(function(f) {
+        f.setAttribute('autocomplete', 'off');
+      });
+      // Remove atributos name que ativam o gerenciador de senhas
+      doc.querySelectorAll('input[type="password"]').forEach(function(el) {
+        el.setAttribute('autocomplete', 'new-password');
+        el.setAttribute('name', 'camda_field_' + Math.random().toString(36).substr(2,9));
       });
     } catch(e) {}
   }
   disablePasswordManager();
-  var _obs = new MutationObserver(disablePasswordManager);
+  setTimeout(disablePasswordManager, 200);
+  setTimeout(disablePasswordManager, 600);
+  setTimeout(disablePasswordManager, 1500);
+  var _obs = new MutationObserver(function() { disablePasswordManager(); });
   try {
     _obs.observe(window.parent.document.body, { childList: true, subtree: true });
   } catch(e) {}
 })();
-</script>
-""", unsafe_allow_html=True)
+</script>""", height=0)
 
 # ── Injetar JS: contadores animados nos KPI metrics ──────────────────────────
 st.markdown("""
