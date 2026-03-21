@@ -2340,16 +2340,35 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 return f"{qtd} un × {kf}kg = {int(vk):,}kg".replace(",", ".")
             return f"{qtd} un"
 
-        # Validade mais próxima por produto
+        # Validade mais próxima por produto (com match exato + substring)
         _fc_val_map: dict = {}
         try:
             _fc_val_rows = get_db().execute(
-                "SELECT produto, MIN(vencimento) FROM validade_lotes GROUP BY produto"
+                "SELECT produto, vencimento FROM validade_lotes"
             ).fetchall()
             for _fvr in _fc_val_rows:
-                _fc_val_map[str(_fvr[0]).strip().upper()] = str(_fvr[1])
+                _fvk = str(_fvr[0]).strip().upper()
+                _fvv = str(_fvr[1])
+                if _fvk not in _fc_val_map or _fvv < _fc_val_map[_fvk]:
+                    _fc_val_map[_fvk] = _fvv
         except Exception:
             pass
+
+        def _fc_get_venc(nome: str) -> str:
+            k = str(nome).strip().upper()
+            v = _fc_val_map.get(k)
+            if v is None:
+                for mk, mv in _fc_val_map.items():
+                    if len(k) >= 6 and len(mk) >= 6 and (k in mk or mk in k):
+                        v = mv
+                        break
+            if v is None:
+                return "—"
+            try:
+                from datetime import datetime as _dt
+                return _dt.strptime(v, "%Y-%m-%d").strftime("%m/%Y")
+            except Exception:
+                return v
 
         # Injetar fontes + CSS uma vez
         st.markdown(
@@ -2434,7 +2453,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 _cemb  = _fc_emb(_cr)
                 _cvol  = _fc_vol_str(_cr)
                 _cpa   = _cr["principio_ativo"] if _cr["principio_ativo"] != "Não identificado" else "—"
-                _cvenc = _fc_val_map.get(str(_cr["produto"]).strip().upper(), "—")
+                _cvenc = _fc_get_venc(_cr["produto"])
                 _cicon_bg = f"{_ccat['bg']}1A"
                 _cout_cls = ' fc-out' if _cstatus == "out" else ""
                 _cards_html += (
