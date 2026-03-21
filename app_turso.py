@@ -2326,7 +2326,20 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             unsafe_allow_html=True,
         )
     else:
-        _fab_lista = sorted(_df_fab_map["fabricante"].unique().tolist())
+        _fab_busca = st.text_input(
+            "Buscar fabricante",
+            placeholder="Digite o nome do fabricante…",
+            key="fab_search_input",
+            label_visibility="collapsed",
+        )
+        _fab_lista_all = sorted(_df_fab_map["fabricante"].unique().tolist())
+        _fab_lista = (
+            [f for f in _fab_lista_all if _fab_busca.strip().lower() in f.lower()]
+            if _fab_busca and _fab_busca.strip()
+            else _fab_lista_all
+        )
+        if not _fab_lista:
+            st.caption(f"Nenhum fabricante encontrado para **{_fab_busca}**.")
         for _fab_nome in _fab_lista:
             _prods_do_fab = _df_fab_map[_df_fab_map["fabricante"] == _fab_nome]["produto"].tolist()
             _df_fab_raw = df_enr[
