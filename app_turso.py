@@ -2306,28 +2306,40 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         }
         _FC_FAB_PALETTE = ["#25799B","#CB1B03","#6B8F5E","#9B7B5E","#7B5EA7","#D4813A","#2E7DD1"]
 
-        def _empresa_color(nome: str) -> str:
-            """Retorna cor hex determinística para cada fabricante."""
-            n = nome.lower().strip()
-            if "fmc"      in n: return "#4ADE80"
-            if "syngenta" in n: return "#38BDF8"
-            if "bayer"    in n: return "#C084FC"
-            if "basf"     in n: return "#FB923C"
-            if "corteva"  in n: return "#F472B6"
-            if "upl"      in n: return "#34D399"
-            if "adama"    in n: return "#FBBF24"
-            if "nufarm"   in n: return "#67E8F9"
-            if "albaugh"  in n: return "#60A5FA"
-            if "agroceres"in n: return "#A3E635"
-            # Fallback hash — consistente por nome
-            _p = ["#25799B","#CB1B03","#6B8F5E","#9B7B5E","#7B5EA7","#D4813A","#2E7DD1","#E879F9"]
-            _h = sum(ord(c) * (31 ** i) for i, c in enumerate(n[:12]))
-            return _p[abs(_h) % len(_p)]
+        # bg=fundo sólido pastel, border=borda sólida, bar=barra topo
+        _EMPRESA_PALETA = {
+            "fmc":        {"bg": "#d1fae5", "border": "#6ee7b7", "bar": "#10b981"},
+            "syngenta":   {"bg": "#e0f2fe", "border": "#7dd3fc", "bar": "#0284c7"},
+            "bayer":      {"bg": "#f3e8ff", "border": "#c4b5fd", "bar": "#7c3aed"},
+            "basf":       {"bg": "#fff7ed", "border": "#fdba74", "bar": "#ea580c"},
+            "corteva":    {"bg": "#fce7f3", "border": "#f9a8d4", "bar": "#db2777"},
+            "upl":        {"bg": "#d1fae5", "border": "#6ee7b7", "bar": "#059669"},
+            "adama":      {"bg": "#fefce8", "border": "#fde047", "bar": "#ca8a04"},
+            "nufarm":     {"bg": "#e0f7fa", "border": "#80deea", "bar": "#00838f"},
+            "albaugh":    {"bg": "#dbeafe", "border": "#93c5fd", "bar": "#2563eb"},
+            "agroceres":  {"bg": "#ecfccb", "border": "#bef264", "bar": "#65a30d"},
+            "alta":       {"bg": "#fdf2f8", "border": "#f0abfc", "bar": "#a21caf"},
+            "ihara":      {"bg": "#fef9c3", "border": "#fde68a", "bar": "#b45309"},
+        }
+        _EMPRESA_FALLBACK = [
+            {"bg": "#e0f2fe", "border": "#7dd3fc", "bar": "#0284c7"},
+            {"bg": "#fce7f3", "border": "#f9a8d4", "bar": "#db2777"},
+            {"bg": "#fff7ed", "border": "#fdba74", "bar": "#ea580c"},
+            {"bg": "#f3e8ff", "border": "#c4b5fd", "bar": "#7c3aed"},
+            {"bg": "#fefce8", "border": "#fde047", "bar": "#ca8a04"},
+            {"bg": "#d1fae5", "border": "#6ee7b7", "bar": "#059669"},
+            {"bg": "#dbeafe", "border": "#93c5fd", "bar": "#2563eb"},
+            {"bg": "#fdf2f8", "border": "#f0abfc", "bar": "#a21caf"},
+        ]
 
-        def _hex_rgba(hex_color: str, alpha: float) -> str:
-            h = hex_color.lstrip("#")
-            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-            return f"rgba({r},{g},{b},{alpha})"
+        def _empresa_cores(nome: str) -> dict:
+            """Retorna dict {bg, border, bar} sólidos para o fabricante."""
+            n = nome.lower().strip()
+            for key, val in _EMPRESA_PALETA.items():
+                if key in n:
+                    return val
+            _h = sum(ord(c) * (31 ** i) for i, c in enumerate(n[:12]))
+            return _EMPRESA_FALLBACK[abs(_h) % len(_EMPRESA_FALLBACK)]
 
         def _fc_cat_color(cat: str) -> dict:
             cu = str(cat).upper()
@@ -2452,11 +2464,12 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
             _n_stk = int(((_df_fab_estoque["quantidade"] > 0).sum()))
             _n_total = len(_prods_do_fab)
-            _fab_color = _empresa_color(_fab_nome)
+            _ecores   = _empresa_cores(_fab_nome)
+            _fab_color  = _ecores["bar"]
             _fab_initial = _fab_nome[0].upper() if _fab_nome else "?"
-            _fab_bg       = _hex_rgba(_fab_color, 0.10)   # fundo sutil do card
-            _fab_border   = _hex_rgba(_fab_color, 0.35)   # borda do card
-            _fab_bar      = _fab_color                    # barra topo
+            _fab_bg     = _ecores["bg"]
+            _fab_border = _ecores["border"]
+            _fab_bar    = _ecores["bar"]
 
             # Header da fabricante
             st.markdown(
