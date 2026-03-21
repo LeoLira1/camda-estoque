@@ -7254,6 +7254,7 @@ if has_mestre:
                             f'<span class="ct-nome">{prod}</span>'
                             f'<span class="ct-cod" style="color:#94a3b8;font-size:0.78em;margin-left:8px;font-weight:400;">#{_cod}</span>'
                             f'<span class="ct-qty">{qty} un</span>'
+                            + (f'<div class="ct-motivo">{_obs_existente}</div>' if _obs_existente else '')
                         )
                         st.markdown(f'<div class="ct-card pendente">{info_html}</div>', unsafe_allow_html=True)
 
