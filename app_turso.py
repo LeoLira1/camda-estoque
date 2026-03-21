@@ -2475,7 +2475,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                     f'</div>'
                     f'<div class="fc-row">'
                     f'<div class="fc-icon" style="background:{_cicon_bg}">📅</div>'
-                    f'<div><div class="fc-lbl">Validade Próxima</div><div class="fc-val">{_cvenc}</div></div>'
+                    f'<div><div class="fc-lbl">Validade</div><div class="fc-val">{_cvenc}</div></div>'
                     f'</div>'
                     f'</div>'
                     f'<div class="fc-foot">'
