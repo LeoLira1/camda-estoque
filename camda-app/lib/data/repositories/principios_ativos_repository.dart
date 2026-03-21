@@ -8,9 +8,14 @@ class PrincipiosAtivosRepository {
 
   Future<List<PrincipioAtivo>> getAll() async {
     final result = await _client.query('''
-      SELECT produto, principio_ativo, COALESCE(categoria,'') as categoria
-      FROM principios_ativos
-      ORDER BY principio_ativo, produto
+      SELECT pa.produto,
+             pa.principio_ativo,
+             COALESCE(pa.categoria,'') AS categoria,
+             COALESCE(fp.fabricante,'') AS empresa
+      FROM principios_ativos pa
+      LEFT JOIN fabricantes_produtos fp
+             ON UPPER(fp.produto) = UPPER(pa.produto)
+      ORDER BY pa.principio_ativo, pa.produto
     ''');
     if (result.hasError) throw TursoException(result.error!);
     return result.toMaps().map(PrincipioAtivo.fromMap).toList();
@@ -120,17 +125,20 @@ class PrincipioAtivo {
   final String produto;
   final String principioAtivo;
   final String categoria;
+  final String empresa;
 
   const PrincipioAtivo({
     required this.produto,
     required this.principioAtivo,
     this.categoria = '',
+    this.empresa = '',
   });
 
   factory PrincipioAtivo.fromMap(Map<String, dynamic> map) => PrincipioAtivo(
     produto: map['produto']?.toString() ?? '',
     principioAtivo: map['principio_ativo']?.toString() ?? '',
     categoria: map['categoria']?.toString() ?? '',
+    empresa: map['empresa']?.toString() ?? '',
   );
 }
 

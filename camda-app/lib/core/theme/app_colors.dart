@@ -56,6 +56,33 @@ class AppColors {
     colors: [Color(0xFF00E5A0), Color(0xFF00C4FF)],
   );
 
+  // ── Company / Fabricante colors (discretas) ────────────────────────────────
+  static const Color empresaFMC      = Color(0xFF4ADE80); // verde claro suave
+  static const Color empresaSyngenta = Color(0xFF38BDF8); // azul céu
+  static const Color empresaBayer    = Color(0xFFC084FC); // roxo suave
+  static const Color empresaBASF     = Color(0xFFFB923C); // laranja suave
+  static const Color empresaCorteva  = Color(0xFFF472B6); // rosa suave
+  static const Color empresaUPL      = Color(0xFF34D399); // verde menta
+  static const Color empresaAdama    = Color(0xFFFBBF24); // amarelo suave
+  static const Color empresaNufarm   = Color(0xFF67E8F9); // ciano claro
+
+  static Color empresaColor(String empresa) {
+    final e = empresa.toLowerCase().trim();
+    if (e.contains('fmc'))      return empresaFMC;
+    if (e.contains('syngenta')) return empresaSyngenta;
+    if (e.contains('bayer'))    return empresaBayer;
+    if (e.contains('basf'))     return empresaBASF;
+    if (e.contains('corteva'))  return empresaCorteva;
+    if (e.contains('upl'))      return empresaUPL;
+    if (e.contains('adama'))    return empresaAdama;
+    if (e.contains('nufarm'))   return empresaNufarm;
+    if (e.isEmpty) return textDisabled;
+    // Fallback hash para outras empresas
+    final hash = e.codeUnits.fold(0, (h, c) => h * 31 + c);
+    const palette = [cyan, blue, purple, amber, statusAvaria, green];
+    return palette[hash.abs() % palette.length];
+  }
+
   // ── Chip / Card helpers ────────────────────────────────────────────────────
   static Color statusColor(String status) {
     switch (status.toLowerCase()) {
