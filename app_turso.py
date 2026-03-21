@@ -2264,64 +2264,12 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
     _df_fab_map = get_fabricantes_produtos()
 
-    # ── Gerenciar fabricantes (cadastro) ─────────────────────────────────────
-    with st.expander("⚙️ Gerenciar Fabricantes", expanded=_df_fab_map.empty):
-        st.caption("Associe cada fabricante aos seus produtos. Os produtos vêm do estoque atual.")
-        _gfab_c1, _gfab_c2, _gfab_c3 = st.columns([2, 3, 1])
-        with _gfab_c1:
-            _novo_fab = st.text_input(
-                "Fabricante",
-                placeholder="Ex.: FMC, Bayer…",
-                key="fab_new_name",
-                label_visibility="collapsed",
-            )
-        with _gfab_c2:
-            _todos_prods_fab = sorted(df_enr["produto"].dropna().unique().tolist())
-            _novo_prod = st.selectbox(
-                "Produto",
-                options=_todos_prods_fab,
-                key="fab_new_prod",
-                label_visibility="collapsed",
-            )
-        with _gfab_c3:
-            if st.button("➕ Adicionar", key="fab_add_btn", use_container_width=True):
-                if _novo_fab and _novo_fab.strip() and _novo_prod:
-                    if upsert_fabricante_produto(_novo_fab.strip(), _novo_prod):
-                        st.success(f"✅ {_novo_fab.strip()} ← {_novo_prod}")
-                        st.rerun()
-                    else:
-                        st.error("Erro ao salvar.")
-                else:
-                    st.warning("Preencha o nome do fabricante e selecione um produto.")
-
-        # ── Tabela de associações existentes ─────────────────────────────────
-        _df_fab_map_fresh = get_fabricantes_produtos()
-        if not _df_fab_map_fresh.empty:
-            st.markdown("**Associações cadastradas:**")
-            _fab_grupos = sorted(_df_fab_map_fresh["fabricante"].unique().tolist())
-            for _gfab in _fab_grupos:
-                _rows_gfab = _df_fab_map_fresh[_df_fab_map_fresh["fabricante"] == _gfab]
-                _prods_gfab = _rows_gfab["produto"].tolist()
-                _gfab_cols = st.columns([3, 1])
-                with _gfab_cols[0]:
-                    st.markdown(
-                        f'<div style="margin:4px 0;font-size:13px">'
-                        f'<span style="color:#F9FAFB;font-weight:600">{_gfab}</span>'
-                        f'<span style="color:#6B7280;font-size:11px;margin-left:8px">'
-                        f'{", ".join(_prods_gfab)}</span></div>',
-                        unsafe_allow_html=True,
-                    )
-                with _gfab_cols[1]:
-                    if st.button(f"🗑️ Remover {_gfab}", key=f"fab_del_{_gfab}", use_container_width=True):
-                        if delete_fabricante(_gfab):
-                            st.rerun()
-
     # ── Lista agrupada por fabricante ─────────────────────────────────────────
     _df_fab_map = get_fabricantes_produtos()
     if _df_fab_map.empty:
         st.markdown(
             '<div style="color:#6B7280;font-size:0.85rem;text-align:center;padding:20px 0;">'
-            'Nenhum fabricante cadastrado. Clique em <b>⚙️ Gerenciar Fabricantes</b> para começar.'
+            'Nenhum fabricante cadastrado. Use <b>📤 Upload de Planilha → 🏭 Gerenciar Fabricantes</b> para cadastrar.'
             '</div>',
             unsafe_allow_html=True,
         )
@@ -2438,91 +2386,8 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     if n_nao_id > 0:
         st.caption(
             f"ℹ️ {n_nao_id} produto(s) sem mapeamento de P.A. "
-            "Carregue **produtos_CAMDA.xlsx** via 'Base de Princípios Ativos' no painel lateral."
+            "Use **📤 Upload de Planilha → 🔍 Mapear / corrigir P.A.** para mapear."
         )
-        with st.expander(f"🔍 Mapear / corrigir P.A. ({n_nao_id} sem mapeamento)", expanded=False):
-            # Todos os produtos do estoque (não só os não mapeados)
-            df_todos = (
-                df_enr[["produto", "categoria", "quantidade", "principio_ativo"]]
-                .sort_values("produto")
-                .drop_duplicates("produto")
-                .reset_index(drop=True)
-            )
-            nomes_todos = df_todos["produto"].tolist()
-
-            # P.A. disponíveis para sugestão (do catálogo + banco)
-            pa_opcoes = sorted(set(mapa_combinado.values()))
-
-            # Sugestão automática via fuzzy
-            _cat_diag = list(_cat_ns.keys())
-            def _sugerir_pa(nome: str) -> str:
-                s = _pstrip(_pnorm(str(nome)))
-                m = _gcm(s, _cat_diag, n=1, cutoff=0.0)
-                return _cat_ns[m[0]] if m else ""
-
-            st.caption(
-                "Busque **qualquer produto** — inclusive os já mapeados para corrigir. "
-                f"**{n_nao_id}** ainda sem P.A."
-            )
-
-            # ── Seleção do produto ──────────────────────────────────────────
-            prod_map_sel = st.selectbox(
-                "Produto",
-                options=nomes_todos,
-                index=0,
-                key="pa_map_prod_sel",
-                placeholder="Digite para filtrar…",
-            )
-
-            # Dados do produto selecionado
-            _row_sel = df_todos[df_todos["produto"] == prod_map_sel]
-            _qtd_sel = int(_row_sel["quantidade"].iloc[0]) if not _row_sel.empty else 0
-            _cat_sel = str(_row_sel["categoria"].iloc[0]) if not _row_sel.empty else ""
-            _pa_atual = str(_row_sel["principio_ativo"].iloc[0]) if not _row_sel.empty else ""
-            _ja_mapeado = _pa_atual and _pa_atual != "Não identificado"
-            if _ja_mapeado:
-                st.caption(
-                    f"Qtd: **{_qtd_sel} un.** — "
-                    f"P.A. atual: ✅ *{_pa_atual}* — clique Salvar para corrigir."
-                )
-            else:
-                st.caption(f"Qtd: **{_qtd_sel} un.** — Sem P.A. mapeado.")
-
-            # ── Princípio Ativo ─────────────────────────────────────────────
-            # Pré-seleciona: P.A. atual se já mapeado, senão melhor sugestão fuzzy
-            _default_pa = _pa_atual if _ja_mapeado else _sugerir_pa(prod_map_sel or "")
-
-            _PA_NOVO = "➕ Digitar novo P.A…"
-            pa_lista = (
-                [_default_pa] + [p for p in pa_opcoes if p != _default_pa] + [_PA_NOVO]
-                if _default_pa else pa_opcoes + [_PA_NOVO]
-            )
-            pa_map_sel = st.selectbox(
-                "Princípio Ativo",
-                options=pa_lista,
-                index=0,
-                key=f"pa_map_pa_sel_{prod_map_sel}",
-                help="Escolha da lista ou selecione '➕ Digitar novo' para informar um P.A. inédito.",
-            )
-
-            pa_final = pa_map_sel
-            if pa_map_sel == _PA_NOVO:
-                pa_final = st.text_input(
-                    "Novo Princípio Ativo",
-                    placeholder="Ex.: Glifosato + Diquat",
-                    key="pa_map_pa_novo",
-                )
-
-            # ── Botão salvar ────────────────────────────────────────────────
-            if st.button("💾 Salvar mapeamento", type="primary", use_container_width=True):
-                if prod_map_sel and pa_final and pa_final.strip() and pa_final != _PA_NOVO:
-                    if upsert_principio_ativo(prod_map_sel, pa_final.strip(), _cat_sel):
-                        st.success(f"✅ **{prod_map_sel}** → *{pa_final.strip()}*")
-                        st.rerun()
-                    else:
-                        st.error("Erro ao salvar. Tente novamente.")
-                else:
-                    st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
 
 
 
@@ -7870,6 +7735,148 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     if st.button("🗑️ Limpar BD"):
                         st.session_state.confirm_reset = True
                         st.rerun()
+
+        # ── Gerenciar Fabricantes ─────────────────────────────────────────────
+        if has_mestre:
+            st.markdown("---")
+            _df_fab_up = get_fabricantes_produtos()
+            with st.expander("🏭 Gerenciar Fabricantes", expanded=False):
+                st.caption("Associe cada fabricante aos seus produtos. Os produtos vêm do estoque atual.")
+                _ufab_c1, _ufab_c2, _ufab_c3 = st.columns([2, 3, 1])
+                with _ufab_c1:
+                    _ufab_nome = st.text_input(
+                        "Fabricante",
+                        placeholder="Ex.: FMC, Bayer…",
+                        key="up_fab_new_name",
+                        label_visibility="collapsed",
+                    )
+                with _ufab_c2:
+                    _ufab_prods = sorted(df_mestre["produto"].dropna().unique().tolist())
+                    _ufab_prod = st.selectbox(
+                        "Produto",
+                        options=_ufab_prods,
+                        key="up_fab_new_prod",
+                        label_visibility="collapsed",
+                    )
+                with _ufab_c3:
+                    if st.button("➕ Adicionar", key="up_fab_add_btn", use_container_width=True):
+                        if _ufab_nome and _ufab_nome.strip() and _ufab_prod:
+                            if upsert_fabricante_produto(_ufab_nome.strip(), _ufab_prod):
+                                st.success(f"✅ {_ufab_nome.strip()} ← {_ufab_prod}")
+                                st.rerun()
+                            else:
+                                st.error("Erro ao salvar.")
+                        else:
+                            st.warning("Preencha o nome do fabricante e selecione um produto.")
+
+                _df_fab_up_fresh = get_fabricantes_produtos()
+                if not _df_fab_up_fresh.empty:
+                    st.markdown("**Associações cadastradas:**")
+                    for _gfab_up in sorted(_df_fab_up_fresh["fabricante"].unique().tolist()):
+                        _prods_gfab_up = _df_fab_up_fresh[_df_fab_up_fresh["fabricante"] == _gfab_up]["produto"].tolist()
+                        _gcols_up = st.columns([3, 1])
+                        with _gcols_up[0]:
+                            st.markdown(
+                                f'<div style="margin:4px 0;font-size:13px">'
+                                f'<span style="color:#F9FAFB;font-weight:600">{_gfab_up}</span>'
+                                f'<span style="color:#6B7280;font-size:11px;margin-left:8px">'
+                                f'{", ".join(_prods_gfab_up)}</span></div>',
+                                unsafe_allow_html=True,
+                            )
+                        with _gcols_up[1]:
+                            if st.button(f"🗑️ Remover {_gfab_up}", key=f"up_fab_del_{_gfab_up}", use_container_width=True):
+                                if delete_fabricante(_gfab_up):
+                                    st.rerun()
+
+            # ── Mapear / corrigir P.A. ────────────────────────────────────────
+            _df_pa_up = get_principios_ativos()
+            _mapa_ex_up = carregar_mapa_produtos_camda()
+            _mapa_db_up: dict = {
+                str(r["produto"]).strip().upper(): str(r["principio_ativo"]).strip()
+                for _, r in _df_pa_up.iterrows()
+            }
+            _mapa_comb_up = {**_mapa_ex_up, **_mapa_db_up}
+
+            _df_todos_up = (
+                df_mestre[["produto", "categoria", "qtd_sistema"]]
+                .rename(columns={"qtd_sistema": "quantidade"})
+                .sort_values("produto")
+                .drop_duplicates("produto")
+                .reset_index(drop=True)
+                .copy()
+            )
+            if _mapa_comb_up:
+                _idx_up = _build_pa_lookup(_mapa_comb_up)
+                _cat_ns_up = _idx_up[2]
+                _cat_diag_up = list(_cat_ns_up.keys())
+                def _lookup_up(nome: str) -> str:
+                    pa = _lookup_pa_from_index(nome, *_idx_up)
+                    return pa if pa else "Não identificado"
+                def _sugerir_pa_up(nome: str) -> str:
+                    s = _pstrip(_pnorm(str(nome)))
+                    m = _gcm(s, _cat_diag_up, n=1, cutoff=0.0)
+                    return _cat_ns_up[m[0]] if m else ""
+                _df_todos_up["principio_ativo"] = _df_todos_up["produto"].apply(lambda n: _lookup_up(str(n)))
+                _pa_opcoes_up = sorted(set(_mapa_comb_up.values()))
+            else:
+                _df_todos_up["principio_ativo"] = "Não identificado"
+                _pa_opcoes_up = []
+                def _sugerir_pa_up(nome: str) -> str: return ""
+
+            _n_nao_id_up = int((_df_todos_up["principio_ativo"] == "Não identificado").sum())
+
+            with st.expander(f"🔍 Mapear / corrigir P.A. ({_n_nao_id_up} sem mapeamento)", expanded=False):
+                st.caption(
+                    "Busque **qualquer produto** — inclusive os já mapeados para corrigir. "
+                    f"**{_n_nao_id_up}** ainda sem P.A."
+                )
+                _nomes_up = _df_todos_up["produto"].tolist()
+                _prod_up_sel = st.selectbox(
+                    "Produto",
+                    options=_nomes_up,
+                    index=0,
+                    key="up_pa_map_prod_sel",
+                    placeholder="Digite para filtrar…",
+                )
+                _row_up = _df_todos_up[_df_todos_up["produto"] == _prod_up_sel]
+                _qtd_up = int(_row_up["quantidade"].iloc[0]) if not _row_up.empty else 0
+                _cat_up = str(_row_up["categoria"].iloc[0]) if not _row_up.empty else ""
+                _pa_cur_up = str(_row_up["principio_ativo"].iloc[0]) if not _row_up.empty else ""
+                _mapeado_up = _pa_cur_up and _pa_cur_up != "Não identificado"
+                if _mapeado_up:
+                    st.caption(f"Qtd: **{_qtd_up} un.** — P.A. atual: ✅ *{_pa_cur_up}* — clique Salvar para corrigir.")
+                else:
+                    st.caption(f"Qtd: **{_qtd_up} un.** — Sem P.A. mapeado.")
+
+                _def_pa_up = _pa_cur_up if _mapeado_up else _sugerir_pa_up(_prod_up_sel or "")
+                _PA_NOVO_UP = "➕ Digitar novo P.A…"
+                _pa_lista_up = (
+                    [_def_pa_up] + [p for p in _pa_opcoes_up if p != _def_pa_up] + [_PA_NOVO_UP]
+                    if _def_pa_up else _pa_opcoes_up + [_PA_NOVO_UP]
+                )
+                _pa_map_up = st.selectbox(
+                    "Princípio Ativo",
+                    options=_pa_lista_up,
+                    index=0,
+                    key=f"up_pa_map_pa_sel_{_prod_up_sel}",
+                    help="Escolha da lista ou selecione '➕ Digitar novo' para informar um P.A. inédito.",
+                )
+                _pa_final_up = _pa_map_up
+                if _pa_map_up == _PA_NOVO_UP:
+                    _pa_final_up = st.text_input(
+                        "Novo Princípio Ativo",
+                        placeholder="Ex.: Glifosato + Diquat",
+                        key="up_pa_map_pa_novo",
+                    )
+                if st.button("💾 Salvar mapeamento", type="primary", use_container_width=True, key="up_pa_save_btn"):
+                    if _prod_up_sel and _pa_final_up and _pa_final_up.strip() and _pa_final_up != _PA_NOVO_UP:
+                        if upsert_principio_ativo(_prod_up_sel, _pa_final_up.strip(), _cat_up):
+                            st.success(f"✅ **{_prod_up_sel}** → *{_pa_final_up.strip()}*")
+                            st.rerun()
+                        else:
+                            st.error("Erro ao salvar. Tente novamente.")
+                    else:
+                        st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
