@@ -341,9 +341,20 @@ class _GrupoCard extends StatefulWidget {
 class _GrupoCardState extends State<_GrupoCard> {
   bool _expanded = false;
 
+  /// Empresas únicas do grupo (excluindo vazias), preservando ordem de aparição.
+  List<String> get _empresasUnicas {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final p in widget.grupo.produtos) {
+      if (p.empresa.isNotEmpty && seen.add(p.empresa)) result.add(p.empresa);
+    }
+    return result;
+  }
+
   @override
   Widget build(BuildContext context) {
     final g = widget.grupo;
+    final empresas = _empresasUnicas;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
@@ -371,8 +382,27 @@ class _GrupoCardState extends State<_GrupoCard> {
                   Text(g.principioAtivo,
                       style: const TextStyle(fontFamily: 'Outfit', fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
                       maxLines: 2, overflow: TextOverflow.ellipsis),
-                  Text('${g.numProdutos} produto(s) · ${g.categoria}',
-                      style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                  Row(children: [
+                    Text('${g.numProdutos} produto(s) · ${g.categoria}',
+                        style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+                    if (empresas.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      // Bolinhas coloridas das empresas
+                      ...empresas.take(4).map((emp) => Padding(
+                        padding: const EdgeInsets.only(right: 3),
+                        child: Tooltip(
+                          message: emp,
+                          child: Container(
+                            width: 7, height: 7,
+                            decoration: BoxDecoration(
+                              color: AppColors.empresaColor(emp),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                      )),
+                    ],
+                  ]),
                 ])),
                 Text(CamdaNumberUtils.formatInt(g.totalQuantidade),
                     style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.green)),
@@ -385,17 +415,47 @@ class _GrupoCardState extends State<_GrupoCard> {
           if (_expanded) ...[
             const Divider(height: 1, color: AppColors.surfaceBorder),
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
+              padding: const EdgeInsets.fromLTRB(10, 8, 14, 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: g.produtos.map((p) => Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(children: [
-                    const Icon(Icons.fiber_manual_record, color: AppColors.textDisabled, size: 8),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(p.produto, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary), maxLines: 2, overflow: TextOverflow.ellipsis)),
-                  ]),
-                )).toList(),
+                children: g.produtos.map((p) {
+                  final corEmpresa = AppColors.empresaColor(p.empresa);
+                  final temEmpresa = p.empresa.isNotEmpty;
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(children: [
+                      // Barra colorida lateral da empresa
+                      Container(
+                        width: 3, height: 28,
+                        margin: const EdgeInsets.only(right: 8),
+                        decoration: BoxDecoration(
+                          color: temEmpresa ? corEmpresa.withOpacity(0.75) : AppColors.surfaceBorder,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Expanded(child: Text(
+                        p.produto,
+                        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                        maxLines: 2, overflow: TextOverflow.ellipsis,
+                      )),
+                      if (temEmpresa) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: corEmpresa.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: corEmpresa.withOpacity(0.3)),
+                          ),
+                          child: Text(
+                            p.empresa,
+                            style: TextStyle(fontSize: 9, fontWeight: FontWeight.w600, color: corEmpresa, letterSpacing: 0.3),
+                          ),
+                        ),
+                      ],
+                    ]),
+                  );
+                }).toList(),
               ),
             ),
           ],
