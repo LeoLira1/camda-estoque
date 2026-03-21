@@ -2329,9 +2329,23 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         _fab_lista = sorted(_df_fab_map["fabricante"].unique().tolist())
         for _fab_nome in _fab_lista:
             _prods_do_fab = _df_fab_map[_df_fab_map["fabricante"] == _fab_nome]["produto"].tolist()
-            _df_fab_estoque = df_enr[
+            _df_fab_raw = df_enr[
                 df_enr["produto"].isin(_prods_do_fab) & (df_enr["quantidade"] > 0)
-            ].sort_values("quantidade", ascending=False)
+            ]
+
+            # Agrega por produto (pode haver múltiplas linhas para o mesmo produto)
+            _df_fab_estoque = (
+                _df_fab_raw.groupby("produto", as_index=False)
+                .agg(
+                    quantidade=("quantidade", "sum"),
+                    volume_litros=("volume_litros", "sum"),
+                    volume_kg=("volume_kg", "sum"),
+                    litros_emb=("litros_emb", "first"),
+                    kg_emb=("kg_emb", "first"),
+                    principio_ativo=("principio_ativo", "first"),
+                )
+                .sort_values("quantidade", ascending=False)
+            )
 
             _n_fab_em_stk = len(_df_fab_estoque)
             _n_fab_total  = len(_prods_do_fab)
