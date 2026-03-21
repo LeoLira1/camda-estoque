@@ -3406,9 +3406,9 @@ def get_contagem_itens() -> "pd.DataFrame":
     rows = conn.execute("""
         SELECT ci.id, ci.upload_id, ci.codigo, ci.produto, ci.categoria, ci.qtd_estoque,
                ci.status, ci.motivo, ci.qtd_divergencia, ci.registrado_em,
-               COALESCE(em.observacoes, '') AS observacoes
+               COALESCE(NULLIF(TRIM(em.observacoes), ''), NULLIF(TRIM(em.nota), ''), '') AS observacoes
         FROM contagem_itens ci
-        LEFT JOIN estoque_mestre em ON em.codigo = ci.codigo
+        LEFT JOIN estoque_mestre em ON UPPER(TRIM(em.codigo)) = UPPER(TRIM(ci.codigo))
         ORDER BY ci.categoria, ci.produto
     """).fetchall()
     cols = ["id", "upload_id", "codigo", "produto", "categoria", "qtd_estoque",
