@@ -2288,11 +2288,109 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         )
         if not _fab_lista:
             st.caption(f"Nenhum fabricante encontrado para **{_fab_busca}**.")
-        for _fab_nome in _fab_lista:
+
+        # ── Paleta e helpers de card ──────────────────────────────────────────
+        _FC_COLORS: dict = {
+            "HERBICIDA": {"bg": "#25799B", "text": "#FFFFFF", "label": "Herbicida"},
+            "INSETICIDA": {"bg": "#CB1B03", "text": "#FFFFFF", "label": "Inseticida"},
+            "FUNGICIDA":  {"bg": "#6B8F5E", "text": "#FFFFFF", "label": "Fungicida"},
+            "NEMATICIDA": {"bg": "#9B7B5E", "text": "#FFFFFF", "label": "Nematicida"},
+            "BIOLOGICO":  {"bg": "#A2C5D8", "text": "#1A1A1A", "label": "Biológico"},
+        }
+        _FC_DEFAULT = {"bg": "#6B7280", "text": "#FFFFFF", "label": "Outros"}
+        _FC_STATUS = {
+            "ok":  {"color": "#4CAF50", "label": "Disponível"},
+            "low": {"color": "#F5A623", "label": "Estoque Baixo"},
+            "out": {"color": "#CB1B03", "label": "Zerado"},
+        }
+        _FC_FAB_PALETTE = ["#25799B","#CB1B03","#6B8F5E","#9B7B5E","#7B5EA7","#D4813A","#2E7DD1"]
+
+        def _fc_cat_color(cat: str) -> dict:
+            cu = str(cat).upper()
+            for k, v in _FC_COLORS.items():
+                if k in cu:
+                    return v
+            return _FC_DEFAULT
+
+        def _fc_status(qtd: float) -> str:
+            if qtd <= 0: return "out"
+            if qtd <= 5: return "low"
+            return "ok"
+
+        def _fc_emb(row) -> str:
+            le = row.get("litros_emb")
+            ke = row.get("kg_emb")
+            if le is not None and pd.notna(le):
+                return f"{int(le)}L" if le == int(le) else f"{le:.1f}L"
+            if ke is not None and pd.notna(ke):
+                return f"{int(ke)}kg" if ke == int(ke) else f"{ke:.1f}kg"
+            return "—"
+
+        def _fc_vol_str(row) -> str:
+            vl = row.get("volume_litros")
+            vk = row.get("volume_kg")
+            qtd = int(row["quantidade"])
+            le = row.get("litros_emb")
+            ke = row.get("kg_emb")
+            if vl is not None and pd.notna(vl) and vl > 0:
+                lf = str(int(le)) if le == int(le) else f"{le:.1f}"
+                return f"{qtd} un × {lf}L = {int(vl):,}L".replace(",", ".")
+            if vk is not None and pd.notna(vk) and vk > 0:
+                kf = str(int(ke)) if ke == int(ke) else f"{ke:.1f}"
+                return f"{qtd} un × {kf}kg = {int(vk):,}kg".replace(",", ".")
+            return f"{qtd} un"
+
+        # Validade mais próxima por produto
+        _fc_val_map: dict = {}
+        try:
+            _fc_val_rows = get_db().execute(
+                "SELECT produto, MIN(vencimento) FROM validade_lotes GROUP BY produto"
+            ).fetchall()
+            for _fvr in _fc_val_rows:
+                _fc_val_map[str(_fvr[0]).strip().upper()] = str(_fvr[1])
+        except Exception:
+            pass
+
+        # Injetar fontes + CSS uma vez
+        st.markdown(
+            '<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">'
+            "<style>"
+            "@keyframes fcIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}"
+            ".fc-card{background:#FAF6F0;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;"
+            "box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .3s cubic-bezier(.25,.46,.45,.94),box-shadow .3s;}"
+            ".fc-card:hover{transform:translateY(-5px);box-shadow:0 14px 34px rgba(0,0,0,.13);}"
+            ".fc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;margin-bottom:36px;}"
+            ".fc-fab-hdr{display:flex;align-items:center;gap:12px;margin-bottom:18px;}"
+            ".fc-fab-logo{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;"
+            "justify-content:center;color:#fff;font-size:17px;font-weight:800;font-family:'DM Sans',sans-serif;flex-shrink:0;}"
+            ".fc-body{padding:18px 18px 14px;flex:1;}"
+            ".fc-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:13px;}"
+            ".fc-badge{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;"
+            "padding:4px 9px;border-radius:6px;font-family:'DM Sans',sans-serif;}"
+            ".fc-emb{background:#E8E2D9;color:#1A1A1A;font-size:11px;font-weight:600;"
+            "padding:4px 9px;border-radius:6px;font-family:'DM Mono',monospace;}"
+            ".fc-name{font-size:17px;font-weight:800;color:#1A1A1A;margin:0 0 13px;"
+            "line-height:1.2;font-family:'DM Sans',sans-serif;letter-spacing:-.02em;}"
+            ".fc-row{display:flex;align-items:flex-start;gap:8px;margin-bottom:9px;}"
+            ".fc-icon{width:27px;height:27px;border-radius:7px;display:flex;align-items:center;"
+            "justify-content:center;font-size:12px;flex-shrink:0;}"
+            ".fc-lbl{font-size:9px;color:#999;text-transform:uppercase;letter-spacing:.06em;"
+            "font-family:'DM Sans',sans-serif;font-weight:600;margin-bottom:1px;}"
+            ".fc-val{font-size:13px;color:#1A1A1A;font-weight:600;font-family:'DM Mono',monospace;}"
+            ".fc-foot{border-top:1px solid #E8E2D9;padding:11px 18px;display:flex;"
+            "justify-content:space-between;align-items:center;margin-top:auto;}"
+            ".fc-status{display:flex;align-items:center;gap:5px;font-size:11px;color:#777;"
+            "font-family:'DM Sans',sans-serif;font-weight:500;}"
+            ".fc-dot{width:7px;height:7px;border-radius:50%;}"
+            ".fc-qty{font-size:12px;font-weight:700;font-family:'DM Mono',monospace;color:#333;}"
+            ".fc-out{opacity:.45;}"
+            "</style>",
+            unsafe_allow_html=True,
+        )
+
+        for _fci, _fab_nome in enumerate(_fab_lista):
             _prods_do_fab = _df_fab_map[_df_fab_map["fabricante"] == _fab_nome]["produto"].tolist()
-            _df_fab_raw = df_enr[
-                df_enr["produto"].isin(_prods_do_fab) & (df_enr["quantidade"] > 0)
-            ]
+            _df_fab_raw = df_enr[df_enr["produto"].isin(_prods_do_fab)]
 
             # Agrega por produto (pode haver múltiplas linhas para o mesmo produto)
             _df_fab_estoque = (
@@ -2304,83 +2402,73 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                     litros_emb=("litros_emb", "first"),
                     kg_emb=("kg_emb", "first"),
                     principio_ativo=("principio_ativo", "first"),
+                    categoria=("categoria", "first"),
                 )
                 .sort_values("quantidade", ascending=False)
             )
 
-            _n_fab_em_stk = len(_df_fab_estoque)
-            _n_fab_total  = len(_prods_do_fab)
-            _total_qty_f  = float(_df_fab_estoque["quantidade"].sum())
-            _total_vol_lf = float(_df_fab_estoque["volume_litros"].sum(skipna=True))
-            _total_vol_kf = float(_df_fab_estoque["volume_kg"].sum(skipna=True))
+            _n_stk = int(((_df_fab_estoque["quantidade"] > 0).sum()))
+            _n_total = len(_prods_do_fab)
+            _fab_color = _FC_FAB_PALETTE[_fci % len(_FC_FAB_PALETTE)]
+            _fab_initial = _fab_nome[0].upper() if _fab_nome else "?"
 
-            _fab_label = (
-                f"🏭 **{_fab_nome}** — "
-                f"{_n_fab_em_stk} produto(s) em estoque"
-                + (f" de {_n_fab_total}" if _n_fab_total > _n_fab_em_stk else "")
+            # Header da fabricante
+            st.markdown(
+                f'<div class="fc-fab-hdr">'
+                f'<div class="fc-fab-logo" style="background:{_fab_color}">{_fab_initial}</div>'
+                f'<div>'
+                f'<div style="font-size:22px;font-weight:800;color:#F9FAFB;font-family:\'DM Sans\',sans-serif;letter-spacing:-.02em;line-height:1.1">{_fab_nome}</div>'
+                f'<div style="font-size:12px;color:#9CA3AF;font-weight:500;font-family:\'DM Sans\',sans-serif">'
+                f'{_n_stk} produto(s) em estoque'
+                + (f' de {_n_total}' if _n_total > _n_stk else '')
+                + '</div></div></div>',
+                unsafe_allow_html=True,
             )
 
-            with st.expander(_fab_label, expanded=True):
-                if _df_fab_estoque.empty:
-                    st.caption("Nenhum produto deste fabricante em estoque no momento.")
-                else:
-                    # Métricas resumidas
-                    _mf1, _mf2, _mf3 = st.columns(3)
-                    _mf1.metric("Produtos em estoque", _n_fab_em_stk)
-                    _mf2.metric("Total unidades", f"{int(_total_qty_f):,}".replace(",", "."))
-                    _vol_txt_f = _fmt_volume(
-                        _total_vol_lf if _total_vol_lf > 0 else None,
-                        _total_vol_kf if _total_vol_kf > 0 else None,
-                        _total_qty_f,
-                    )
-                    _mf3.metric("Volume total", _vol_txt_f)
-
-                    # Lista de produtos
-                    _html_fab_list = ""
-                    for _fi, (_, _fr) in enumerate(_df_fab_estoque.iterrows()):
-                        _cor_f = _PA_PALETTE[_fi % len(_PA_PALETTE)]
-                        _vol_l_f = _fr.get("volume_litros")
-                        _vol_k_f = _fr.get("volume_kg")
-                        _lit_emb_f = _fr.get("litros_emb")
-                        _kg_emb_f  = _fr.get("kg_emb")
-                        if pd.notna(_vol_l_f) and _vol_l_f is not None:
-                            _lff = str(int(_lit_emb_f)) if _lit_emb_f == int(_lit_emb_f) else f"{_lit_emb_f:.3f}".rstrip("0")
-                            _vol_str_f = f"{int(_fr['quantidade'])} un × {_lff}L = {int(_vol_l_f):,}L".replace(",", ".")
-                        elif pd.notna(_vol_k_f) and _vol_k_f is not None:
-                            _kff = str(int(_kg_emb_f)) if _kg_emb_f == int(_kg_emb_f) else f"{_kg_emb_f:.3f}".rstrip("0")
-                            _vkff = f"{int(_vol_k_f):,}".replace(",", ".") if _vol_k_f >= 1 else f"{_vol_k_f:.1f}"
-                            _vol_str_f = f"{int(_fr['quantidade'])} un × {_kff}kg = {_vkff}kg"
-                        else:
-                            _vol_str_f = f"{int(_fr['quantidade'])} un"
-                        _pa_str_f = _fr["principio_ativo"] if _fr["principio_ativo"] != "Não identificado" else "—"
-                        _html_fab_list += (
-                            f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                            f'padding:8px 0;border-bottom:1px solid #1F2937;">'
-                            f'<div>'
-                            f'<span style="color:#F9FAFB;font-size:13px">{_fr["produto"]}</span>'
-                            f'<span style="color:#6B7280;font-size:11px;margin-left:8px">🧬 {_pa_str_f}</span>'
-                            f'</div>'
-                            f'<span style="color:{_cor_f};font-size:12px;font-weight:700;white-space:nowrap;margin-left:8px">{_vol_str_f}</span>'
-                            f'</div>'
-                        )
-
-                    # Produtos cadastrados mas sem estoque
-                    _sem_estoque = [p for p in _prods_do_fab if p not in _df_fab_estoque["produto"].tolist()]
-                    if _sem_estoque:
-                        for _sp in _sem_estoque:
-                            _html_fab_list += (
-                                f'<div style="display:flex;justify-content:space-between;align-items:center;'
-                                f'padding:8px 0;border-bottom:1px solid #1F2937;opacity:0.45;">'
-                                f'<span style="color:#9CA3AF;font-size:13px">{_sp}</span>'
-                                f'<span style="color:#6B7280;font-size:11px">sem estoque</span>'
-                                f'</div>'
-                            )
-
-                    st.markdown(
-                        f'<div style="background:#111827;border-radius:8px;padding:4px 12px;">'
-                        f'{_html_fab_list}</div>',
-                        unsafe_allow_html=True,
-                    )
+            # Grid de cards
+            _cards_html = '<div class="fc-grid">'
+            for _cardi, (_, _cr) in enumerate(_df_fab_estoque.iterrows()):
+                _ccat  = _fc_cat_color(_cr.get("categoria", ""))
+                _cstatus = _fc_status(float(_cr["quantidade"]))
+                _cst_info = _FC_STATUS[_cstatus]
+                _cemb  = _fc_emb(_cr)
+                _cvol  = _fc_vol_str(_cr)
+                _cpa   = _cr["principio_ativo"] if _cr["principio_ativo"] != "Não identificado" else "—"
+                _cvenc = _fc_val_map.get(str(_cr["produto"]).strip().upper(), "—")
+                _cicon_bg = f"{_ccat['bg']}1A"
+                _cout_cls = ' fc-out' if _cstatus == "out" else ""
+                _cards_html += (
+                    f'<div class="fc-card{_cout_cls}" style="animation:fcIn .45s ease-out {_cardi*70}ms both">'
+                    f'<div style="height:6px;background:{_ccat["bg"]}"></div>'
+                    f'<div class="fc-body">'
+                    f'<div class="fc-top">'
+                    f'<span class="fc-badge" style="background:{_ccat["bg"]};color:{_ccat["text"]}">{_ccat["label"]}</span>'
+                    f'<span class="fc-emb">{_cemb}</span>'
+                    f'</div>'
+                    f'<div class="fc-name">{_cr["produto"]}</div>'
+                    f'<div class="fc-row">'
+                    f'<div class="fc-icon" style="background:{_cicon_bg}">🧬</div>'
+                    f'<div><div class="fc-lbl">Princípio Ativo</div><div class="fc-val">{_cpa}</div></div>'
+                    f'</div>'
+                    f'<div class="fc-row">'
+                    f'<div class="fc-icon" style="background:{_cicon_bg}">📦</div>'
+                    f'<div><div class="fc-lbl">Quantidade</div><div class="fc-val">{_cvol}</div></div>'
+                    f'</div>'
+                    f'<div class="fc-row">'
+                    f'<div class="fc-icon" style="background:{_cicon_bg}">📅</div>'
+                    f'<div><div class="fc-lbl">Validade Próxima</div><div class="fc-val">{_cvenc}</div></div>'
+                    f'</div>'
+                    f'</div>'
+                    f'<div class="fc-foot">'
+                    f'<div class="fc-status">'
+                    f'<div class="fc-dot" style="background:{_cst_info["color"]};box-shadow:0 0 5px {_cst_info["color"]}70"></div>'
+                    f'{_cst_info["label"]}</div>'
+                    f'<span class="fc-qty">{_cvol}</span>'
+                    f'</div>'
+                    f'</div>'
+                )
+            _cards_html += '</div>'
+            st.markdown(_cards_html, unsafe_allow_html=True)
 
     # ── 13. Produtos sem P.A. mapeado ─────────────────────────────────────────
     if n_nao_id > 0:
