@@ -1411,6 +1411,7 @@ CATEGORIAS_CONTAGEM = frozenset({
     "HERBICIDAS", "INSETICIDAS", "FUNGICIDAS",
     "ÓLEOS", "ADJUVANTES", "ADJUVANTES/ESPALHANTES ADESIVO",
     "SUPLEMENTO MINERAL", "MATURADORES",
+    "BIOLOGICOS E INOCULANTES", "INOCULANTES", "INOCULANTES P/ SILAGEM",
 })
 
 CATEGORIA_PRIORITY = [
@@ -3206,7 +3207,7 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
         """, [now, "PARCIAL", "", len(records), len(novos_data), len(update_data), n_div])
         upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        popular_contagem(records, upload_id, conn)
+        popular_contagem(records, upload_id, conn, zerados=zerados)
 
         conn.commit()
         sync_db()  # Sync UMA VEZ no final
@@ -3311,12 +3312,13 @@ def upload_parcial_estoque(records: list) -> tuple:
         return (False, f"❌ Erro: {e}")
 
 
-def popular_contagem(records: list, upload_id: int, conn) -> None:
+def popular_contagem(records: list, upload_id: int, conn, zerados: list = None) -> None:
     """Mantém itens pendentes anteriores e atualiza/insere itens do upload filtrados por categoria.
 
     - Se o produto já existe na lista (mesmo código): atualiza com dados mais recentes e volta para 'pendente'.
     - Se é produto novo: insere normalmente.
     - Itens pendentes não presentes no novo upload permanecem até serem confirmados.
+    - zerados: itens com qtd_estoque=0 da planilha que devem aparecer na contagem (ex: Vantacor zerado).
     """
     now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
     itens_novos = [
@@ -3325,6 +3327,15 @@ def popular_contagem(records: list, upload_id: int, conn) -> None:
         for r in records
         if r["categoria"] in CATEGORIAS_CONTAGEM
     ]
+    # Inclui itens zerados cujo grupo pertence às categorias de contagem
+    if zerados:
+        for z in zerados:
+            categoria = z.get("grupo", z.get("categoria", ""))
+            if categoria in CATEGORIAS_CONTAGEM:
+                itens_novos.append((
+                    upload_id, z["codigo"], z["produto"], categoria,
+                    0, "pendente", "", 0, now
+                ))
     for item in itens_novos:
         uid, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_div, reg_em = item
         existing = conn.execute(
@@ -4313,8 +4324,17 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             contagem = str(r.get("ultima_contagem", ""))
             sem_contagem = not contagem or contagem in ("", "nan", "None")
 
+            cod_str = str(r["codigo"])
+
             # Aviso de avarias abertas
-            qtd_av = avarias_map.get(str(r["codigo"]), 0)
+            qtd_av = avarias_map.get(cod_str, 0)
+
+            # Se estoque_mestre não registrou divergência mas há registros em divergencias_map,
+            # usa o delta total das divergências para colorir o card corretamente
+            if diff == 0 and cod_str in divergencias_map:
+                total_div_delta = sum(e["delta"] for e in divergencias_map[cod_str])
+                if total_div_delta != 0:
+                    diff = total_div_delta
 
             # Status → border color, bg, qty color
             if qtd_av > 0:
@@ -4370,7 +4390,6 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Dashed border overlay for products without stock count
             opacity_style = "opacity:0.55;" if sem_contagem else ""
 
-            cod_str = str(r["codigo"])
             prods.append(
                 f'<div class="tm-tile" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
                 f' data-codigo="{cod_str}"'
