@@ -355,13 +355,16 @@ class _GrupoCardState extends State<_GrupoCard> {
   Widget build(BuildContext context) {
     final g = widget.grupo;
     final empresas = _empresasUnicas;
+    final corPrincipal = empresas.isNotEmpty
+        ? AppColors.empresaColor(empresas.first)
+        : AppColors.cyan;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: corPrincipal.withOpacity(0.07),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.cyan.withOpacity(0.15)),
+        border: Border.all(color: corPrincipal.withOpacity(0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -374,8 +377,8 @@ class _GrupoCardState extends State<_GrupoCard> {
               child: Row(children: [
                 Container(
                   width: 32, height: 32,
-                  decoration: BoxDecoration(color: AppColors.cyan.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-                  child: Center(child: Text('${widget.rank}', style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.cyan))),
+                  decoration: BoxDecoration(color: corPrincipal.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+                  child: Center(child: Text('${widget.rank}', style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 12, fontWeight: FontWeight.w700, color: corPrincipal))),
                 ),
                 const SizedBox(width: 10),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
