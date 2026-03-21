@@ -2276,19 +2276,41 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         )
     else:
         _fab_busca = st.text_input(
-            "Buscar fabricante",
-            placeholder="Digite o nome do fabricante…",
+            "Buscar por fabricante, produto ou princípio ativo",
+            placeholder="🔍 Fabricante, produto ou princípio ativo…",
             key="fab_search_input",
             label_visibility="collapsed",
         )
         _fab_lista_all = sorted(_df_fab_map["fabricante"].unique().tolist())
-        _fab_lista = (
-            [f for f in _fab_lista_all if _fab_busca.strip().lower() in f.lower()]
-            if _fab_busca and _fab_busca.strip()
-            else _fab_lista_all
-        )
+
+        # ── Busca inteligente: fabricante + produto + princípio ativo ──────────
+        _fab_prod_filter: dict = {}  # fabricante -> set de produtos filtrados (None = todos)
+        if _fab_busca and _fab_busca.strip():
+            _q = _fab_busca.strip().lower()
+            _fab_lista = []
+            # Mapa rápido: produto (upper) -> principio_ativo (lower)
+            _pa_map: dict = {}
+            if not df_enr.empty:
+                for _, _r in df_enr[["produto", "principio_ativo"]].drop_duplicates("produto").iterrows():
+                    _pa_map[str(_r["produto"]).upper()] = str(_r["principio_ativo"]).lower()
+            for _fn in _fab_lista_all:
+                _prods_fn = _df_fab_map[_df_fab_map["fabricante"] == _fn]["produto"].tolist()
+                if _q in _fn.lower():
+                    _fab_lista.append(_fn)
+                    _fab_prod_filter[_fn] = None  # fabricante bate: exibe todos os produtos
+                else:
+                    _match_prods = {
+                        p for p in _prods_fn
+                        if _q in str(p).lower()
+                        or _q in _pa_map.get(str(p).upper(), "")
+                    }
+                    if _match_prods:
+                        _fab_lista.append(_fn)
+                        _fab_prod_filter[_fn] = _match_prods
+        else:
+            _fab_lista = _fab_lista_all
         if not _fab_lista:
-            st.caption(f"Nenhum fabricante encontrado para **{_fab_busca}**.")
+            st.caption(f"Nenhum resultado encontrado para **{_fab_busca}**.")
 
         # ── Paleta e helpers de card ──────────────────────────────────────────
         _FC_COLORS: dict = {
@@ -2450,6 +2472,10 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                     unsafe_allow_html=True,
                 )
             _prods_do_fab = _df_fab_map[_df_fab_map["fabricante"] == _fab_nome]["produto"].tolist()
+            # Aplica filtro de produto quando busca foi por nome/P.A.
+            _pf = _fab_prod_filter.get(_fab_nome)
+            if _pf is not None:
+                _prods_do_fab = [p for p in _prods_do_fab if p in _pf]
             _df_fab_raw = df_enr[df_enr["produto"].isin(_prods_do_fab)]
 
             # Agrega por produto (pode haver múltiplas linhas para o mesmo produto)
