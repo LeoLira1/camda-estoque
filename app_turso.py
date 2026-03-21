@@ -3129,10 +3129,14 @@ def upload_mestre(records: list) -> tuple:
         # Remover produtos ignorados antes de inserir no banco
         records = [r for r in records if not _is_produto_ignorado(r.get("produto", ""))]
 
-        # Preservar divergências existentes antes de limpar o banco
-        # Salva status E diferenca para recalcular qtd_fisica após o INSERT
-        existing_div = {row[0]: (row[1], row[2]) for row in conn.execute(
-            "SELECT codigo, status, diferenca FROM estoque_mestre WHERE status IN ('falta', 'sobra')"
+        # Preservar divergências e observacoes existentes antes de limpar o banco
+        # Salva status, diferenca E observacoes para restaurar após o INSERT
+        existing_div = {row[0]: (row[1], row[2], row[3]) for row in conn.execute(
+            "SELECT codigo, status, diferenca, COALESCE(NULLIF(TRIM(observacoes),''), NULLIF(TRIM(nota),''), '') FROM estoque_mestre WHERE status IN ('falta', 'sobra')"
+        ).fetchall()}
+        # Salvar observacoes de TODOS os produtos (não só divergentes)
+        existing_obs = {row[0]: row[1] for row in conn.execute(
+            "SELECT codigo, COALESCE(NULLIF(TRIM(observacoes),''), NULLIF(TRIM(nota),''), '') FROM estoque_mestre WHERE TRIM(observacoes) != '' OR TRIM(nota) != ''"
         ).fetchall()}
 
         conn.execute("DELETE FROM estoque_mestre")
@@ -3157,9 +3161,21 @@ def upload_mestre(records: list) -> tuple:
                 """UPDATE estoque_mestre
                    SET status = ?,
                        diferenca = ?,
-                       qtd_fisica = qtd_sistema + ?
+                       qtd_fisica = qtd_sistema + ?,
+                       observacoes = ?
                    WHERE codigo = ? AND status = 'ok'""",
-                [(status, dif, dif, codigo) for codigo, (status, dif) in existing_div.items()]
+                [(status, dif, dif, obs, codigo) for codigo, (status, dif, obs) in existing_div.items()]
+            )
+
+        # Restaurar observacoes de produtos que tinham cooperado/anotação registrada
+        obs_restore = [
+            (obs, codigo) for codigo, obs in existing_obs.items()
+            if obs and codigo not in existing_div
+        ]
+        if obs_restore:
+            conn.executemany(
+                "UPDATE estoque_mestre SET observacoes = ? WHERE codigo = ? AND (observacoes IS NULL OR TRIM(observacoes) = '')",
+                obs_restore
             )
 
         n_div = conn.execute(
