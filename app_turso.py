@@ -2306,6 +2306,29 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         }
         _FC_FAB_PALETTE = ["#25799B","#CB1B03","#6B8F5E","#9B7B5E","#7B5EA7","#D4813A","#2E7DD1"]
 
+        def _empresa_color(nome: str) -> str:
+            """Retorna cor hex determinística para cada fabricante."""
+            n = nome.lower().strip()
+            if "fmc"      in n: return "#4ADE80"
+            if "syngenta" in n: return "#38BDF8"
+            if "bayer"    in n: return "#C084FC"
+            if "basf"     in n: return "#FB923C"
+            if "corteva"  in n: return "#F472B6"
+            if "upl"      in n: return "#34D399"
+            if "adama"    in n: return "#FBBF24"
+            if "nufarm"   in n: return "#67E8F9"
+            if "albaugh"  in n: return "#60A5FA"
+            if "agroceres"in n: return "#A3E635"
+            # Fallback hash — consistente por nome
+            _p = ["#25799B","#CB1B03","#6B8F5E","#9B7B5E","#7B5EA7","#D4813A","#2E7DD1","#E879F9"]
+            _h = sum(ord(c) * (31 ** i) for i, c in enumerate(n[:12]))
+            return _p[abs(_h) % len(_p)]
+
+        def _hex_rgba(hex_color: str, alpha: float) -> str:
+            h = hex_color.lstrip("#")
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return f"rgba({r},{g},{b},{alpha})"
+
         def _fc_cat_color(cat: str) -> dict:
             cu = str(cat).upper()
             for k, v in _FC_COLORS.items():
@@ -2376,7 +2399,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             '<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;0,9..40,800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">'
             "<style>"
             "@keyframes fcIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}"
-            ".fc-card{background:#FAF6F0;border-radius:16px;overflow:hidden;display:flex;flex-direction:column;"
+            ".fc-card{border-radius:16px;overflow:hidden;display:flex;flex-direction:column;"
             "box-shadow:0 2px 8px rgba(0,0,0,.07);transition:transform .3s cubic-bezier(.25,.46,.45,.94),box-shadow .3s;}"
             ".fc-card:hover{transform:translateY(-5px);box-shadow:0 14px 34px rgba(0,0,0,.13);}"
             ".fc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;margin-bottom:36px;}"
@@ -2429,8 +2452,11 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
             _n_stk = int(((_df_fab_estoque["quantidade"] > 0).sum()))
             _n_total = len(_prods_do_fab)
-            _fab_color = _FC_FAB_PALETTE[_fci % len(_FC_FAB_PALETTE)]
+            _fab_color = _empresa_color(_fab_nome)
             _fab_initial = _fab_nome[0].upper() if _fab_nome else "?"
+            _fab_bg       = _hex_rgba(_fab_color, 0.10)   # fundo sutil do card
+            _fab_border   = _hex_rgba(_fab_color, 0.35)   # borda do card
+            _fab_bar      = _fab_color                    # barra topo
 
             # Header da fabricante
             st.markdown(
@@ -2458,8 +2484,9 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 _cicon_bg = f"{_ccat['bg']}1A"
                 _cout_cls = ' fc-out' if _cstatus == "out" else ""
                 _cards_html += (
-                    f'<div class="fc-card{_cout_cls}" style="animation:fcIn .45s ease-out {_cardi*70}ms both">'
-                    f'<div style="height:6px;background:{_ccat["bg"]}"></div>'
+                    f'<div class="fc-card{_cout_cls}" style="animation:fcIn .45s ease-out {_cardi*70}ms both;'
+                    f'background:{_fab_bg};border:1.5px solid {_fab_border};">'
+                    f'<div style="height:5px;background:{_fab_bar}"></div>'
                     f'<div class="fc-body">'
                     f'<div class="fc-top">'
                     f'<span class="fc-badge" style="background:{_ccat["bg"]};color:{_ccat["text"]}">{_ccat["label"]}</span>'
