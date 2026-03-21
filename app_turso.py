@@ -2444,6 +2444,11 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         )
 
         for _fci, _fab_nome in enumerate(_fab_lista):
+            if _fci > 0:
+                st.markdown(
+                    '<hr style="border:none;border-top:1px solid #2D3748;margin:0;">',
+                    unsafe_allow_html=True,
+                )
             _prods_do_fab = _df_fab_map[_df_fab_map["fabricante"] == _fab_nome]["produto"].tolist()
             _df_fab_raw = df_enr[df_enr["produto"].isin(_prods_do_fab)]
 
