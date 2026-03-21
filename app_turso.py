@@ -960,6 +960,14 @@ def _get_connection():
             criado_em TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS fabricantes_produtos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fabricante TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            UNIQUE(fabricante, produto)
+        )
+    """)
     conn.commit()
 
     # ── Migrações (roda 1x) ──
@@ -1653,6 +1661,59 @@ def get_pa_count() -> int:
         return 0
 
 
+# ── Fabricantes ──────────────────────────────────────────────────────────────
+
+def get_fabricantes_produtos() -> pd.DataFrame:
+    """Retorna DataFrame com colunas [id, fabricante, produto]."""
+    try:
+        rows = get_db().execute(
+            "SELECT id, fabricante, produto FROM fabricantes_produtos ORDER BY fabricante, produto"
+        ).fetchall()
+        return pd.DataFrame(rows, columns=["id", "fabricante", "produto"])
+    except Exception:
+        return pd.DataFrame(columns=["id", "fabricante", "produto"])
+
+
+def upsert_fabricante_produto(fabricante: str, produto: str) -> bool:
+    """Cadastra ou ignora associação fabricante ↔ produto. Retorna True em sucesso."""
+    try:
+        fab = fabricante.strip()
+        prod = produto.strip()
+        if not fab or not prod:
+            return False
+        get_db().execute(
+            "INSERT OR IGNORE INTO fabricantes_produtos (fabricante, produto) VALUES (?, ?)",
+            (fab, prod),
+        )
+        get_db().commit()
+        sync_db()
+        return True
+    except Exception:
+        return False
+
+
+def delete_fabricante_produto(row_id: int) -> bool:
+    """Remove uma linha da tabela fabricantes_produtos pelo id."""
+    try:
+        get_db().execute("DELETE FROM fabricantes_produtos WHERE id = ?", (row_id,))
+        get_db().commit()
+        sync_db()
+        return True
+    except Exception:
+        return False
+
+
+def delete_fabricante(fabricante: str) -> bool:
+    """Remove todas as associações de um fabricante."""
+    try:
+        get_db().execute("DELETE FROM fabricantes_produtos WHERE fabricante = ?", (fabricante.strip(),))
+        get_db().commit()
+        sync_db()
+        return True
+    except Exception:
+        return False
+
+
 def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
     """Retorna set de nomes de produtos que contêm o princípio ativo buscado."""
     if df_pa.empty:
@@ -2197,100 +2258,154 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 st.session_state["pa_chart_ver"] += 1
                 st.rerun()
 
-    # ── 12.5. Pesquisa por Fabricante ────────────────────────────────────────
+    # ── 12.5. Produtos por Fabricante ────────────────────────────────────────
     st.markdown("---")
-    with st.expander("🏭 Pesquisa por Fabricante", expanded=False):
-        _categorias_fab = sorted(df_enr["categoria"].dropna().unique().tolist())
-        if not _categorias_fab:
-            st.info("Nenhuma categoria/fabricante encontrada nos dados do estoque.")
-        else:
-            _fab_opcoes = ["Selecione um fabricante..."] + _categorias_fab
-            _fab_sel_pa = st.selectbox(
+    st.markdown("#### 🏭 Produtos por Fabricante")
+
+    _df_fab_map = get_fabricantes_produtos()
+
+    # ── Gerenciar fabricantes (cadastro) ─────────────────────────────────────
+    with st.expander("⚙️ Gerenciar Fabricantes", expanded=_df_fab_map.empty):
+        st.caption("Associe cada fabricante aos seus produtos. Os produtos vêm do estoque atual.")
+        _gfab_c1, _gfab_c2, _gfab_c3 = st.columns([2, 3, 1])
+        with _gfab_c1:
+            _novo_fab = st.text_input(
                 "Fabricante",
-                _fab_opcoes,
-                key="pa_fab_search",
+                placeholder="Ex.: FMC, Bayer…",
+                key="fab_new_name",
                 label_visibility="collapsed",
             )
-
-            if _fab_sel_pa == "Selecione um fabricante...":
-                st.markdown(
-                    '<div style="color:#6B7280;font-size:0.85rem;text-align:center;padding:16px 0;">'
-                    "Selecione um fabricante para ver seus produtos e volumes em estoque"
-                    "</div>",
-                    unsafe_allow_html=True,
-                )
-            else:
-                df_fab_pa = df_enr[df_enr["categoria"] == _fab_sel_pa].copy()
-                df_fab_pa = df_fab_pa.sort_values("quantidade", ascending=False)
-
-                _n_prods_fab   = df_fab_pa["produto"].nunique()
-                _total_qty_fab = float(df_fab_pa["quantidade"].sum())
-                _total_vol_l   = float(df_fab_pa["volume_litros"].sum(skipna=True))
-                _total_vol_k   = float(df_fab_pa["volume_kg"].sum(skipna=True))
-                _n_pa_fab = df_fab_pa[
-                    df_fab_pa["principio_ativo"] != "Não identificado"
-                ]["principio_ativo"].nunique()
-
-                ff1, ff2, ff3, ff4 = st.columns(4)
-                ff1.metric("Produtos", _n_prods_fab)
-                ff2.metric("P.A. distintos", _n_pa_fab)
-                ff3.metric("Total em estoque", f"{int(_total_qty_fab):,} un.".replace(",", "."))
-                _vol_txt_fab = _fmt_volume(
-                    _total_vol_l if _total_vol_l > 0 else None,
-                    _total_vol_k if _total_vol_k > 0 else None,
-                    _total_qty_fab,
-                )
-                ff4.metric("Volume total", _vol_txt_fab)
-
-                st.markdown(
-                    f"<div style='font-size:0.85rem;color:#6B7280;margin:8px 0;'>"
-                    f"<b>{_n_prods_fab}</b> produto(s) de <b>{_fab_sel_pa}</b> em estoque</div>",
-                    unsafe_allow_html=True,
-                )
-
-                _mini_fab = ""
-                for _i, (_, _r) in enumerate(df_fab_pa.iterrows()):
-                    _cor = _PA_PALETTE[_i % len(_PA_PALETTE)]
-                    _pct = (_r["quantidade"] / _total_qty_fab * 100) if _total_qty_fab > 0 else 0
-                    _vol_l_r = _r.get("volume_litros")
-                    _vol_k_r = _r.get("volume_kg")
-                    _lit_emb_r = _r.get("litros_emb")
-                    _kg_emb_r  = _r.get("kg_emb")
-                    if pd.notna(_vol_l_r) and _vol_l_r is not None:
-                        _lf = str(int(_lit_emb_r)) if _lit_emb_r == int(_lit_emb_r) else f"{_lit_emb_r:.3f}".rstrip("0")
-                        _vol_str_r = f"{int(_r['quantidade'])} un × {_lf}L = {int(_vol_l_r):,}L".replace(",", ".")
-                    elif pd.notna(_vol_k_r) and _vol_k_r is not None:
-                        _kf = str(int(_kg_emb_r)) if _kg_emb_r == int(_kg_emb_r) else f"{_kg_emb_r:.3f}".rstrip("0")
-                        _vkf = f"{int(_vol_k_r):,}".replace(",", ".") if _vol_k_r >= 1 else f"{_vol_k_r:.1f}"
-                        _vol_str_r = f"{int(_r['quantidade'])} un × {_kf}kg = {_vkf}kg"
+        with _gfab_c2:
+            _todos_prods_fab = sorted(df_enr["produto"].dropna().unique().tolist())
+            _novo_prod = st.selectbox(
+                "Produto",
+                options=_todos_prods_fab,
+                key="fab_new_prod",
+                label_visibility="collapsed",
+            )
+        with _gfab_c3:
+            if st.button("➕ Adicionar", key="fab_add_btn", use_container_width=True):
+                if _novo_fab and _novo_fab.strip() and _novo_prod:
+                    if upsert_fabricante_produto(_novo_fab.strip(), _novo_prod):
+                        st.success(f"✅ {_novo_fab.strip()} ← {_novo_prod}")
+                        st.rerun()
                     else:
-                        _vol_str_r = f"{int(_r['quantidade'])} un"
-                    _pa_str_r = _r["principio_ativo"] if _r["principio_ativo"] != "Não identificado" else "—"
-                    _cod_r = str(_r.get("codigo", ""))
-                    _cod_html_r = (
-                        f'<span style="color:#6B7280;font-size:10px;margin-left:6px">[{_cod_r}]</span>'
-                        if _cod_r and not _cod_r.startswith("AUTO_") else ""
-                    )
-                    _mini_fab += (
-                        f'<div style="margin-bottom:10px">'
-                        f'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px">'
-                        f'<span style="color:#F9FAFB">{_r["produto"]}{_cod_html_r}</span>'
-                        f'<span style="color:{_cor};font-weight:700">{_vol_str_r}</span>'
-                        f'</div>'
-                        f'<div style="font-size:10px;color:#6B7280;margin-bottom:4px">🧬 {_pa_str_r}</div>'
-                        f'<div style="background:#1F2937;border-radius:4px;height:6px;overflow:hidden">'
-                        f'<div style="width:{_pct:.1f}%;height:100%;background:{_cor};border-radius:4px"></div>'
-                        f'</div>'
-                        f'</div>'
-                    )
+                        st.error("Erro ao salvar.")
+                else:
+                    st.warning("Preencha o nome do fabricante e selecione um produto.")
 
-                st.markdown(
-                    '<div style="background:#111827;border:1px solid #1F2937;'
-                    'border-radius:12px;padding:16px;">'
-                    + _mini_fab +
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
+        # ── Tabela de associações existentes ─────────────────────────────────
+        _df_fab_map_fresh = get_fabricantes_produtos()
+        if not _df_fab_map_fresh.empty:
+            st.markdown("**Associações cadastradas:**")
+            _fab_grupos = sorted(_df_fab_map_fresh["fabricante"].unique().tolist())
+            for _gfab in _fab_grupos:
+                _rows_gfab = _df_fab_map_fresh[_df_fab_map_fresh["fabricante"] == _gfab]
+                _prods_gfab = _rows_gfab["produto"].tolist()
+                _gfab_cols = st.columns([3, 1])
+                with _gfab_cols[0]:
+                    st.markdown(
+                        f'<div style="margin:4px 0;font-size:13px">'
+                        f'<span style="color:#F9FAFB;font-weight:600">{_gfab}</span>'
+                        f'<span style="color:#6B7280;font-size:11px;margin-left:8px">'
+                        f'{", ".join(_prods_gfab)}</span></div>',
+                        unsafe_allow_html=True,
+                    )
+                with _gfab_cols[1]:
+                    if st.button(f"🗑️ Remover {_gfab}", key=f"fab_del_{_gfab}", use_container_width=True):
+                        if delete_fabricante(_gfab):
+                            st.rerun()
+
+    # ── Lista agrupada por fabricante ─────────────────────────────────────────
+    _df_fab_map = get_fabricantes_produtos()
+    if _df_fab_map.empty:
+        st.markdown(
+            '<div style="color:#6B7280;font-size:0.85rem;text-align:center;padding:20px 0;">'
+            'Nenhum fabricante cadastrado. Clique em <b>⚙️ Gerenciar Fabricantes</b> para começar.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        _fab_lista = sorted(_df_fab_map["fabricante"].unique().tolist())
+        for _fab_nome in _fab_lista:
+            _prods_do_fab = _df_fab_map[_df_fab_map["fabricante"] == _fab_nome]["produto"].tolist()
+            _df_fab_estoque = df_enr[
+                df_enr["produto"].isin(_prods_do_fab) & (df_enr["quantidade"] > 0)
+            ].sort_values("quantidade", ascending=False)
+
+            _n_fab_em_stk = len(_df_fab_estoque)
+            _n_fab_total  = len(_prods_do_fab)
+            _total_qty_f  = float(_df_fab_estoque["quantidade"].sum())
+            _total_vol_lf = float(_df_fab_estoque["volume_litros"].sum(skipna=True))
+            _total_vol_kf = float(_df_fab_estoque["volume_kg"].sum(skipna=True))
+
+            _fab_label = (
+                f"🏭 **{_fab_nome}** — "
+                f"{_n_fab_em_stk} produto(s) em estoque"
+                + (f" de {_n_fab_total}" if _n_fab_total > _n_fab_em_stk else "")
+            )
+
+            with st.expander(_fab_label, expanded=True):
+                if _df_fab_estoque.empty:
+                    st.caption("Nenhum produto deste fabricante em estoque no momento.")
+                else:
+                    # Métricas resumidas
+                    _mf1, _mf2, _mf3 = st.columns(3)
+                    _mf1.metric("Produtos em estoque", _n_fab_em_stk)
+                    _mf2.metric("Total unidades", f"{int(_total_qty_f):,}".replace(",", "."))
+                    _vol_txt_f = _fmt_volume(
+                        _total_vol_lf if _total_vol_lf > 0 else None,
+                        _total_vol_kf if _total_vol_kf > 0 else None,
+                        _total_qty_f,
+                    )
+                    _mf3.metric("Volume total", _vol_txt_f)
+
+                    # Lista de produtos
+                    _html_fab_list = ""
+                    for _fi, (_, _fr) in enumerate(_df_fab_estoque.iterrows()):
+                        _cor_f = _PA_PALETTE[_fi % len(_PA_PALETTE)]
+                        _vol_l_f = _fr.get("volume_litros")
+                        _vol_k_f = _fr.get("volume_kg")
+                        _lit_emb_f = _fr.get("litros_emb")
+                        _kg_emb_f  = _fr.get("kg_emb")
+                        if pd.notna(_vol_l_f) and _vol_l_f is not None:
+                            _lff = str(int(_lit_emb_f)) if _lit_emb_f == int(_lit_emb_f) else f"{_lit_emb_f:.3f}".rstrip("0")
+                            _vol_str_f = f"{int(_fr['quantidade'])} un × {_lff}L = {int(_vol_l_f):,}L".replace(",", ".")
+                        elif pd.notna(_vol_k_f) and _vol_k_f is not None:
+                            _kff = str(int(_kg_emb_f)) if _kg_emb_f == int(_kg_emb_f) else f"{_kg_emb_f:.3f}".rstrip("0")
+                            _vkff = f"{int(_vol_k_f):,}".replace(",", ".") if _vol_k_f >= 1 else f"{_vol_k_f:.1f}"
+                            _vol_str_f = f"{int(_fr['quantidade'])} un × {_kff}kg = {_vkff}kg"
+                        else:
+                            _vol_str_f = f"{int(_fr['quantidade'])} un"
+                        _pa_str_f = _fr["principio_ativo"] if _fr["principio_ativo"] != "Não identificado" else "—"
+                        _html_fab_list += (
+                            f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                            f'padding:8px 0;border-bottom:1px solid #1F2937;">'
+                            f'<div>'
+                            f'<span style="color:#F9FAFB;font-size:13px">{_fr["produto"]}</span>'
+                            f'<span style="color:#6B7280;font-size:11px;margin-left:8px">🧬 {_pa_str_f}</span>'
+                            f'</div>'
+                            f'<span style="color:{_cor_f};font-size:12px;font-weight:700;white-space:nowrap;margin-left:8px">{_vol_str_f}</span>'
+                            f'</div>'
+                        )
+
+                    # Produtos cadastrados mas sem estoque
+                    _sem_estoque = [p for p in _prods_do_fab if p not in _df_fab_estoque["produto"].tolist()]
+                    if _sem_estoque:
+                        for _sp in _sem_estoque:
+                            _html_fab_list += (
+                                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                                f'padding:8px 0;border-bottom:1px solid #1F2937;opacity:0.45;">'
+                                f'<span style="color:#9CA3AF;font-size:13px">{_sp}</span>'
+                                f'<span style="color:#6B7280;font-size:11px">sem estoque</span>'
+                                f'</div>'
+                            )
+
+                    st.markdown(
+                        f'<div style="background:#111827;border-radius:8px;padding:4px 12px;">'
+                        f'{_html_fab_list}</div>',
+                        unsafe_allow_html=True,
+                    )
 
     # ── 13. Produtos sem P.A. mapeado ─────────────────────────────────────────
     if n_nao_id > 0:
