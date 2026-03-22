@@ -200,6 +200,29 @@ if not st.session_state.authenticated:
     }
     .stFormSubmitButton>button:hover{background:rgba(255,255,255,0.22) !important;}
     @media(max-width:640px){.block-container{padding:0.8rem 0.5rem !important;}}
+    @keyframes sunSpin {
+        from { transform: rotate(0deg); }
+        to   { transform: rotate(360deg); }
+    }
+    @keyframes cloudDrift {
+        0%   { transform: translateX(-6px); }
+        50%  { transform: translateX(6px); }
+        100% { transform: translateX(-6px); }
+    }
+    @keyframes cloudFloat {
+        0%   { transform: translateY(0px); }
+        50%  { transform: translateY(-5px); }
+        100% { transform: translateY(0px); }
+    }
+    @keyframes stormFlash {
+        0%,100% { filter: drop-shadow(0 6px 16px rgba(255,255,255,0.25)); }
+        50%     { filter: drop-shadow(0 0 24px rgba(255,220,50,0.9)); }
+    }
+    @keyframes snowSpin {
+        0%   { transform: rotate(0deg) translateY(0px); }
+        50%  { transform: rotate(180deg) translateY(-4px); }
+        100% { transform: rotate(360deg) translateY(0px); }
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -257,6 +280,62 @@ if not st.session_state.authenticated:
                 f'</div>'
             )
 
+        def _wcode_animated_icon(code):
+            shadow = "filter:drop-shadow(0 6px 16px rgba(255,255,255,0.25));"
+            code = int(code) if code is not None else -1
+            if code == 0:
+                return (
+                    f'<div style="font-size:5rem;line-height:1;margin-bottom:10px;'
+                    f'{shadow}display:inline-block;'
+                    f'animation:sunSpin 20s linear infinite;">☀️</div>'
+                )
+            elif code in (1, 2):
+                return (
+                    f'<div style="position:relative;display:inline-block;'
+                    f'width:5.4rem;height:4.8rem;margin-bottom:10px;{shadow}">'
+                    f'<div style="position:absolute;top:0;left:0;font-size:3.8rem;'
+                    f'animation:sunSpin 20s linear infinite;display:inline-block;">☀️</div>'
+                    f'<div style="position:absolute;bottom:0;right:-4px;font-size:3.2rem;'
+                    f'animation:cloudDrift 4s ease-in-out infinite;display:inline-block;">☁️</div>'
+                    f'</div>'
+                )
+            elif code == 3:
+                return (
+                    f'<div style="font-size:5rem;line-height:1;margin-bottom:10px;'
+                    f'{shadow}display:inline-block;'
+                    f'animation:cloudFloat 4s ease-in-out infinite;">☁️</div>'
+                )
+            elif code in (45, 48):
+                return (
+                    f'<div style="font-size:5rem;line-height:1;margin-bottom:10px;'
+                    f'{shadow}display:inline-block;'
+                    f'animation:cloudFloat 6s ease-in-out infinite;">🌫️</div>'
+                )
+            elif code in (51, 53, 55, 61, 63, 65, 80, 81, 82):
+                em = "🌦️" if code in (51, 53, 55) else "🌧️"
+                return (
+                    f'<div style="font-size:5rem;line-height:1;margin-bottom:10px;'
+                    f'{shadow}display:inline-block;'
+                    f'animation:cloudFloat 3.5s ease-in-out infinite;">{em}</div>'
+                )
+            elif code in (95, 96, 99):
+                return (
+                    f'<div style="font-size:5rem;line-height:1;margin-bottom:10px;'
+                    f'display:inline-block;'
+                    f'animation:stormFlash 1.2s ease-in-out infinite;">⛈️</div>'
+                )
+            elif code in (71, 73, 75, 77):
+                return (
+                    f'<div style="font-size:5rem;line-height:1;margin-bottom:10px;'
+                    f'{shadow}display:inline-block;'
+                    f'animation:snowSpin 4s ease-in-out infinite;">❄️</div>'
+                )
+            else:
+                return (
+                    f'<div style="font-size:5rem;line-height:1;margin-bottom:10px;'
+                    f'{shadow}display:inline-block;">🌡️</div>'
+                )
+
         _bg_grad = _wcode_bg_gradient(wcode_cur)
         card_weather = f"""
 <div style="
@@ -274,8 +353,7 @@ if not st.session_state.authenticated:
     {_dia_nome} &nbsp;·&nbsp; {_data_fmt} &nbsp;·&nbsp; {_hora}
   </div>
   <div style="text-align:center;padding:4px 0 18px;position:relative;">
-    <div style="font-size:5rem;line-height:1;margin-bottom:10px;
-                filter:drop-shadow(0 6px 16px rgba(255,255,255,0.25));">{emoji_cur}</div>
+    {_wcode_animated_icon(wcode_cur)}
     <div style="font-size:4.2rem;font-weight:700;line-height:1;letter-spacing:-2px;
                 text-shadow:0 4px 24px rgba(0,0,0,0.3);">{temp_cur}°</div>
     <div style="font-size:1rem;font-weight:500;color:rgba(255,255,255,0.85);margin-top:10px;">{desc_cur}</div>
