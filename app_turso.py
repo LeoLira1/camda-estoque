@@ -3564,6 +3564,23 @@ def atualizar_item_contagem(
             """, [status_estoque, qtd_fisica, diferenca, motivo, motivo, now, codigo])
             rows_afetadas = getattr(cur, "rowcount", -1)
 
+            # Registra também na tabela divergencias para aparecer na aba Divergências
+            meta = conn.execute(
+                "SELECT produto, categoria FROM estoque_mestre WHERE codigo = ?", [codigo]
+            ).fetchone()
+            if meta:
+                _prod, _cat = meta
+                _delta = qtd_divergencia if tipo_div == "sobra" else -qtd_divergencia
+                _cooperado = motivo.strip() if motivo else ""
+                conn.execute(
+                    "INSERT INTO divergencias (codigo, produto, categoria, delta, status, cooperado, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (codigo, _prod, _cat, _delta, status_estoque, _cooperado, now),
+                )
+                conn.execute(
+                    "INSERT INTO historico_divergencias (codigo, produto, categoria, cooperado, delta, status, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (codigo, _prod, _cat, _cooperado, _delta, status_estoque, now),
+                )
+
         elif status == "certa":
             conn.execute("""
                 UPDATE estoque_mestre SET
