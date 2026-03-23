@@ -1106,6 +1106,31 @@ def _get_connection():
     except Exception:
         pass
 
+    # ── Migração: sincroniza divergências órfãs (só em estoque_mestre) para tabela divergencias ──
+    try:
+        agora_mig = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+        orphans = conn.execute("""
+            SELECT em.codigo, em.produto, em.categoria, em.diferenca, em.status,
+                   COALESCE(NULLIF(TRIM(em.observacoes), ''), NULLIF(TRIM(em.nota), ''), '') AS cooperado
+            FROM estoque_mestre em
+            WHERE em.status IN ('falta', 'sobra')
+              AND em.diferenca != 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM divergencias d
+                  WHERE UPPER(TRIM(d.codigo)) = UPPER(TRIM(em.codigo))
+              )
+        """).fetchall()
+        for row in orphans:
+            cod, prod, cat, diferenca, st_em, coop = row
+            conn.execute(
+                "INSERT INTO divergencias (codigo, produto, categoria, delta, status, cooperado, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (cod, prod, cat, int(diferenca), st_em, coop, agora_mig),
+            )
+        if orphans:
+            conn.commit()
+    except Exception:
+        pass
+
     return conn
 
 
