@@ -6147,7 +6147,7 @@ resize();
 window.addEventListener('resize', ()=>{ resize(); buildLayout(); });
 
 // ── layout ────────────────────────────────────────────────────────────────
-let STARS = [], CONNS = [], BGSTARS = [];
+let STARS = [], CONNS = [], BGSTARS = [], CLUSTERS = [];
 
 function buildLayout(){
   const W=canvas.width, H=canvas.height, cx=W/2, cy=H/2;
@@ -6155,38 +6155,45 @@ function buildLayout(){
   DATA.stars.forEach(p=>{ (cats[p.categoria]=cats[p.categoria]||[]).push(p); });
   const catNames = Object.keys(cats);
   const N = catNames.length;
-  const R = Math.min(W,H)*0.30;
+  // Two rings for many categories: inner + outer orbit
+  const R1 = Math.min(W,H)*0.22;
+  const R2 = Math.min(W,H)*0.42;
 
   STARS=[];
+  CLUSTERS=[];
   const idx={};
 
   catNames.forEach((cat,ci)=>{
+    // Alternate inner/outer ring so adjacent categories don't overlap
+    const R    = ci%2===0 ? R2 : R1;
+    const half = Math.ceil(N/2);
+    const slot = ci%2===0 ? Math.floor(ci/2) : Math.floor(ci/2);
+    const base = ci%2===0 ? N*0.5 : N*0.5;  // reuse full circle for each ring
     const catAng = (ci/N)*Math.PI*2 - Math.PI/2;
     const catCx  = cx + R*Math.cos(catAng);
     const catCy  = cy + R*Math.sin(catAng);
     const prods  = cats[cat];
-    const spread = Math.max(24, Math.min(55, Math.sqrt(prods.length)*14));
+    const spread = Math.max(18, Math.min(48, Math.sqrt(prods.length)*12));
+
+    // Store cluster nebula info
+    CLUSTERS.push({bx:catCx-cx, by:catCy-cy, n:prods.length,
+                   phase:Math.random()*Math.PI*2, nome:cat});
 
     prods.forEach((p,pi)=>{
       const rings = Math.ceil(Math.sqrt(prods.length));
       const ring  = Math.floor(pi/(rings*2))+1;
       const pos   = pi%(rings*2);
       const tot   = Math.min(rings*2, prods.length - Math.floor(pi/(rings*2))*rings*2);
-      const ang   = catAng + (pos/tot)*Math.PI*2 + ci*0.5 + (ring%2)*0.35;
-      const dist  = ring*spread*(0.55+Math.random()*0.45);
+      const ang   = catAng + (pos/tot)*Math.PI*2 + ci*0.42 + (ring%2)*0.4;
+      const dist  = ring*spread*(0.5+Math.random()*0.5);
       const bx    = catCx + dist*Math.cos(ang) - cx;
       const by    = catCy + dist*Math.sin(ang) - cy;
-      const br    = 1.4 + Math.pow(p.qtd/DATA.maxQtd, 0.38)*5;
+      const br    = 1.3 + Math.pow(p.qtd/DATA.maxQtd, 0.38)*5;
       const i     = STARS.length;
       idx[p.nome.trim().toUpperCase()] = i;
       STARS.push({...p, bx, by, phase:Math.random()*Math.PI*2,
                   spd:0.35+Math.random()*0.55, br, isLabel:false});
     });
-
-    // label node at cluster center
-    STARS.push({nome:cat, categoria:cat, qtd:0, status:'label',
-                bx:catCx-cx, by:catCy-cy,
-                phase:Math.random()*Math.PI*2, spd:0.08, br:0, isLabel:true});
   });
 
   CONNS=[];
@@ -6287,15 +6294,16 @@ function frame(){
     ctx.fillStyle=iH?'#ffffff':col; ctx.fill();
   });
 
-  // category labels
-  STARS.forEach(s=>{
-    if(!s.isLabel) return;
-    const p=getPos(s);
-    const a=0.22+0.08*Math.sin(t*0.25+s.phase);
-    ctx.font='600 9.5px "DM Sans",sans-serif';
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillStyle=`rgba(148,163,184,${a})`;
-    ctx.fillText(s.nome.split(' ').slice(0,2).join(' '), p.x, p.y);
+  // cluster nebula glow (soft haze behind each group)
+  CLUSTERS.forEach(cl=>{
+    const p=getPos(cl);
+    const pulse=0.012+0.005*Math.sin(t*0.18+cl.phase);
+    const nr=Math.max(30, Math.sqrt(cl.n)*14);
+    const ng=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,nr);
+    ng.addColorStop(0,  `rgba(100,130,200,${pulse})`);
+    ng.addColorStop(1,  `rgba(100,130,200,0)`);
+    ctx.beginPath(); ctx.arc(p.x,p.y,nr,0,Math.PI*2);
+    ctx.fillStyle=ng; ctx.fill();
   });
 
   // tooltip
