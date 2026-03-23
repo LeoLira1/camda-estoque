@@ -6472,7 +6472,7 @@ frame();
                 df_trend = df_hist_r.groupby(["data", "status"]).size().reset_index(name="cnt")
                 df_f = df_trend[df_trend["status"] == "falta"].set_index("data")["cnt"]
                 df_s = df_trend[df_trend["status"] == "sobra"].set_index("data")["cnt"]
-                all_dates = sorted(set(df_f.index) | df_s.index)
+                all_dates = sorted(set(df_f.index) | set(df_s.index))
 
                 fig_line = go.Figure()
                 fig_line.add_trace(go.Scatter(
