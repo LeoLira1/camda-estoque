@@ -4539,18 +4539,22 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 border_color = "#f97316"
                 card_bg = "linear-gradient(135deg, rgba(249,115,22,0.08), #1a1d2e)"
                 qty_color = "#f97316"
+                card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #f97316;"
             elif diff == 0:
                 border_color = "#22c55e"
                 card_bg = "#1a1d2e"
                 qty_color = "#e8eaf0"
+                card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #22c55e;"
             elif diff < 0:
                 border_color = "#ef4444"
-                card_bg = "linear-gradient(135deg, rgba(239,68,68,0.08), #1a1d2e)"
-                qty_color = "#ef4444"
+                card_bg = "linear-gradient(135deg, rgba(239,68,68,0.28), rgba(180,20,20,0.18))"
+                qty_color = "#ffffff"
+                card_border = "border:2px solid rgba(239,68,68,0.7);"
             else:
                 border_color = "#06b6d4"
-                card_bg = "#1a1d2e"
-                qty_color = "#06b6d4"
+                card_bg = "linear-gradient(135deg, rgba(6,182,212,0.28), rgba(0,100,140,0.18))"
+                qty_color = "#ffffff"
+                card_border = "border:2px solid rgba(6,182,212,0.7);"
 
             # Category badge
             cat_upper = str(r["categoria"]).strip().upper()
@@ -4574,8 +4578,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 )
             elif diff != 0:
                 sign = "▲" if diff > 0 else "▼"
-                bdg_bg = "rgba(6,182,212,0.12)" if diff > 0 else "rgba(239,68,68,0.12)"
-                bdg_fg = "#06b6d4" if diff > 0 else "#ef4444"
+                bdg_bg = "rgba(255,255,255,0.18)"
+                bdg_fg = "#ffffff"
                 badge_html = (
                     f'<div style="position:absolute;top:10px;right:10px;'
                     f'font-size:10px;font-weight:600;font-family:\'JetBrains Mono\',monospace;'
@@ -4591,8 +4595,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             prods.append(
                 f'<div class="tm-tile" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
                 f' data-codigo="{cod_str}"'
-                f' style="background:{card_bg};border:1px solid rgba(255,255,255,0.06);'
-                f'border-left:3px solid {border_color};border-radius:12px;padding:14px;{opacity_style}">'
+                f' style="background:{card_bg};{card_border}'
+                f'border-radius:12px;padding:14px;{opacity_style}">'
                 f'{cat_badge}'
                 f'{badge_html}'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
