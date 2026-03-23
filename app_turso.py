@@ -6054,6 +6054,338 @@ def build_infograficos_tab():
     _render_seletor_inf()
 
 
+def build_radar_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
+    """Aba exclusiva de gráficos — tela de descanso (F11). Sem cards, só visualizações."""
+
+    if df_mestre.empty:
+        st.info("📊 Sem dados de estoque para exibir. Faça upload da planilha mestre.")
+        return
+
+    # ── Linha 1: Gauge + Donut ────────────────────────────────────────────────
+    col_g, col_d = st.columns([1, 1])
+
+    with col_g:
+        n_total = len(df_mestre)
+        n_ok    = int((df_mestre["status"] == "ok").sum())
+        pct_ok  = (n_ok / n_total * 100) if n_total > 0 else 0
+
+        df_av_ab = listar_avarias(apenas_abertas=True)
+        n_av = len(df_av_ab) if not df_av_ab.empty else 0
+        av_penalty = min(n_av * 2, 20)
+
+        df_val_g = get_validade_lotes()
+        hoje_g   = datetime.now(tz=_BRT).date()
+        n_crit   = 0
+        if not df_val_g.empty:
+            dias_g = (df_val_g["VENCIMENTO"].dt.date - hoje_g).apply(
+                lambda x: x.days if pd.notna(x) else 9999
+            )
+            n_crit = int((dias_g <= 7).sum())
+        val_penalty = min(n_crit * 3, 20)
+
+        saude = max(0.0, min(100.0, pct_ok - av_penalty - val_penalty))
+        cor_saude = "#00d68f" if saude >= 70 else "#ffa502" if saude >= 40 else "#ff4757"
+
+        fig_gauge = go.Figure(go.Indicator(
+            mode="gauge+number",
+            value=saude,
+            title={"text": "Índice de Saúde Geral", "font": {"size": 13, "color": "#94a3b8"}},
+            number={"suffix": "%", "font": {"size": 40, "color": cor_saude}},
+            gauge={
+                "axis": {"range": [0, 100], "tickwidth": 1, "tickcolor": "#1e293b",
+                         "tickfont": {"color": "#64748b", "size": 9}},
+                "bar": {"color": cor_saude, "thickness": 0.25},
+                "bgcolor": "rgba(0,0,0,0)",
+                "borderwidth": 0,
+                "steps": [
+                    {"range": [0,  40], "color": "rgba(255,71,87,0.12)"},
+                    {"range": [40, 70], "color": "rgba(255,165,2,0.10)"},
+                    {"range": [70,100], "color": "rgba(0,214,143,0.10)"},
+                ],
+                "threshold": {
+                    "line": {"color": cor_saude, "width": 3},
+                    "thickness": 0.8,
+                    "value": saude,
+                },
+            },
+        ))
+        fig_gauge.update_layout(
+            **_PLOTLY_LAYOUT, height=260,
+            annotations=[dict(
+                text=f"OK {n_ok}/{n_total} · {n_av} av. · {n_crit} venc. críticos",
+                x=0.5, y=-0.08, xref="paper", yref="paper",
+                showarrow=False, font=dict(size=10, color="#64748b"),
+            )],
+        )
+        st.plotly_chart(fig_gauge, use_container_width=True)
+
+    with col_d:
+        n_falta = int((df_mestre["status"] == "falta").sum())
+        n_sobra = int((df_mestre["status"] == "sobra").sum())
+        fig_donut = go.Figure(go.Pie(
+            labels=["OK", "Falta", "Sobra"],
+            values=[n_ok, n_falta, n_sobra],
+            hole=0.6,
+            marker=dict(
+                colors=["#00d68f", "#ff4757", "#ffa502"],
+                line=dict(color="#0a0f1a", width=2),
+            ),
+            textinfo="label+percent",
+            textfont=dict(size=11),
+            hovertemplate="<b>%{label}</b><br>%{value} produtos (%{percent})<extra></extra>",
+        ))
+        fig_donut.update_layout(
+            **_PLOTLY_LAYOUT, height=260,
+            title=dict(text="Distribuição do Estoque", font=dict(size=13, color="#94a3b8"), x=0.5),
+            legend=dict(**_DEFAULT_LEGEND, orientation="h", y=-0.12, x=0.5, xanchor="center"),
+            annotations=[dict(
+                text=f"<b>{n_total}</b><br><span style='font-size:10px'>produtos</span>",
+                x=0.5, y=0.5, font=dict(size=16, color="#e0e6ed"),
+                showarrow=False,
+            )],
+        )
+        st.plotly_chart(fig_donut, use_container_width=True)
+
+    # ── Linha 2: Cobertura de dias por categoria ───────────────────────────────
+    df_vendas_r = get_vendas_historico()
+    periodo_r   = get_periodo_vendas()
+
+    if not df_vendas_r.empty:
+        df_v_grp = df_vendas_r.groupby("codigo", as_index=False)["qtd_vendida"].sum()
+        df_est_r  = df_mestre[["codigo", "categoria", "qtd_sistema"]].copy()
+        df_est_r["qtd_sistema"] = pd.to_numeric(df_est_r["qtd_sistema"], errors="coerce").fillna(0)
+
+        df_cob = df_est_r.merge(df_v_grp, on="codigo", how="left")
+        df_cob["qtd_vendida"] = df_cob["qtd_vendida"].fillna(0)
+        df_cob["venda_diaria"] = df_cob["qtd_vendida"] / max(periodo_r, 1)
+
+        df_cob_cat = (
+            df_cob.groupby("categoria", as_index=False)
+            .agg(qtd_sistema=("qtd_sistema", "sum"), venda_diaria=("venda_diaria", "sum"))
+        )
+        df_cob_cat["cobertura_dias"] = df_cob_cat.apply(
+            lambda r: r["qtd_sistema"] / r["venda_diaria"] if r["venda_diaria"] > 0.001 else 999.0,
+            axis=1,
+        )
+        df_cob_cat = (
+            df_cob_cat[df_cob_cat["cobertura_dias"] < 999]
+            .sort_values("cobertura_dias")
+            .reset_index(drop=True)
+        )
+
+        if not df_cob_cat.empty:
+            def _cob_color(d):
+                return "#ff4757" if d < 7 else "#ffa502" if d < 15 else "#00d68f"
+
+            colors_cob = [_cob_color(d) for d in df_cob_cat["cobertura_dias"]]
+            fig_cob = go.Figure(go.Bar(
+                x=df_cob_cat["cobertura_dias"].round(0),
+                y=df_cob_cat["categoria"],
+                orientation="h",
+                marker=dict(color=colors_cob, line=dict(color="#0a0f1a", width=0.5)),
+                text=df_cob_cat["cobertura_dias"].apply(lambda x: f"{x:.0f}d"),
+                textposition="outside",
+                textfont=dict(size=10),
+                hovertemplate="<b>%{y}</b><br>Cobertura: %{x:.0f} dias<extra></extra>",
+            ))
+            fig_cob.update_layout(
+                **_PLOTLY_LAYOUT,
+                height=max(260, len(df_cob_cat) * 26 + 70),
+                title=dict(text="⏱ Cobertura de Estoque por Categoria (dias restantes)", font=dict(size=13, color="#94a3b8")),
+                xaxis=dict(title="Dias de cobertura", gridcolor="#1e293b", zeroline=False),
+                yaxis=dict(gridcolor="rgba(0,0,0,0)"),
+                shapes=[
+                    dict(type="line", x0=7,  x1=7,  y0=-0.5, y1=len(df_cob_cat)-0.5, line=dict(color="#ff4757", width=1, dash="dot")),
+                    dict(type="line", x0=15, x1=15, y0=-0.5, y1=len(df_cob_cat)-0.5, line=dict(color="#ffa502", width=1, dash="dot")),
+                ],
+            )
+            st.plotly_chart(fig_cob, use_container_width=True)
+
+    # ── Linha 3: Tendência divergências + Scatter vencimento ──────────────────
+    col_l, col_s = st.columns([1, 1])
+
+    with col_l:
+        df_hist_r = get_historico_divergencias()
+        if not df_hist_r.empty and "criado_em" in df_hist_r.columns:
+            df_hist_r["data"] = pd.to_datetime(df_hist_r["criado_em"], errors="coerce").dt.date
+            df_trend = df_hist_r.groupby(["data", "status"]).size().reset_index(name="cnt")
+            df_f = df_trend[df_trend["status"] == "falta"].set_index("data")["cnt"]
+            df_s = df_trend[df_trend["status"] == "sobra"].set_index("data")["cnt"]
+            all_dates = sorted(set(df_f.index) | set(df_s.index))
+
+            fig_line = go.Figure()
+            fig_line.add_trace(go.Scatter(
+                x=list(all_dates), y=[int(df_f.get(d, 0)) for d in all_dates],
+                name="Faltas", line=dict(color="#ff4757", width=2),
+                fill="tozeroy", fillcolor="rgba(255,71,87,0.08)",
+                hovertemplate="%{x}: %{y} faltas<extra></extra>",
+            ))
+            fig_line.add_trace(go.Scatter(
+                x=list(all_dates), y=[int(df_s.get(d, 0)) for d in all_dates],
+                name="Sobras", line=dict(color="#ffa502", width=2),
+                fill="tozeroy", fillcolor="rgba(255,165,2,0.06)",
+                hovertemplate="%{x}: %{y} sobras<extra></extra>",
+            ))
+            fig_line.update_layout(
+                **_PLOTLY_LAYOUT, height=300,
+                title=dict(text="📈 Tendência de Divergências", font=dict(size=13, color="#94a3b8")),
+                legend=dict(**_DEFAULT_LEGEND),
+                xaxis=dict(gridcolor="#1e293b"),
+                yaxis=dict(gridcolor="#1e293b", zeroline=False),
+            )
+            st.plotly_chart(fig_line, use_container_width=True)
+        else:
+            st.info("Sem histórico de divergências registrado ainda.")
+
+    with col_s:
+        df_val_s = get_validade_lotes()
+        if not df_val_s.empty:
+            hoje_s   = datetime.now(tz=_BRT).date()
+            df_val_s = df_val_s[df_val_s["VENCIMENTO"].notna()].copy()
+            df_val_s["DIAS"] = (df_val_s["VENCIMENTO"].dt.date - hoje_s).apply(lambda x: x.days)
+            df_val_s["LABEL"] = df_val_s["DIAS"].apply(
+                lambda d: "Vencido" if d < 0 else "Crítico (≤7d)" if d <= 7 else "Alerta (≤30d)" if d <= 30 else "OK"
+            )
+            cat_cfg = [
+                ("Vencido",      "#c0392b"),
+                ("Crítico (≤7d)","#ff4757"),
+                ("Alerta (≤30d)","#ffa502"),
+                ("OK",           "#00d68f"),
+            ]
+            fig_scat = go.Figure()
+            for label, color in cat_cfg:
+                sub = df_val_s[df_val_s["LABEL"] == label]
+                if sub.empty:
+                    continue
+                fig_scat.add_trace(go.Scatter(
+                    x=sub["DIAS"], y=sub["QUANTIDADE"],
+                    mode="markers", name=label,
+                    marker=dict(color=color, size=9, opacity=0.75,
+                                line=dict(color="#0a0f1a", width=1)),
+                    text=sub["PRODUTO"],
+                    hovertemplate="<b>%{text}</b><br>Dias: %{x}<br>Qty: %{y}<extra></extra>",
+                ))
+            fig_scat.add_vline(x=0,  line=dict(color="#c0392b", width=1, dash="dot"))
+            fig_scat.add_vline(x=7,  line=dict(color="#ff4757", width=1, dash="dot"))
+            fig_scat.add_vline(x=30, line=dict(color="#ffa502", width=1, dash="dot"))
+            fig_scat.update_layout(
+                **_PLOTLY_LAYOUT, height=300,
+                title=dict(text="⚠️ Risco de Vencimento por Lote", font=dict(size=13, color="#94a3b8")),
+                xaxis=dict(title="Dias até vencimento", gridcolor="#1e293b"),
+                yaxis=dict(title="Quantidade", gridcolor="#1e293b", zeroline=False),
+                legend=dict(**_DEFAULT_LEGEND),
+            )
+            st.plotly_chart(fig_scat, use_container_width=True)
+        else:
+            st.info("Sem dados de validade de lotes.")
+
+    # ── Linha 4: Esquecidos + Oportunidades P.A. ──────────────────────────────
+    col_e, col_p = st.columns([1, 1])
+
+    with col_e:
+        df_parados = get_produtos_parados(dias_min=30)
+        if not df_parados.empty:
+            df_top = df_parados.head(20).sort_values("dias_parado", ascending=True).reset_index(drop=True)
+            nomes_curtos = df_top["produto"].apply(lambda p: (p[:22] + "…") if len(str(p)) > 22 else p)
+            dias_vals = df_top["dias_parado"].apply(lambda d: 999 if d >= 9999 else d)
+            text_vals = df_top["dias_parado"].apply(lambda d: "Nunca" if d >= 9999 else f"{d}d")
+
+            fig_esq = go.Figure(go.Bar(
+                x=dias_vals,
+                y=nomes_curtos,
+                orientation="h",
+                marker=dict(
+                    color=dias_vals,
+                    colorscale=[[0, "#ffa502"], [0.5, "#ff6b35"], [1.0, "#ff4757"]],
+                    showscale=False,
+                    line=dict(color="#0a0f1a", width=0.5),
+                ),
+                text=text_vals,
+                textposition="outside",
+                textfont=dict(size=10),
+                customdata=df_top[["qtd_estoque", "grupo"]].values,
+                hovertemplate="<b>%{y}</b><br>Parado: %{x} dias<br>Estoque: %{customdata[0]}<br>Grupo: %{customdata[1]}<extra></extra>",
+            ))
+            fig_esq.update_layout(
+                **_PLOTLY_LAYOUT,
+                height=max(280, len(df_top) * 23 + 70),
+                title=dict(text="😴 Produtos Esquecidos (≥30 dias sem venda)", font=dict(size=13, color="#94a3b8")),
+                xaxis=dict(title="Dias sem venda", gridcolor="#1e293b", zeroline=False),
+                yaxis=dict(gridcolor="rgba(0,0,0,0)"),
+            )
+            st.plotly_chart(fig_esq, use_container_width=True)
+        else:
+            st.success("✅ Nenhum produto parado há mais de 30 dias.")
+
+    with col_p:
+        if not df_pa.empty and not df_vendas_r.empty:
+            df_pa_m = df_pa[["produto", "principio_ativo"]].rename(columns={"principio_ativo": "pa"})
+            df_v_pa = df_vendas_r[["produto", "qtd_vendida"]].merge(df_pa_m, on="produto", how="inner")
+            df_pa_grp = df_v_pa.groupby(["pa", "produto"], as_index=False)["qtd_vendida"].sum()
+
+            # Somente PAs com ≥2 produtos
+            pa_cnt = df_pa_grp.groupby("pa")["produto"].count()
+            valid_pas = pa_cnt[pa_cnt >= 2].index
+            df_pa_grp = df_pa_grp[df_pa_grp["pa"].isin(valid_pas)]
+
+            # Somente PAs com disparidade real (max/min ≥ 3)
+            pas_disp = []
+            for pa, sub in df_pa_grp.groupby("pa"):
+                mn = sub["qtd_vendida"].min()
+                mx = sub["qtd_vendida"].max()
+                if mn > 0 and mx / mn >= 3:
+                    pas_disp.append(pa)
+                elif mn == 0 and mx > 0:
+                    pas_disp.append(pa)
+
+            df_pa_opp = df_pa_grp[df_pa_grp["pa"].isin(pas_disp)].copy()
+
+            if not df_pa_opp.empty:
+                # Top 10 PAs pelo máximo de vendas
+                top_pas = (
+                    df_pa_opp.groupby("pa")["qtd_vendida"].max()
+                    .sort_values(ascending=False).head(10).index.tolist()
+                )
+                df_pa_opp = df_pa_opp[df_pa_opp["pa"].isin(top_pas)]
+
+                fig_pa = go.Figure()
+                for pa in top_pas:
+                    sub = df_pa_opp[df_pa_opp["pa"] == pa].sort_values("qtd_vendida", ascending=False)
+                    max_v = sub["qtd_vendida"].max()
+                    pa_label = (pa[:28] + "…") if len(pa) > 28 else pa
+                    for _, row in sub.iterrows():
+                        cor = "#00d68f" if row["qtd_vendida"] == max_v else "#ff4757"
+                        prod_label = (str(row["produto"])[:18] + "…") if len(str(row["produto"])) > 18 else str(row["produto"])
+                        fig_pa.add_trace(go.Bar(
+                            name=prod_label,
+                            x=[pa_label],
+                            y=[row["qtd_vendida"]],
+                            marker_color=cor,
+                            showlegend=False,
+                            text=prod_label,
+                            textposition="inside",
+                            textfont=dict(size=9),
+                            hovertemplate=f"<b>{row['produto']}</b><br>P.A.: {pa}<br>Vendas: {row['qtd_vendida']}<extra></extra>",
+                        ))
+
+                fig_pa.update_layout(
+                    **_PLOTLY_LAYOUT,
+                    barmode="group",
+                    height=350,
+                    title=dict(
+                        text="🔗 Oportunidades por Princípio Ativo  🟢 vende bem · 🔴 esquecido",
+                        font=dict(size=12, color="#94a3b8"),
+                    ),
+                    xaxis=dict(title="Princípio Ativo", gridcolor="#1e293b", tickangle=-25),
+                    yaxis=dict(title="Qtd Vendida", gridcolor="#1e293b", zeroline=False),
+                )
+                st.plotly_chart(fig_pa, use_container_width=True)
+            else:
+                st.info("💡 Nenhuma disparidade significativa entre produtos do mesmo Princípio Ativo.")
+        else:
+            st.info("Sem dados de Princípios Ativos ou Vendas para análise de oportunidades.")
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # MAIN APP
 # ══════════════════════════════════════════════════════════════════════════════
@@ -6252,7 +6584,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12, t_armazem = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "🏭 Mapa do Armazém"])
+    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12, t_armazem, t_radar = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "🏭 Mapa do Armazém", "📡 Radar"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -7801,6 +8133,9 @@ if has_mestre:
 
     with t_armazem:
         _warehouse_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, get_db())
+
+    with t_radar:
+        build_radar_tab(df_mestre, df_pa)
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────
