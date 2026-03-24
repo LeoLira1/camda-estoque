@@ -6414,10 +6414,12 @@ body{background:#f5f4f0;padding:1rem;}
 </style>
 </head>
 <body>
-<div style="font-size:12px;font-weight:500;color:#888;margin-bottom:4px;letter-spacing:.3px;">DIVERGÊNCIAS POR COOPERADO \u00b7 clique para ver produtos</div>
-<div class="legend">
-  <span><span class="legend-dot" style="background:#E24B4A;"></span>Faltas</span>
-  <span><span class="legend-dot" style="background:#3b82f6;"></span>Sobras</span>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+  <div style="font-size:12px;font-weight:500;color:#888;letter-spacing:.3px;">DIVERGÊNCIAS POR COOPERADO \u00b7 clique para ver produtos</div>
+  <div style="display:flex;gap:14px;font-size:11px;color:#666;">
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#E24B4A;margin-right:4px;vertical-align:middle;"></span>Faltas ←</span>
+    <span>→ Sobras <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6;margin-left:4px;vertical-align:middle;"></span></span>
+  </div>
 </div>
 <div style="position:relative;width:100%;height:__CHART_H__px;">
   <canvas id="coop-chart"></canvas>
@@ -6437,16 +6439,17 @@ body{background:#f5f4f0;padding:1rem;}
 <script>
 const dados=__DADOS__;
 const palette=['#2d6e6e','#d85a30','#a8c840','#7f77dd','#185fa5','#e8a060','#c8587a','#3b6d11','#6ab87a'];
-// Compute totals per cooperado
 const coopMap={};
 dados.forEach((d,i)=>{
   const totF=d.itens.filter(it=>it.diff<0).reduce((s,it)=>s+Math.abs(it.diff),0);
   const totS=d.itens.filter(it=>it.diff>0).reduce((s,it)=>s+it.diff,0);
   if(totF>0||totS>0) coopMap[d.coop]={totF,totS,idx:i};
 });
+// Sort by total descending
 const sorted=Object.entries(coopMap).sort((a,b)=>(b[1].totF+b[1].totS)-(a[1].totF+a[1].totS));
 const labels=sorted.map(x=>x[0]);
-const valsF=sorted.map(x=>x[1].totF);
+// Diverging: faltas = negative (go left), sobras = positive (go right)
+const valsF=sorted.map(x=>-x[1].totF);
 const valsS=sorted.map(x=>x[1].totS);
 const idxs=sorted.map(x=>x[1].idx);
 const bgs=idxs.map(i=>palette[i%palette.length]);
@@ -6499,20 +6502,20 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Faltas',
         data:valsF,
-        backgroundColor:bgs.map(c=>c+'cc'),
-        hoverBackgroundColor:bgs,
-        borderRadius:4,
+        backgroundColor:'rgba(226,75,74,0.80)',
+        hoverBackgroundColor:'#E24B4A',
+        borderRadius:{topLeft:4,bottomLeft:4,topRight:0,bottomRight:0},
         borderSkipped:false,
+        stack:'div',
       },
       {
         label:'Sobras',
         data:valsS,
-        backgroundColor:bgs.map(c=>c+'55'),
-        hoverBackgroundColor:bgs.map(c=>c+'99'),
-        borderRadius:4,
+        backgroundColor:'rgba(59,130,246,0.75)',
+        hoverBackgroundColor:'#3b82f6',
+        borderRadius:{topLeft:0,bottomLeft:0,topRight:4,bottomRight:4},
         borderSkipped:false,
-        borderWidth:2,
-        borderColor:bgs,
+        stack:'div',
       }
     ]
   },
@@ -6522,14 +6525,32 @@ new Chart(document.getElementById('coop-chart'),{
     maintainAspectRatio:false,
     plugins:{
       legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>` ${ctx.parsed.x} unid. ${ctx.dataset.label==='Faltas'?'faltando':'sobrando'}`}}
+      tooltip:{
+        callbacks:{
+          label:ctx=>{
+            const v=Math.abs(ctx.parsed.x);
+            if(v===0) return null;
+            return ` ${v} unid. ${ctx.dataset.label==='Faltas'?'faltando':'sobrando'}`;
+          }
+        }
+      }
     },
     scales:{
-      x:{grid:{color:'rgba(0,0,0,0.06)'},ticks:{font:{size:12}},border:{display:false}},
-      y:{grid:{display:false},ticks:{font:{size:12},color:'#555'},border:{display:false}}
+      x:{
+        stacked:true,
+        grid:{color:'rgba(0,0,0,0.06)'},
+        border:{display:false},
+        ticks:{font:{size:12},callback:v=>Math.abs(v)}
+      },
+      y:{
+        stacked:true,
+        grid:{display:false},
+        border:{display:false},
+        ticks:{font:{size:12},color:'#444'}
+      }
     },
-    categoryPercentage:1.0,
-    barPercentage:0.72,
+    categoryPercentage:0.82,
+    barPercentage:0.88,
     onClick(evt,els){if(els.length>0)openPanel(idxs[els[0].index]);},
     onHover(evt,els){evt.native.target.style.cursor=els.length>0?'pointer':'default';}
   }
