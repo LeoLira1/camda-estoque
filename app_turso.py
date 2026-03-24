@@ -6396,10 +6396,11 @@ body{background:#f5f4f0;padding:1rem;}
 .pname{font-size:16px;font-weight:500;color:#111;margin-bottom:8px;}
 .pstats{display:flex;gap:6px;}
 .pstat{flex:1;background:#f5f4f0;border-radius:8px;padding:8px 6px;text-align:center;}
-.pstatv{font-size:18px;font-weight:500;}
+.pstatv{font-size:22px;font-weight:600;color:#3b82f6;}
 .pstatl{font-size:10px;color:#aaa;margin-top:2px;}
 .pitems{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:7px;}
 .icard{background:#fafafa;border-radius:9px;padding:10px 12px;border-left:3px solid #E24B4A;}
+.icard.sobra{border-left-color:#3b82f6;}
 .icard-name{font-size:12px;font-weight:500;color:#111;line-height:1.35;margin-bottom:3px;}
 .icard-meta{font-size:10px;color:#bbb;margin-bottom:6px;}
 .icard-bar{display:flex;align-items:center;gap:7px;}
@@ -6407,10 +6408,17 @@ body{background:#f5f4f0;padding:1rem;}
 .ibar-fill{height:100%;border-radius:3px;transition:width .6s ease;}
 .icard-nums{font-size:10px;color:#999;white-space:nowrap;}
 .icard-diff{font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:#FCEBEB;color:#A32D2D;}
+.icard-diff.pos{background:#EBF3FC;color:#1d5fa8;}
+.legend{display:flex;gap:12px;margin-bottom:6px;font-size:11px;color:#666;}
+.legend-dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle;}
 </style>
 </head>
 <body>
-<div style="font-size:12px;font-weight:500;color:#888;margin-bottom:8px;letter-spacing:.3px;">FALTAS POR COOPERADO \u00b7 clique para ver produtos</div>
+<div style="font-size:12px;font-weight:500;color:#888;margin-bottom:4px;letter-spacing:.3px;">DIVERGÊNCIAS POR COOPERADO \u00b7 clique para ver produtos</div>
+<div class="legend">
+  <span><span class="legend-dot" style="background:#E24B4A;"></span>Faltas</span>
+  <span><span class="legend-dot" style="background:#3b82f6;"></span>Sobras</span>
+</div>
 <div style="position:relative;width:100%;height:300px;">
   <canvas id="coop-chart"></canvas>
 </div>
@@ -6428,40 +6436,50 @@ body{background:#f5f4f0;padding:1rem;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 const dados=__DADOS__;
-const palette=['#2d6e6e','#d85a30','#a8c840','#7f77dd','#185fa5','#e8a060','#c8587a','#3b6d11','#6ab87a'];
-const coopFaltas={};
+// Compute totals per cooperado
+const coopMap={};
 dados.forEach((d,i)=>{
-  const tot=d.itens.filter(it=>it.diff<0).reduce((s,it)=>s+Math.abs(it.diff),0);
-  if(tot>0) coopFaltas[d.coop]={tot,idx:i};
+  const totF=d.itens.filter(it=>it.diff<0).reduce((s,it)=>s+Math.abs(it.diff),0);
+  const totS=d.itens.filter(it=>it.diff>0).reduce((s,it)=>s+it.diff,0);
+  if(totF>0||totS>0) coopMap[d.coop]={totF,totS,idx:i};
 });
-const sorted=Object.entries(coopFaltas).sort((a,b)=>b[1].tot-a[1].tot);
+const sorted=Object.entries(coopMap).sort((a,b)=>(b[1].totF+b[1].totS)-(a[1].totF+a[1].totS));
 const labels=sorted.map(x=>x[0]);
-const vals=sorted.map(x=>x[1].tot);
+const valsF=sorted.map(x=>x[1].totF);
+const valsS=sorted.map(x=>x[1].totS);
 const idxs=sorted.map(x=>x[1].idx);
-const bgs=idxs.map(i=>palette[i%palette.length]);
 function openPanel(dataIdx){
   const d=dados[dataIdx];
-  const col=palette[dataIdx%palette.length];
   const faltas=d.itens.filter(i=>i.diff<0);
+  const sobras=d.itens.filter(i=>i.diff>0);
   const totF=faltas.reduce((s,i)=>s+Math.abs(i.diff),0);
-  document.getElementById('pcolorbar').style.background=col;
+  const totS=sobras.reduce((s,i)=>s+i.diff,0);
+  document.getElementById('pcolorbar').style.background='#3b82f6';
   document.getElementById('pname').textContent=d.coop;
-  document.getElementById('pstats').innerHTML=`
-    <div class="pstat"><div class="pstatv" style="color:#A32D2D;">${totF}</div><div class="pstatl">unid. faltando</div></div>
-    <div class="pstat"><div class="pstatv" style="color:#854F0B;">${faltas.length}</div><div class="pstatl">produtos</div></div>`;
+  let statsHtml=`<div class="pstat"><div class="pstatv">${totF}</div><div class="pstatl">unid. faltando</div></div>`;
+  if(totS>0) statsHtml+=`<div class="pstat"><div class="pstatv">${totS}</div><div class="pstatl">unid. sobrando</div></div>`;
+  statsHtml+=`<div class="pstat"><div class="pstatv">${faltas.length+sobras.length}</div><div class="pstatl">produtos</div></div>`;
+  document.getElementById('pstats').innerHTML=statsHtml;
   const pi=document.getElementById('pitems');
   pi.innerHTML='';
-  faltas.sort((a,b)=>a.diff-b.diff).forEach(it=>{
-    const pct=it.sis>0?Math.round((it.fis/it.sis)*100):0;
+  const allItems=[...faltas.sort((a,b)=>a.diff-b.diff),...sobras.sort((a,b)=>b.diff-a.diff)];
+  allItems.forEach(it=>{
+    const isSobra=it.diff>0;
+    const maxV=isSobra?Math.max(it.fis,it.sis):it.sis;
+    const fillV=isSobra?it.sis:it.fis;
+    const pct=maxV>0?Math.round((fillV/maxV)*100):0;
+    const barColor=isSobra?'#3b82f6':'#E24B4A';
+    const diffClass=isSobra?'icard-diff pos':'icard-diff';
+    const sign=it.diff>0?'+':'';
     const c=document.createElement('div');
-    c.className='icard';
+    c.className=isSobra?'icard sobra':'icard';
     c.innerHTML=`
       <div class="icard-name">${it.p}</div>
       <div class="icard-meta">C\u00f3d: ${it.cod} \u00b7 ${it.cat}</div>
       <div class="icard-bar">
-        <div class="ibar-track"><div class="ibar-fill" style="width:${pct}%;background:#E24B4A;"></div></div>
+        <div class="ibar-track"><div class="ibar-fill" style="width:${pct}%;background:${barColor};"></div></div>
         <span class="icard-nums">${it.fis}/${it.sis}</span>
-        <span class="icard-diff">${it.diff}</span>
+        <span class="${diffClass}">${sign}${it.diff}</span>
       </div>`;
     pi.appendChild(c);
   });
@@ -6469,17 +6487,29 @@ function openPanel(dataIdx){
 }
 function closePanel(){document.getElementById('overlay').classList.remove('open');}
 document.getElementById('overlay').addEventListener('click',function(e){if(e.target===this)closePanel();});
+document.addEventListener('keydown',function(e){if(e.key==='Escape')closePanel();});
 new Chart(document.getElementById('coop-chart'),{
   type:'bar',
   data:{
     labels,
-    datasets:[{
-      data:vals,
-      backgroundColor:bgs.map(c=>c+'cc'),
-      hoverBackgroundColor:bgs,
-      borderRadius:5,
-      borderSkipped:false,
-    }]
+    datasets:[
+      {
+        label:'Faltas',
+        data:valsF,
+        backgroundColor:'rgba(226,75,74,0.75)',
+        hoverBackgroundColor:'#E24B4A',
+        borderRadius:4,
+        borderSkipped:false,
+      },
+      {
+        label:'Sobras',
+        data:valsS,
+        backgroundColor:'rgba(59,130,246,0.75)',
+        hoverBackgroundColor:'#3b82f6',
+        borderRadius:4,
+        borderSkipped:false,
+      }
+    ]
   },
   options:{
     indexAxis:'y',
@@ -6487,7 +6517,7 @@ new Chart(document.getElementById('coop-chart'),{
     maintainAspectRatio:false,
     plugins:{
       legend:{display:false},
-      tooltip:{callbacks:{label:ctx=>` ${ctx.parsed.x} unid. faltando`}}
+      tooltip:{callbacks:{label:ctx=>` ${ctx.parsed.x} unid. ${ctx.dataset.label==='Faltas'?'faltando':'sobrando'}`}}
     },
     scales:{
       x:{grid:{color:'rgba(0,0,0,0.06)'},ticks:{font:{size:12}}},
