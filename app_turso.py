@@ -6407,7 +6407,7 @@ body{background:#f5f4f0;padding:1rem;}
 .ibar-track{flex:1;height:5px;background:#eee;border-radius:3px;overflow:hidden;}
 .ibar-fill{height:100%;border-radius:3px;transition:width .6s ease;}
 .icard-nums{font-size:10px;color:#999;white-space:nowrap;}
-.icard-diff{font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:#FCEBEB;color:#A32D2D;}
+.icard-diff{font-size:13px;font-weight:700;padding:3px 10px;border-radius:20px;background:#FCEBEB;color:#A32D2D;min-width:40px;text-align:center;}
 .icard-diff.pos{background:#EBF3FC;color:#1d5fa8;}
 .legend{display:flex;gap:12px;margin-bottom:6px;font-size:11px;color:#666;}
 .legend-dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle;}
@@ -6419,7 +6419,7 @@ body{background:#f5f4f0;padding:1rem;}
   <span><span class="legend-dot" style="background:#E24B4A;"></span>Faltas</span>
   <span><span class="legend-dot" style="background:#3b82f6;"></span>Sobras</span>
 </div>
-<div style="position:relative;width:100%;height:300px;">
+<div style="position:relative;width:100%;height:__CHART_H__px;">
   <canvas id="coop-chart"></canvas>
 </div>
 <div class="panel-overlay" id="overlay">
@@ -6507,13 +6507,12 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Sobras',
         data:valsS,
-        backgroundColor:bgs.map(c=>c+'66'),
-        hoverBackgroundColor:bgs.map(c=>c+'aa'),
+        backgroundColor:bgs.map(c=>c+'55'),
+        hoverBackgroundColor:bgs.map(c=>c+'99'),
         borderRadius:4,
         borderSkipped:false,
         borderWidth:2,
         borderColor:bgs,
-        borderDash:[4,3],
       }
     ]
   },
@@ -6526,9 +6525,11 @@ new Chart(document.getElementById('coop-chart'),{
       tooltip:{callbacks:{label:ctx=>` ${ctx.parsed.x} unid. ${ctx.dataset.label==='Faltas'?'faltando':'sobrando'}`}}
     },
     scales:{
-      x:{grid:{color:'rgba(0,0,0,0.06)'},ticks:{font:{size:12}}},
-      y:{grid:{display:false},ticks:{font:{size:12}}}
+      x:{grid:{color:'rgba(0,0,0,0.06)'},ticks:{font:{size:12}},border:{display:false}},
+      y:{grid:{display:false},ticks:{font:{size:12},color:'#555'},border:{display:false}}
     },
+    categoryPercentage:1.0,
+    barPercentage:0.72,
     onClick(evt,els){if(els.length>0)openPanel(idxs[els[0].index]);},
     onHover(evt,els){evt.native.target.style.cursor=els.length>0?'pointer':'default';}
   }
@@ -6536,9 +6537,12 @@ new Chart(document.getElementById('coop-chart'),{
 </script>
 </body>
 </html>"""
+            _n_coops = len(_chart_groups)
+            _chart_h = max(280, _n_coops * 52 + 60)
             _html_divbar = _html_divbar.replace("__DADOS__", _dados_json)
+            _html_divbar = _html_divbar.replace("__CHART_H__", str(_chart_h))
             import streamlit.components.v1 as _stcv1_divbar
-            _stcv1_divbar.html(_html_divbar, height=420)
+            _stcv1_divbar.html(_html_divbar, height=_chart_h + 120)
 
             # --- Filtro / Agrupamento por cooperado ---
             coop_unicos = sorted([
