@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
+import '../../core/services/connectivity_service.dart';
+import '../../core/services/sync_queue_service.dart';
 import '../../features/estoque/estoque_screen.dart';
 import '../../features/avarias/avarias_screen.dart';
 import '../../features/validade/validade_screen.dart';
@@ -96,7 +98,17 @@ class _MobileLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: IndexedStack(index: selectedIndex, children: screens),
+      body: ValueListenableBuilder<bool>(
+        valueListenable: ConnectivityService.status,
+        builder: (context, isOnline, _) {
+          return Column(
+            children: [
+              if (!isOnline) const _OfflineBanner(),
+              Expanded(child: IndexedStack(index: selectedIndex, children: screens)),
+            ],
+          );
+        },
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
@@ -210,79 +222,91 @@ class _WideLayout extends StatelessWidget {
     final isDark = themeNotifier.value == ThemeMode.dark;
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: Row(
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              border: Border(right: BorderSide(color: Theme.of(context).colorScheme.outline)),
-            ),
-            child: Column(
-              children: [
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: IntrinsicHeight(
-                      child: NavigationRail(
-                        selectedIndex: selectedIndex,
-                        onDestinationSelected: onSelect,
-                        backgroundColor: Colors.transparent,
-                        labelType: NavigationRailLabelType.all,
-                        minWidth: 72,
-                        leading: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Container(
-                            width: 36, height: 36,
-                            decoration: BoxDecoration(
-                              color: AppColors.green.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: AppColors.green.withOpacity(0.3)),
+      body: ValueListenableBuilder<bool>(
+        valueListenable: ConnectivityService.status,
+        builder: (context, isOnline, _) {
+          return Column(
+            children: [
+              if (!isOnline) const _OfflineBanner(),
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        border: Border(right: BorderSide(color: Theme.of(context).colorScheme.outline)),
+                      ),
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: SingleChildScrollView(
+                              child: IntrinsicHeight(
+                                child: NavigationRail(
+                                  selectedIndex: selectedIndex,
+                                  onDestinationSelected: onSelect,
+                                  backgroundColor: Colors.transparent,
+                                  labelType: NavigationRailLabelType.all,
+                                  minWidth: 72,
+                                  leading: Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 12),
+                                    child: Container(
+                                      width: 36, height: 36,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.green.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(10),
+                                        border: Border.all(color: AppColors.green.withOpacity(0.3)),
+                                      ),
+                                      child: const Icon(Icons.eco_outlined, color: AppColors.green, size: 20),
+                                    ),
+                                  ),
+                                  destinations: items.map((d) => NavigationRailDestination(
+                                    icon: Icon(d.icon),
+                                    selectedIcon: Icon(d.activeIcon),
+                                    label: Text(d.label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                                    padding: const EdgeInsets.symmetric(vertical: 2),
+                                  )).toList(),
+                                ),
+                              ),
                             ),
-                            child: const Icon(Icons.eco_outlined, color: AppColors.green, size: 20),
                           ),
-                        ),
-                        destinations: items.map((d) => NavigationRailDestination(
-                          icon: Icon(d.icon),
-                          selectedIcon: Icon(d.activeIcon),
-                          label: Text(d.label, maxLines: 1, overflow: TextOverflow.ellipsis),
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                        )).toList(),
+                          // Botão de toggle de tema no rodapé do rail
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Tooltip(
+                              message: isDark ? 'Modo Claro' : 'Modo Escuro',
+                              child: InkWell(
+                                onTap: () {
+                                  themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
+                                },
+                                borderRadius: BorderRadius.circular(10),
+                                child: Container(
+                                  width: 40, height: 40,
+                                  decoration: BoxDecoration(
+                                    color: AppColors.blue.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(color: AppColors.blue.withOpacity(0.25)),
+                                  ),
+                                  child: Icon(
+                                    isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
+                                    color: AppColors.blue,
+                                    size: 20,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ),
-                ),
-                // Botão de toggle de tema no rodapé do rail
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  child: Tooltip(
-                    message: isDark ? 'Modo Claro' : 'Modo Escuro',
-                    child: InkWell(
-                      onTap: () {
-                        themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
-                      },
-                      borderRadius: BorderRadius.circular(10),
-                      child: Container(
-                        width: 40, height: 40,
-                        decoration: BoxDecoration(
-                          color: AppColors.blue.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.blue.withOpacity(0.25)),
-                        ),
-                        child: Icon(
-                          isDark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-                          color: AppColors.blue,
-                          size: 20,
-                        ),
-                      ),
+                    Expanded(
+                      child: IndexedStack(index: selectedIndex, children: screens),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: IndexedStack(index: selectedIndex, children: screens),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -293,4 +317,49 @@ class _NavItem {
   final IconData activeIcon;
   final String label;
   const _NavItem({required this.icon, required this.activeIcon, required this.label});
+}
+
+// ── Banner offline ─────────────────────────────────────────────────────────────
+
+/// Exibe uma barra laranja no topo quando não há internet.
+/// Mostra quantas operações estão pendentes de sincronização.
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: SyncQueueService.pendingCount,
+      builder: (context, count, _) {
+        final msg = count > 0
+            ? 'Sem internet · $count alteração(ões) pendente(s)'
+            : 'Sem internet · modo offline';
+        return Material(
+          color: Colors.transparent,
+          child: Container(
+            width: double.infinity,
+            color: const Color(0xFFE67E22),
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.wifi_off_rounded, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    msg,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontFamily: 'Outfit',
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 }

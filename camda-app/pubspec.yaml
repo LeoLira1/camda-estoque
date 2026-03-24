@@ -39,6 +39,7 @@ dependencies:
   # Utilidades
   shared_preferences: ^2.2.3
   url_launcher: ^6.3.0
+  connectivity_plus: ^6.0.0
 
   # Câmera (para Pendências de Entrega)
   image_picker: ^1.1.2

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'core/theme/app_theme.dart';
+import 'core/services/connectivity_service.dart';
 import 'features/auth/login_screen.dart';
 
 Future<void> main() async {
@@ -18,6 +19,9 @@ Future<void> main() async {
 
   // Inicializa locale pt_BR para intl
   await initializeDateFormatting('pt_BR', null);
+
+  // Inicializa monitoramento de conectividade e fila offline
+  await ConnectivityService.init();
 
   // Força orientação portrait+landscape (adapta para tablet)
   await SystemChrome.setPreferredOrientations([
@@ -58,6 +62,7 @@ class CamdaApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: mode,
+          navigatorKey: navigatorKey,
           home: const LoginScreen(),
           builder: (context, child) {
             // Garante que o texto não escale além do razoável
