@@ -6384,8 +6384,10 @@ if has_mestre:
             _html_divbar = """<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
-*{box-sizing:border-box;margin:0;padding:0;font-family:sans-serif;}
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',system-ui,sans-serif;}
 body{background:#f5f4f0;padding:1rem;}
 .panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;align-items:center;justify-content:center;}
 .panel-overlay.open{display:flex;}
@@ -6544,7 +6546,11 @@ new Chart(document.getElementById('coop-chart'),{
         stacked:true,
         grid:{display:false},
         border:{display:false},
-        ticks:{font:{size:12},color:'#444'}
+        ticks:{
+          font:{size:13,weight:'500',family:"'Inter',system-ui,sans-serif"},
+          color:'#333',
+          callback:v=>typeof v==='string'?v.toUpperCase():labels[v].toUpperCase()
+        }
       }
     },
     categoryPercentage:0.82,
