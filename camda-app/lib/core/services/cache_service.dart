@@ -16,6 +16,13 @@ class CacheService {
   static const _kDashboard = 'cache_dashboard_v1';
   static const _kDashboardTs = 'cache_dashboard_ts_v1';
 
+  static const _kContagem = 'cache_contagem_v1';
+  static const _kContagemTs = 'cache_contagem_ts_v1';
+  static const _kAvarias = 'cache_avarias_v1';
+  static const _kAvariasTs = 'cache_avarias_ts_v1';
+  static const _kReposicao = 'cache_reposicao_v1';
+  static const _kReposicaoTs = 'cache_reposicao_ts_v1';
+
   // ─── Estoque ─────────────────────────────────────────────────────────────
 
   static Future<void> saveEstoque(List<Map<String, dynamic>> rows) async {
@@ -55,6 +62,102 @@ class CacheService {
     return (raw.first, stale);
   }
 
+  // ─── Contagem ─────────────────────────────────────────────────────────────
+
+  static Future<void> saveContagem(List<Map<String, dynamic>> rows) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kContagem, jsonEncode(rows));
+    await prefs.setInt(_kContagemTs, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  static Future<(List<Map<String, dynamic>>?, bool)> loadContagem() async {
+    return _load(_kContagem, _kContagemTs);
+  }
+
+  /// Atualização otimista: modifica um item na cache de contagem sem ir ao servidor.
+  static Future<void> updateContagemItem(
+    int id, {
+    required String status,
+    required int qtdDivergencia,
+    required String motivo,
+  }) async {
+    final (rows, _) = await loadContagem();
+    if (rows == null) return;
+    final updated = rows.map((r) {
+      if (r['id'] == id) {
+        return {...r, 'status': status, 'qtd_divergencia': qtdDivergencia, 'motivo': motivo};
+      }
+      return r;
+    }).toList();
+    await saveContagem(updated);
+  }
+
+  // ─── Avarias ──────────────────────────────────────────────────────────────
+
+  static Future<void> saveAvarias(List<Map<String, dynamic>> rows) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kAvarias, jsonEncode(rows));
+    await prefs.setInt(_kAvariasTs, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  static Future<(List<Map<String, dynamic>>?, bool)> loadAvarias() async {
+    return _load(_kAvarias, _kAvariasTs);
+  }
+
+  /// Atualização otimista: insere uma avaria na cache local.
+  static Future<void> insertAvaria(Map<String, dynamic> row) async {
+    final (rows, _) = await loadAvarias();
+    final list = rows ?? [];
+    list.insert(0, row);
+    await saveAvarias(list);
+  }
+
+  /// Atualização otimista: resolve uma avaria na cache local.
+  static Future<void> resolverAvaria(int id, String resolvidoEm) async {
+    final (rows, _) = await loadAvarias();
+    if (rows == null) return;
+    final updated = rows.map((r) {
+      if (r['id'] == id) {
+        return {...r, 'status': 'resolvido', 'resolvido_em': resolvidoEm};
+      }
+      return r;
+    }).toList();
+    await saveAvarias(updated);
+  }
+
+  // ─── Reposição ────────────────────────────────────────────────────────────
+
+  static Future<void> saveReposicao(List<Map<String, dynamic>> rows) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kReposicao, jsonEncode(rows));
+    await prefs.setInt(_kReposicaoTs, DateTime.now().millisecondsSinceEpoch);
+  }
+
+  static Future<(List<Map<String, dynamic>>?, bool)> loadReposicao() async {
+    return _load(_kReposicao, _kReposicaoTs);
+  }
+
+  /// Atualização otimista: marca item de reposição como reposto na cache.
+  static Future<void> marcarRepostoCache(int id, String repostoEm) async {
+    final (rows, _) = await loadReposicao();
+    if (rows == null) return;
+    final updated = rows.map((r) {
+      if (r['id'] == id) {
+        return {...r, 'reposto': 1, 'reposto_em': repostoEm};
+      }
+      return r;
+    }).toList();
+    await saveReposicao(updated);
+  }
+
+  /// Atualização otimista: insere item de reposição na cache.
+  static Future<void> insertReposicaoItem(Map<String, dynamic> row) async {
+    final (rows, _) = await loadReposicao();
+    final list = rows ?? [];
+    list.insert(0, row);
+    await saveReposicao(list);
+  }
+
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
   static Future<(List<Map<String, dynamic>>?, bool)> _load(
@@ -88,6 +191,12 @@ class CacheService {
     await prefs.remove(_kVendasTs);
     await prefs.remove(_kDashboard);
     await prefs.remove(_kDashboardTs);
+    await prefs.remove(_kContagem);
+    await prefs.remove(_kContagemTs);
+    await prefs.remove(_kAvarias);
+    await prefs.remove(_kAvariasTs);
+    await prefs.remove(_kReposicao);
+    await prefs.remove(_kReposicaoTs);
   }
 
   /// Verifica se existe algum cache válido (não expirado).

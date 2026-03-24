@@ -1,5 +1,8 @@
 import '../database/turso_client.dart';
 import '../models/avaria.dart';
+import '../../core/services/cache_service.dart';
+import '../../core/services/connectivity_service.dart';
+import '../../core/services/sync_queue_service.dart';
 
 class AvariasRepository {
   final TursoClient _client;
@@ -18,9 +21,28 @@ class AvariasRepository {
     }
     sql += ' ORDER BY registrado_em DESC';
 
-    final result = await _client.query(sql, args);
-    if (result.hasError) throw TursoException(result.error!);
-    return result.toMaps().map(Avaria.fromMap).toList();
+    try {
+      final result = await _client.query(sql, args);
+      if (result.hasError) throw TursoException(result.error!);
+      final rows = result.toMaps();
+      // Salva cache completo (sem filtro) quando não há filtro aplicado
+      if (!apenasAbertas) {
+        await CacheService.saveAvarias(rows);
+        CacheService.isOffline = false;
+      }
+      return rows.map(Avaria.fromMap).toList();
+    } catch (e) {
+      final (cached, _) = await CacheService.loadAvarias();
+      if (cached != null && cached.isNotEmpty) {
+        CacheService.isOffline = true;
+        var list = cached.map(Avaria.fromMap).toList();
+        if (apenasAbertas) {
+          list = list.where((a) => a.status == 'aberto').toList();
+        }
+        return list;
+      }
+      rethrow;
+    }
   }
 
   Future<void> registrar({
@@ -30,27 +52,54 @@ class AvariasRepository {
     required String motivo,
   }) async {
     final now = DateTime.now().toIso8601String();
-    await _client.query(
-      '''INSERT INTO avarias (codigo, produto, qtd_avariada, motivo, status, registrado_em)
-         VALUES (?, ?, ?, ?, 'aberto', ?)''',
-      [codigo, produto, qtd, motivo, now],
-    );
+    const sql = '''INSERT INTO avarias (codigo, produto, qtd_avariada, motivo, status, registrado_em)
+       VALUES (?, ?, ?, ?, 'aberto', ?)''';
+    final args = [codigo, produto, qtd, motivo, now];
+
+    if (!ConnectivityService.isOnline) {
+      await SyncQueueService.enqueue(sql, args);
+      await CacheService.insertAvaria({
+        'id': -DateTime.now().millisecondsSinceEpoch, // ID temporário negativo
+        'codigo': codigo,
+        'produto': produto,
+        'qtd_avariada': qtd,
+        'motivo': motivo,
+        'status': 'aberto',
+        'registrado_em': now,
+        'resolvido_em': null,
+      });
+      return;
+    }
+    await _client.query(sql, args);
   }
 
   Future<void> resolver(int id) async {
     final now = DateTime.now().toIso8601String();
-    await _client.query(
-      "UPDATE avarias SET status = 'resolvido', resolvido_em = ? WHERE id = ?",
-      [now, id],
-    );
+    const sql = "UPDATE avarias SET status = 'resolvido', resolvido_em = ? WHERE id = ?";
+
+    if (!ConnectivityService.isOnline) {
+      await SyncQueueService.enqueue(sql, [now, id]);
+      await CacheService.resolverAvaria(id, now);
+      return;
+    }
+    await _client.query(sql, [now, id]);
   }
 
   Future<int> countAbertas() async {
-    final result = await _client.query(
-      "SELECT COUNT(*) FROM avarias WHERE status = 'aberto'",
-    );
-    if (result.hasError) throw TursoException(result.error!);
-    return _toInt(result.rows.firstOrNull?.firstOrNull);
+    try {
+      final result = await _client.query(
+        "SELECT COUNT(*) FROM avarias WHERE status = 'aberto'",
+      );
+      if (result.hasError) throw TursoException(result.error!);
+      return _toInt(result.rows.firstOrNull?.firstOrNull);
+    } catch (_) {
+      // Offline: conta a partir do cache
+      final (cached, _) = await CacheService.loadAvarias();
+      if (cached != null) {
+        return cached.where((r) => r['status'] == 'aberto').length;
+      }
+      return 0;
+    }
   }
 
   static int _toInt(dynamic v) {
