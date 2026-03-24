@@ -6417,8 +6417,8 @@ body{background:#f5f4f0;padding:1rem;}
 <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
   <div style="font-size:12px;font-weight:500;color:#888;letter-spacing:.3px;">DIVERGÊNCIAS POR COOPERADO \u00b7 clique para ver produtos</div>
   <div style="display:flex;gap:14px;font-size:11px;color:#666;">
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#E24B4A;margin-right:4px;vertical-align:middle;"></span>Faltas ←</span>
-    <span>→ Sobras <span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6;margin-left:4px;vertical-align:middle;"></span></span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#E24B4A;margin-right:4px;vertical-align:middle;"></span>Faltas</span>
+    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6;margin-right:4px;vertical-align:middle;"></span>Sobras</span>
   </div>
 </div>
 <div style="position:relative;width:100%;height:__CHART_H__px;">
@@ -6445,11 +6445,9 @@ dados.forEach((d,i)=>{
   const totS=d.itens.filter(it=>it.diff>0).reduce((s,it)=>s+it.diff,0);
   if(totF>0||totS>0) coopMap[d.coop]={totF,totS,idx:i};
 });
-// Sort by total descending
 const sorted=Object.entries(coopMap).sort((a,b)=>(b[1].totF+b[1].totS)-(a[1].totF+a[1].totS));
 const labels=sorted.map(x=>x[0]);
-// Diverging: faltas = negative (go left), sobras = positive (go right)
-const valsF=sorted.map(x=>-x[1].totF);
+const valsF=sorted.map(x=>x[1].totF);
 const valsS=sorted.map(x=>x[1].totS);
 const idxs=sorted.map(x=>x[1].idx);
 const bgs=idxs.map(i=>palette[i%palette.length]);
@@ -6502,18 +6500,18 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Faltas',
         data:valsF,
-        backgroundColor:'rgba(226,75,74,0.80)',
+        backgroundColor:'rgba(226,75,74,0.82)',
         hoverBackgroundColor:'#E24B4A',
-        borderRadius:{topLeft:4,bottomLeft:4,topRight:0,bottomRight:0},
+        borderRadius:0,
         borderSkipped:false,
         stack:'div',
       },
       {
         label:'Sobras',
         data:valsS,
-        backgroundColor:'rgba(59,130,246,0.75)',
+        backgroundColor:'rgba(59,130,246,0.78)',
         hoverBackgroundColor:'#3b82f6',
-        borderRadius:{topLeft:0,bottomLeft:0,topRight:4,bottomRight:4},
+        borderRadius:{topLeft:0,bottomLeft:0,topRight:5,bottomRight:5},
         borderSkipped:false,
         stack:'div',
       }
@@ -6540,7 +6538,7 @@ new Chart(document.getElementById('coop-chart'),{
         stacked:true,
         grid:{color:'rgba(0,0,0,0.06)'},
         border:{display:false},
-        ticks:{font:{size:12},callback:v=>Math.abs(v)}
+        ticks:{font:{size:12}}
       },
       y:{
         stacked:true,
