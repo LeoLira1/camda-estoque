@@ -6361,6 +6361,149 @@ if has_mestre:
         else:
             st.caption(f"{len(df_div)} divergência(s) · Itens saem apenas quando resolvidos manualmente.")
 
+            # ── Gráfico de barras: faltas por cooperado ──────────────────────────
+            import json as _json_chart
+            _chart_groups: dict = {}
+            for _, _cr in df_div.iterrows():
+                _coop = str(_cr.get("cooperado") or "").strip() or "Sem cooperado"
+                _delta = int(_cr["delta"]) if pd.notnull(_cr.get("delta")) else 0
+                _sis = int(_cr["qtd_sistema"]) if pd.notnull(_cr.get("qtd_sistema")) else 0
+                _fis = _sis + _delta
+                _chart_groups.setdefault(_coop, []).append({
+                    "p": str(_cr.get("produto", "")),
+                    "cod": str(_cr.get("codigo", "")),
+                    "cat": str(_cr.get("categoria", "")),
+                    "sis": _sis,
+                    "fis": _fis,
+                    "diff": _delta,
+                })
+            _dados_json = _json_chart.dumps(
+                [{"coop": _c, "itens": _its} for _c, _its in _chart_groups.items()],
+                ensure_ascii=False,
+            )
+            _html_divbar = """<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8">
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:sans-serif;}
+body{background:#f5f4f0;padding:1rem;}
+.panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;align-items:center;justify-content:center;}
+.panel-overlay.open{display:flex;}
+.panel-box{background:#fff;border-radius:14px;width:90%;max-width:420px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:0.5px solid #e0e0e0;}
+.phead{padding:14px 16px 10px;border-bottom:0.5px solid #eee;flex-shrink:0;}
+.pclose{float:right;background:none;border:none;font-size:18px;color:#bbb;cursor:pointer;}
+.pcolorbar{height:3px;border-radius:2px;width:36px;margin-bottom:6px;}
+.pname{font-size:16px;font-weight:500;color:#111;margin-bottom:8px;}
+.pstats{display:flex;gap:6px;}
+.pstat{flex:1;background:#f5f4f0;border-radius:8px;padding:8px 6px;text-align:center;}
+.pstatv{font-size:18px;font-weight:500;}
+.pstatl{font-size:10px;color:#aaa;margin-top:2px;}
+.pitems{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:7px;}
+.icard{background:#fafafa;border-radius:9px;padding:10px 12px;border-left:3px solid #E24B4A;}
+.icard-name{font-size:12px;font-weight:500;color:#111;line-height:1.35;margin-bottom:3px;}
+.icard-meta{font-size:10px;color:#bbb;margin-bottom:6px;}
+.icard-bar{display:flex;align-items:center;gap:7px;}
+.ibar-track{flex:1;height:5px;background:#eee;border-radius:3px;overflow:hidden;}
+.ibar-fill{height:100%;border-radius:3px;transition:width .6s ease;}
+.icard-nums{font-size:10px;color:#999;white-space:nowrap;}
+.icard-diff{font-size:11px;font-weight:500;padding:2px 8px;border-radius:20px;background:#FCEBEB;color:#A32D2D;}
+</style>
+</head>
+<body>
+<div style="font-size:12px;font-weight:500;color:#888;margin-bottom:8px;letter-spacing:.3px;">FALTAS POR COOPERADO \u00b7 clique para ver produtos</div>
+<div style="position:relative;width:100%;height:300px;">
+  <canvas id="coop-chart"></canvas>
+</div>
+<div class="panel-overlay" id="overlay">
+  <div class="panel-box">
+    <div class="phead">
+      <button class="pclose" onclick="closePanel()">\u2715</button>
+      <div class="pcolorbar" id="pcolorbar"></div>
+      <div class="pname" id="pname"></div>
+      <div class="pstats" id="pstats"></div>
+    </div>
+    <div class="pitems" id="pitems"></div>
+  </div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const dados=__DADOS__;
+const palette=['#2d6e6e','#d85a30','#a8c840','#7f77dd','#185fa5','#e8a060','#c8587a','#3b6d11','#6ab87a'];
+const coopFaltas={};
+dados.forEach((d,i)=>{
+  const tot=d.itens.filter(it=>it.diff<0).reduce((s,it)=>s+Math.abs(it.diff),0);
+  if(tot>0) coopFaltas[d.coop]={tot,idx:i};
+});
+const sorted=Object.entries(coopFaltas).sort((a,b)=>b[1].tot-a[1].tot);
+const labels=sorted.map(x=>x[0]);
+const vals=sorted.map(x=>x[1].tot);
+const idxs=sorted.map(x=>x[1].idx);
+const bgs=idxs.map(i=>palette[i%palette.length]);
+function openPanel(dataIdx){
+  const d=dados[dataIdx];
+  const col=palette[dataIdx%palette.length];
+  const faltas=d.itens.filter(i=>i.diff<0);
+  const totF=faltas.reduce((s,i)=>s+Math.abs(i.diff),0);
+  document.getElementById('pcolorbar').style.background=col;
+  document.getElementById('pname').textContent=d.coop;
+  document.getElementById('pstats').innerHTML=`
+    <div class="pstat"><div class="pstatv" style="color:#A32D2D;">${totF}</div><div class="pstatl">unid. faltando</div></div>
+    <div class="pstat"><div class="pstatv" style="color:#854F0B;">${faltas.length}</div><div class="pstatl">produtos</div></div>`;
+  const pi=document.getElementById('pitems');
+  pi.innerHTML='';
+  faltas.sort((a,b)=>a.diff-b.diff).forEach(it=>{
+    const pct=it.sis>0?Math.round((it.fis/it.sis)*100):0;
+    const c=document.createElement('div');
+    c.className='icard';
+    c.innerHTML=`
+      <div class="icard-name">${it.p}</div>
+      <div class="icard-meta">C\u00f3d: ${it.cod} \u00b7 ${it.cat}</div>
+      <div class="icard-bar">
+        <div class="ibar-track"><div class="ibar-fill" style="width:${pct}%;background:#E24B4A;"></div></div>
+        <span class="icard-nums">${it.fis}/${it.sis}</span>
+        <span class="icard-diff">${it.diff}</span>
+      </div>`;
+    pi.appendChild(c);
+  });
+  document.getElementById('overlay').classList.add('open');
+}
+function closePanel(){document.getElementById('overlay').classList.remove('open');}
+document.getElementById('overlay').addEventListener('click',function(e){if(e.target===this)closePanel();});
+new Chart(document.getElementById('coop-chart'),{
+  type:'bar',
+  data:{
+    labels,
+    datasets:[{
+      data:vals,
+      backgroundColor:bgs.map(c=>c+'cc'),
+      hoverBackgroundColor:bgs,
+      borderRadius:5,
+      borderSkipped:false,
+    }]
+  },
+  options:{
+    indexAxis:'y',
+    responsive:true,
+    maintainAspectRatio:false,
+    plugins:{
+      legend:{display:false},
+      tooltip:{callbacks:{label:ctx=>` ${ctx.parsed.x} unid. faltando`}}
+    },
+    scales:{
+      x:{grid:{color:'rgba(0,0,0,0.06)'},ticks:{font:{size:12}}},
+      y:{grid:{display:false},ticks:{font:{size:12}}}
+    },
+    onClick(evt,els){if(els.length>0)openPanel(idxs[els[0].index]);},
+    onHover(evt,els){evt.native.target.style.cursor=els.length>0?'pointer':'default';}
+  }
+});
+</script>
+</body>
+</html>"""
+            _html_divbar = _html_divbar.replace("__DADOS__", _dados_json)
+            import streamlit.components.v1 as _stcv1_divbar
+            _stcv1_divbar.html(_html_divbar, height=420)
+
             # --- Filtro / Agrupamento por cooperado ---
             coop_unicos = sorted([
                 c for c in df_div["cooperado"].dropna().astype(str).unique()
