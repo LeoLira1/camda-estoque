@@ -6436,6 +6436,7 @@ body{background:#f5f4f0;padding:1rem;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 const dados=__DADOS__;
+const palette=['#2d6e6e','#d85a30','#a8c840','#7f77dd','#185fa5','#e8a060','#c8587a','#3b6d11','#6ab87a'];
 // Compute totals per cooperado
 const coopMap={};
 dados.forEach((d,i)=>{
@@ -6448,13 +6449,15 @@ const labels=sorted.map(x=>x[0]);
 const valsF=sorted.map(x=>x[1].totF);
 const valsS=sorted.map(x=>x[1].totS);
 const idxs=sorted.map(x=>x[1].idx);
+const bgs=idxs.map(i=>palette[i%palette.length]);
 function openPanel(dataIdx){
   const d=dados[dataIdx];
   const faltas=d.itens.filter(i=>i.diff<0);
   const sobras=d.itens.filter(i=>i.diff>0);
   const totF=faltas.reduce((s,i)=>s+Math.abs(i.diff),0);
   const totS=sobras.reduce((s,i)=>s+i.diff,0);
-  document.getElementById('pcolorbar').style.background='#3b82f6';
+  const col=palette[dataIdx%palette.length];
+  document.getElementById('pcolorbar').style.background=col;
   document.getElementById('pname').textContent=d.coop;
   let statsHtml=`<div class="pstat"><div class="pstatv">${totF}</div><div class="pstatl">unid. faltando</div></div>`;
   if(totS>0) statsHtml+=`<div class="pstat"><div class="pstatv">${totS}</div><div class="pstatl">unid. sobrando</div></div>`;
@@ -6468,16 +6471,16 @@ function openPanel(dataIdx){
     const maxV=isSobra?Math.max(it.fis,it.sis):it.sis;
     const fillV=isSobra?it.sis:it.fis;
     const pct=maxV>0?Math.round((fillV/maxV)*100):0;
-    const barColor=isSobra?'#3b82f6':'#E24B4A';
     const diffClass=isSobra?'icard-diff pos':'icard-diff';
     const sign=it.diff>0?'+':'';
     const c=document.createElement('div');
     c.className=isSobra?'icard sobra':'icard';
+    c.style.borderLeftColor=col;
     c.innerHTML=`
       <div class="icard-name">${it.p}</div>
       <div class="icard-meta">C\u00f3d: ${it.cod} \u00b7 ${it.cat}</div>
       <div class="icard-bar">
-        <div class="ibar-track"><div class="ibar-fill" style="width:${pct}%;background:${barColor};"></div></div>
+        <div class="ibar-track"><div class="ibar-fill" style="width:${pct}%;background:${col};"></div></div>
         <span class="icard-nums">${it.fis}/${it.sis}</span>
         <span class="${diffClass}">${sign}${it.diff}</span>
       </div>`;
@@ -6496,18 +6499,21 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Faltas',
         data:valsF,
-        backgroundColor:'rgba(226,75,74,0.75)',
-        hoverBackgroundColor:'#E24B4A',
+        backgroundColor:bgs.map(c=>c+'cc'),
+        hoverBackgroundColor:bgs,
         borderRadius:4,
         borderSkipped:false,
       },
       {
         label:'Sobras',
         data:valsS,
-        backgroundColor:'rgba(59,130,246,0.75)',
-        hoverBackgroundColor:'#3b82f6',
+        backgroundColor:bgs.map(c=>c+'66'),
+        hoverBackgroundColor:bgs.map(c=>c+'aa'),
         borderRadius:4,
         borderSkipped:false,
+        borderWidth:2,
+        borderColor:bgs,
+        borderDash:[4,3],
       }
     ]
   },
