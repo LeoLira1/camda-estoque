@@ -4853,8 +4853,10 @@ def parse_faturamento_gv_excel(df: pd.DataFrame):
     return True, records, f"{len(records)} registros encontrados."
 
 
-# Tolerância padrão para considerar divergência relevante (%)
+# Tolerância padrão para considerar divergência relevante no GV (%)
 _GV_THRESHOLD_PCT = 5.0
+# % mínimo de produtos da divergência que devem aparecer no lançamento para disparar alerta
+_DIV_MATCH_PCT = 80.0
 
 
 def checar_reconciliacao_gv() -> list:
@@ -4945,39 +4947,52 @@ def checar_reconciliacao_gv() -> list:
             }
 
             if codigos_vend:
-                # Cooperados com divergências abertas cujos produtos aparecem no lançamento
+                # Cooperados com divergências abertas — todos os produtos (inclusive os que não aparecem no lançamento)
                 div_rows = conn.execute(
                     "SELECT cooperado, codigo, produto, delta, status FROM divergencias WHERE cooperado != ''",
                 ).fetchall()
 
-                # Agrupa por cooperado os produtos que aparecem no lançamento
-                coops_em_lancamento: dict = {}   # cooperado -> lista de produtos
+                # Agrupa TODOS os produtos de cada cooperado (total_div) e os que aparecem no lançamento (matches)
+                todos_por_coop: dict = {}    # cooperado -> lista total de produtos em divergência
+                matches_por_coop: dict = {}  # cooperado -> lista dos que bateram no lançamento
                 for coop, cod, prod, delta, st in div_rows:
                     coop = (coop or "").strip()
                     cod  = (cod  or "").strip()
-                    if not coop or cod not in codigos_vend:
+                    if not coop:
                         continue
-                    coops_em_lancamento.setdefault(coop, []).append({
-                        "produto": prod, "codigo": cod,
-                        "delta": delta, "status": st,
-                    })
+                    item = {"produto": prod, "codigo": cod, "delta": delta, "status": st}
+                    todos_por_coop.setdefault(coop, []).append(item)
+                    if cod in codigos_vend:
+                        matches_por_coop.setdefault(coop, []).append(item)
 
-                for coop, itens in coops_em_lancamento.items():
+                for coop, total_itens in todos_por_coop.items():
+                    itens_match = matches_por_coop.get(coop, [])
+                    n_total = len(total_itens)
+                    n_match = len(itens_match)
+                    match_pct = (n_match / n_total * 100) if n_total > 0 else 0.0
+
+                    # Só alerta se >= _DIV_MATCH_PCT dos produtos bateram no lançamento
+                    if match_pct < _DIV_MATCH_PCT:
+                        continue
+
                     if coop in alertas:
-                        # Já tem alerta pelo Check 1; apenas enriquece a origem
                         alertas[coop]["origem"] = "gv+divergencias"
-                        alertas[coop]["itens_divergentes"] = itens
+                        alertas[coop]["itens_divergentes"] = itens_match
+                        alertas[coop]["match_pct"] = round(match_pct, 1)
+                        alertas[coop]["n_total_div"] = n_total
                     else:
                         alertas[coop] = {
                             "cooperado": coop,
                             "qtd_vendida": 0,
                             "qtd_faturada": 0,
-                            "delta_abs": len(itens),
-                            "delta_pct": 100.0,
+                            "delta_abs": n_match,
+                            "delta_pct": round(match_pct, 1),
                             "data_ref": data_ref_vend,
                             "status": "divergencia",
                             "origem": "divergencias",
-                            "itens_divergentes": itens,
+                            "itens_divergentes": itens_match,
+                            "match_pct": round(match_pct, 1),
+                            "n_total_div": n_total,
                         }
 
         return sorted(alertas.values(), key=lambda x: x["delta_pct"], reverse=True)
@@ -6510,12 +6525,15 @@ if has_mestre:
                 )
         if _al_reconc:
             _n_gv = len(_al_reconc)
-            _coops_gv = ", ".join(dict.fromkeys(a["cooperado"] for a in _al_reconc[:3]))
+            _coops_gv_parts = []
+            for _a in _al_reconc[:3]:
+                _pct_str = f" {_a.get('match_pct', _a.get('delta_pct', 0)):.0f}%" if _a.get("origem", "").startswith("div") else ""
+                _coops_gv_parts.append(f"{_a['cooperado']}{_pct_str}")
+            _coops_gv = ", ".join(_coops_gv_parts)
             if _n_gv > 3:
                 _coops_gv += f" +{_n_gv - 3}"
-            # Distingue origem do alerta para mensagem mais precisa
             _tem_div_origin = any(a.get("origem", "").startswith("div") for a in _al_reconc)
-            _label_gv = "c/ produtos em divergência no lançamento" if _tem_div_origin else "c/ divergência no GV"
+            _label_gv = "pode ter faltado faturar" if _tem_div_origin else "c/ divergência no GV"
             _pills.append(
                 f'<div class="al-pill al-gv">🔵 <b>Conferência — {_n_gv} cooperado{"s" if _n_gv > 1 else ""}'
                 f' {_label_gv}:</b> {_coops_gv} · <i>verifique aba Vendas</i></div>'
@@ -7178,20 +7196,25 @@ new Chart(document.getElementById('coop-chart'),{
         st.markdown("---")
         st.markdown("#### 🔵 Conferência — Vendas × Divergências / Faturamento GV")
 
-        # Check 2 sempre disponível (divergências abertas × lançamento)
+        # Check 2 sempre disponível (divergências abertas × lançamento, limiar _DIV_MATCH_PCT)
         _alertas_div_vend = checar_reconciliacao_gv()
         _alertas_div_apenas = [a for a in _alertas_div_vend if a.get("origem", "").startswith("div")]
+        st.caption(f"Limiar de coincidência: **{_DIV_MATCH_PCT:.0f}%** dos produtos em divergência precisam aparecer no lançamento para disparar.")
         if _alertas_div_apenas:
             _linhas_div = []
             for _a in _alertas_div_apenas:
                 _itens = _a.get("itens_divergentes", [])
-                _prods = ", ".join(i["produto"][:30] for i in _itens[:3])
+                _n_tot = _a.get("n_total_div", len(_itens))
+                _pct   = _a.get("match_pct", 0.0)
+                _prods = ", ".join(i["produto"][:28] for i in _itens[:3])
                 if len(_itens) > 3:
                     _prods += f" +{len(_itens) - 3}"
                 _linhas_div.append(
-                    f'<div style="padding:6px 12px;border-radius:8px;background:rgba(59,130,246,0.08);'
-                    f'border:1px solid rgba(59,130,246,0.25);margin-bottom:4px;font-size:0.82rem;">'
-                    f'🔵 <b>{_a["cooperado"]}</b> — {len(_itens)} produto(s) em divergência no lançamento: '
+                    f'<div style="padding:8px 14px;border-radius:8px;background:rgba(59,130,246,0.08);'
+                    f'border:1px solid rgba(59,130,246,0.3);margin-bottom:6px;font-size:0.82rem;">'
+                    f'🔵 <b>{_a["cooperado"]}</b> — '
+                    f'<b style="color:#60a5fa">{len(_itens)}/{_n_tot} produtos ({_pct:.0f}%)</b> '
+                    f'da divergência aparecem no lançamento · pode ter faltado faturar: '
                     f'<span style="color:#94a3b8">{_prods}</span></div>'
                 )
             st.markdown(
@@ -7199,7 +7222,7 @@ new Chart(document.getElementById('coop-chart'),{
                 unsafe_allow_html=True,
             )
         else:
-            st.caption("Nenhum cooperado com divergências abertas encontrado no último lançamento.")
+            st.caption("Nenhum cooperado atingiu o limiar de coincidência no último lançamento.")
 
         _data_gv = get_data_ref_faturamento_gv()
         with st.expander(
