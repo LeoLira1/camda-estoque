@@ -946,6 +946,17 @@ def _get_connection():
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS faturamento_gv (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL DEFAULT '',
+            cooperado TEXT NOT NULL DEFAULT '',
+            qtd_faturada INTEGER NOT NULL DEFAULT 0,
+            data_ref TEXT NOT NULL,
+            uploaded_em TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS pendencias_entrega (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             foto_base64 TEXT NOT NULL,
@@ -1260,7 +1271,7 @@ def checar_e_registrar_alertas() -> dict:
     from datetime import timedelta
     hoje = datetime.now(tz=_BRT).date()
     conn = get_db()
-    result = {"validade_30d": [], "pendencia_5d": []}
+    result = {"validade_30d": [], "pendencia_5d": [], "reconciliacao_gv": []}
     houve_escrita = False
 
     # ── Lotes com validade ≤ 30 dias ──────────────────────────────────────
@@ -1325,6 +1336,29 @@ def checar_e_registrar_alertas() -> dict:
                         "dias": dias_pend,
                         "data_reg": data_reg,
                     })
+    except Exception:
+        pass
+
+    # ── Conferência GV: vendas vs faturamento por cooperado ───────────────
+    try:
+        divergencias_gv = checar_reconciliacao_gv()
+        for item in divergencias_gv:
+            chave = f"{item['cooperado']}|{item['data_ref']}"
+            rec = conn.execute(
+                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                ("reconciliacao_gv", chave),
+            ).fetchone()
+            if rec is None:
+                conn.execute(
+                    "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                    ("reconciliacao_gv", chave, hoje.isoformat()),
+                )
+                houve_escrita = True
+                data_disparo = hoje
+            else:
+                data_disparo = date.fromisoformat(rec[0])
+            if (hoje - data_disparo).days <= 2:
+                result["reconciliacao_gv"].append(item)
     except Exception:
         pass
 
@@ -4701,6 +4735,270 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
         pass
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# FATURAMENTO GV — conferência vendas × faturado por cooperado
+# ══════════════════════════════════════════════════════════════════════════════
+
+def save_faturamento_gv(records: list, data_ref: str):
+    """
+    Salva dados de faturamento GV para o dia de referência.
+    Substitui qualquer dado anterior para o mesmo data_ref.
+    records: list of dict com chaves: codigo, produto, cooperado, qtd_faturada
+    data_ref: str "YYYY-MM-DD"
+    """
+    try:
+        conn = get_db()
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute("DELETE FROM faturamento_gv WHERE data_ref = ?", (data_ref,))
+        rows = [
+            (r["codigo"], r.get("produto", r["codigo"]),
+             r.get("cooperado", ""), r.get("qtd_faturada", 0),
+             data_ref, now)
+            for r in records if r.get("codigo")
+        ]
+        if rows:
+            conn.executemany(
+                """INSERT INTO faturamento_gv (codigo, produto, cooperado, qtd_faturada, data_ref, uploaded_em)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                rows,
+            )
+        conn.commit()
+        sync_db()
+        return True, f"{len(rows)} registros de faturamento GV salvos para {data_ref}."
+    except Exception as e:
+        return False, f"Erro ao salvar faturamento GV: {e}"
+
+
+def get_faturamento_gv(data_ref: str = None) -> pd.DataFrame:
+    """Retorna dados de faturamento GV. Se data_ref for None, usa o mais recente."""
+    cols = ["id", "codigo", "produto", "cooperado", "qtd_faturada", "data_ref", "uploaded_em"]
+    try:
+        conn = get_db()
+        if data_ref is None:
+            row = conn.execute("SELECT MAX(data_ref) FROM faturamento_gv").fetchone()
+            if not row or not row[0]:
+                return pd.DataFrame(columns=cols)
+            data_ref = row[0]
+        rows = conn.execute(
+            "SELECT id, codigo, produto, cooperado, qtd_faturada, data_ref, uploaded_em FROM faturamento_gv WHERE data_ref = ?",
+            (data_ref,),
+        ).fetchall()
+        if rows:
+            return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        pass
+    return pd.DataFrame(columns=cols)
+
+
+def parse_faturamento_gv_excel(df: pd.DataFrame):
+    """
+    Tenta mapear colunas de um DataFrame para o esquema de faturamento GV.
+    Retorna (ok: bool, records: list, msg: str).
+    Colunas aceitas (case-insensitive, com/sem acento):
+        CODIGO/COD, PRODUTO/DESC*, COOPERADO/COOP*/NOME*, QTD*/FATURA*
+    """
+    import unicodedata as _ud
+
+    def _norm(s):
+        return ''.join(
+            c for c in _ud.normalize('NFD', str(s).upper())
+            if _ud.category(c) != 'Mn'
+        ).replace(" ", "_")
+
+    df = df.copy()
+    df.columns = [_norm(c) for c in df.columns]
+
+    def _find(keywords):
+        for k in keywords:
+            for c in df.columns:
+                if k in c:
+                    return c
+        return None
+
+    col_cod  = _find(["CODIGO", "COD"])
+    col_prod = _find(["PRODUTO", "DESC", "NOME_PROD", "MERCADORIA"])
+    col_coop = _find(["COOPERADO", "COOP", "NOME_COOP", "CLIENTE", "RAZAO", "NOME"])
+    col_qtd  = _find(["QTD_FATURA", "FATURA", "QTD_VEND", "QTDE", "QTD", "QUANTIDADE"])
+
+    missing = []
+    if not col_cod:
+        missing.append("CODIGO")
+    if not col_coop:
+        missing.append("COOPERADO")
+    if not col_qtd:
+        missing.append("QTD FATURADA")
+    if missing:
+        return False, [], (
+            f"Colunas obrigatórias não encontradas: {', '.join(missing)}. "
+            f"Colunas detectadas: {list(df.columns)}"
+        )
+
+    records = []
+    for _, row in df.iterrows():
+        cod = str(row[col_cod]).strip()
+        if not cod or cod.lower() in ("nan", "none", ""):
+            continue
+        prod = str(row[col_prod]).strip() if col_prod else cod
+        coop = str(row[col_coop]).strip() if col_coop else "Sem cooperado"
+        if coop.lower() in ("nan", "none", ""):
+            coop = "Sem cooperado"
+        try:
+            qtd = int(float(str(row[col_qtd]).replace(",", ".")))
+        except Exception:
+            qtd = 0
+        records.append({"codigo": cod, "produto": prod, "cooperado": coop, "qtd_faturada": qtd})
+
+    if not records:
+        return False, [], "Nenhum registro válido encontrado na planilha."
+    return True, records, f"{len(records)} registros encontrados."
+
+
+# Tolerância padrão para considerar divergência relevante (%)
+_GV_THRESHOLD_PCT = 5.0
+
+
+def checar_reconciliacao_gv() -> list:
+    """
+    Compara vendas_historico (do dia de referência do faturamento mais recente)
+    com faturamento_gv por cooperado.
+
+    Lógica por cooperado:
+      - qtd_vendida  = soma de vendas_historico para os produtos do cooperado
+                       (vinculados via estoque_mestre.nota)
+      - qtd_faturada = soma de faturamento_gv.qtd_faturada para o cooperado
+      - divergencia% = |qtd_vendida - qtd_faturada| / qtd_faturada * 100
+
+    Retorna lista de dicts para cooperados com divergência > _GV_THRESHOLD_PCT ou
+    sem nenhuma venda registrada (mas com faturamento).
+    """
+    try:
+        conn = get_db()
+
+        # Dia de referência do faturamento mais recente
+        row = conn.execute("SELECT MAX(data_ref) FROM faturamento_gv").fetchone()
+        if not row or not row[0]:
+            return []
+        data_ref = row[0]
+
+        # Faturamento GV do dia
+        fat_rows = conn.execute(
+            "SELECT cooperado, codigo, qtd_faturada FROM faturamento_gv WHERE data_ref = ?",
+            (data_ref,),
+        ).fetchall()
+        if not fat_rows:
+            return []
+
+        # Vendas do mesmo dia de referência, com cooperado via estoque_mestre.nota
+        vend_rows = conn.execute(
+            """SELECT v.codigo, v.qtd_vendida, COALESCE(em.nota, '') AS cooperado
+               FROM vendas_historico v
+               LEFT JOIN estoque_mestre em ON em.codigo = v.codigo
+               WHERE v.data_upload = ?""",
+            (data_ref,),
+        ).fetchall()
+
+        # Também tenta via faturamento_gv.cooperado (caso o arquivo GV já traga o vínculo)
+        fat_by_coop: dict = {}  # cooperado -> {codigo: qtd}
+        for coop, cod, qtd in fat_rows:
+            fat_by_coop.setdefault(coop.strip(), {})[cod.strip()] = qtd
+
+        vend_by_cod: dict = {cod.strip(): (int(qtd), coop.strip()) for cod, qtd, coop in vend_rows}
+
+        alertas = []
+        for coop, fat_dict in fat_by_coop.items():
+            qtd_fat = sum(fat_dict.values())
+            if qtd_fat == 0:
+                continue
+
+            # Soma vendas dos produtos desse cooperado (pelo vinculo via estoque_mestre.nota)
+            qtd_vend_nota = sum(
+                qtd for cod, (qtd, c_nota) in vend_by_cod.items()
+                if c_nota.strip() == coop and cod in fat_dict
+            )
+            # Fallback: soma vendas pelos próprios códigos do faturamento
+            qtd_vend_cod = sum(
+                vend_by_cod[cod][0] for cod in fat_dict if cod in vend_by_cod
+            )
+            # Usa o maior dos dois para ser mais conservador
+            qtd_vend = max(qtd_vend_nota, qtd_vend_cod)
+
+            delta_abs = abs(qtd_vend - qtd_fat)
+            delta_pct = (delta_abs / qtd_fat) * 100
+
+            if delta_pct > _GV_THRESHOLD_PCT:
+                alertas.append({
+                    "cooperado": coop,
+                    "qtd_vendida": qtd_vend,
+                    "qtd_faturada": qtd_fat,
+                    "delta_abs": delta_abs,
+                    "delta_pct": round(delta_pct, 1),
+                    "data_ref": data_ref,
+                    "status": "falta" if qtd_vend < qtd_fat else "sobra",
+                })
+
+        return sorted(alertas, key=lambda x: x["delta_pct"], reverse=True)
+    except Exception:
+        return []
+
+
+def get_resumo_reconciliacao_gv() -> pd.DataFrame:
+    """
+    Retorna DataFrame completo da reconciliação GV vs Vendas
+    para exibição na UI (todos os cooperados, não só os divergentes).
+    """
+    try:
+        conn = get_db()
+        row = conn.execute("SELECT MAX(data_ref) FROM faturamento_gv").fetchone()
+        if not row or not row[0]:
+            return pd.DataFrame()
+        data_ref = row[0]
+
+        fat_rows = conn.execute(
+            "SELECT cooperado, SUM(qtd_faturada) FROM faturamento_gv WHERE data_ref = ? GROUP BY cooperado",
+            (data_ref,),
+        ).fetchall()
+        vend_rows = conn.execute(
+            """SELECT COALESCE(em.nota, 'Sem vínculo') AS cooperado, SUM(v.qtd_vendida)
+               FROM vendas_historico v
+               LEFT JOIN estoque_mestre em ON em.codigo = v.codigo
+               WHERE v.data_upload = ?
+               GROUP BY COALESCE(em.nota, 'Sem vínculo')""",
+            (data_ref,),
+        ).fetchall()
+
+        fat_map = {r[0].strip(): int(r[1] or 0) for r in fat_rows}
+        vend_map = {r[0].strip(): int(r[1] or 0) for r in vend_rows}
+
+        coops = sorted(set(list(fat_map.keys()) + list(vend_map.keys())))
+        records = []
+        for coop in coops:
+            qtd_fat = fat_map.get(coop, 0)
+            qtd_vend = vend_map.get(coop, 0)
+            delta = qtd_vend - qtd_fat
+            pct = round((abs(delta) / qtd_fat * 100) if qtd_fat > 0 else 0.0, 1)
+            status = "✅ OK" if pct <= _GV_THRESHOLD_PCT else ("🔴 Falta" if delta < 0 else "🟡 Sobra")
+            records.append({
+                "Cooperado": coop,
+                "Qtd Faturada (GV)": qtd_fat,
+                "Qtd Vendida (Sistema)": qtd_vend,
+                "Diferença": delta,
+                "Divergência %": pct,
+                "Status": status,
+            })
+        return pd.DataFrame(records)
+    except Exception:
+        return pd.DataFrame()
+
+
+def get_data_ref_faturamento_gv() -> str:
+    """Retorna o data_ref mais recente do faturamento GV, ou '' se não houver."""
+    try:
+        row = get_db().execute("SELECT MAX(data_ref) FROM faturamento_gv").fetchone()
+        return row[0] if row and row[0] else ""
+    except Exception:
+        return ""
+
+
 def get_vendas_historico() -> pd.DataFrame:
     """Retorna vendas ACUMULADAS por produto (soma de todos os dias)."""
     try:
@@ -6101,8 +6399,9 @@ if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cach
     st.session_state["alertas_cache_date"] = datetime.now(tz=_BRT).date().isoformat()
 
 _alertas = st.session_state["alertas_cache"]
-_al_val  = _alertas.get("validade_30d", [])
-_al_pend = _alertas.get("pendencia_5d", [])
+_al_val   = _alertas.get("validade_30d", [])
+_al_pend  = _alertas.get("pendencia_5d", [])
+_al_reconc = _alertas.get("reconciliacao_gv", [])
 
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
@@ -6141,7 +6440,7 @@ if has_mestre:
     </script>""", height=0)
 
     # ── Alertas (abaixo da busca, compacto) ──────────────────────────────────
-    if _al_val or _al_pend:
+    if _al_val or _al_pend or _al_reconc:
         _pills = []
         if _al_pend:
             n = len(_al_pend)
@@ -6165,6 +6464,15 @@ if has_mestre:
                     f'<div class="al-pill al-aviso">🟡 <b>{len(_normais)} lote{"s" if len(_normais) > 1 else ""}'
                     f'</b> vence em até 30 dias</div>'
                 )
+        if _al_reconc:
+            _n_gv = len(_al_reconc)
+            _coops_gv = ", ".join(dict.fromkeys(a["cooperado"] for a in _al_reconc[:3]))
+            if _n_gv > 3:
+                _coops_gv += f" +{_n_gv - 3}"
+            _pills.append(
+                f'<div class="al-pill al-gv">🔵 <b>Conferência GV — {_n_gv} cooperado{"s" if _n_gv > 1 else ""}'
+                f' c/ divergência:</b> {_coops_gv} · <i>verifique aba Vendas</i></div>'
+            )
         st.markdown(
             """
             <style>
@@ -6173,6 +6481,7 @@ if has_mestre:
             .al-pend{background:rgba(255,71,87,0.12);color:#ff4757;border:1px solid rgba(255,71,87,0.35);}
             .al-urgente{background:rgba(255,140,0,0.12);color:#ff8c00;border:1px solid rgba(255,140,0,0.4);}
             .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
+            .al-gv{background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);}
             </style>
             """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
             unsafe_allow_html=True,
@@ -6817,6 +7126,93 @@ new Chart(document.getElementById('coop-chart'),{
     with t4:
         df_vendas = get_vendas_historico()
         build_vendas_tab(df_vendas)
+
+        # ── Conferência GV ────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("#### 🔵 Conferência GV — Vendas × Faturamento")
+
+        _data_gv = get_data_ref_faturamento_gv()
+        if _data_gv:
+            st.caption(f"Faturamento GV carregado: **{_data_gv}**")
+        else:
+            st.caption("Nenhum faturamento GV carregado ainda.")
+
+        with st.expander("📤 Importar Faturamento GV (Excel/CSV)", expanded=not bool(_data_gv)):
+            st.markdown(
+                "Faça upload da planilha de faturamento GV. "
+                "Colunas necessárias: **CODIGO**, **COOPERADO** e **QTD FATURADA** "
+                "(a coluna PRODUTO é opcional)."
+            )
+            _gv_file = st.file_uploader(
+                "Planilha GV",
+                type=["xlsx", "xls", "csv"],
+                label_visibility="collapsed",
+                key="gv_upload_file",
+            )
+            _gv_data_ref = st.date_input(
+                "Data de referência do faturamento",
+                value=datetime.now(tz=_BRT).date(),
+                key="gv_data_ref",
+            )
+            if _gv_file is not None:
+                try:
+                    if _gv_file.name.endswith(".csv"):
+                        _df_gv = pd.read_csv(_gv_file, dtype=str)
+                    else:
+                        _df_gv = pd.read_excel(_gv_file, dtype=str)
+                    _gv_ok, _gv_records, _gv_msg = parse_faturamento_gv_excel(_df_gv)
+                    if _gv_ok:
+                        st.success(f"✅ {_gv_msg}")
+                        with st.expander("👁️ Preview", expanded=False):
+                            st.dataframe(pd.DataFrame(_gv_records), hide_index=True, use_container_width=True, height=220)
+                        if st.button("💾 Salvar Faturamento GV", type="primary", key="gv_salvar"):
+                            _ok_gv, _msg_gv = save_faturamento_gv(_gv_records, _gv_data_ref.isoformat())
+                            if _ok_gv:
+                                st.success(_msg_gv)
+                                st.session_state.pop("alertas_cache", None)
+                                st.rerun()
+                            else:
+                                st.error(_msg_gv)
+                    else:
+                        st.error(f"❌ {_gv_msg}")
+                except Exception as _e_gv:
+                    st.error(f"❌ Erro ao ler arquivo: {_e_gv}")
+
+        if _data_gv:
+            _df_reconc = get_resumo_reconciliacao_gv()
+            if not _df_reconc.empty:
+                _n_div = int((_df_reconc["Divergência %"] > _GV_THRESHOLD_PCT).sum())
+                _col_r1, _col_r2, _col_r3 = st.columns(3)
+                _col_r1.metric("Cooperados analisados", len(_df_reconc))
+                _col_r2.metric("Com divergência", _n_div, delta=f">{_GV_THRESHOLD_PCT}%", delta_color="inverse")
+                _col_r3.metric("Tolerância configurada", f"{_GV_THRESHOLD_PCT}%")
+
+                # Destaque visual para linhas com divergência
+                def _style_gv(row):
+                    if row["Divergência %"] > _GV_THRESHOLD_PCT:
+                        color = "rgba(255,71,87,0.12)" if row["Diferença"] < 0 else "rgba(255,193,7,0.10)"
+                        return [f"background-color:{color}"] * len(row)
+                    return [""] * len(row)
+
+                st.dataframe(
+                    _df_reconc.style.apply(_style_gv, axis=1).format({"Divergência %": "{:.1f}%", "Diferença": "{:+d}"}),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+
+                if st.button("🔄 Verificar Alertas Agora", key="gv_check_now"):
+                    st.session_state.pop("alertas_cache", None)
+                    st.rerun()
+
+                if st.button("🗑️ Limpar Faturamento GV", key="gv_clear", help="Remove todos os dados de faturamento GV"):
+                    try:
+                        get_db().execute("DELETE FROM faturamento_gv")
+                        get_db().commit()
+                        sync_db()
+                        st.session_state.pop("alertas_cache", None)
+                        st.rerun()
+                    except Exception as _e_del:
+                        st.error(f"Erro: {_e_del}")
 
     with t6:
         # ── CSS da aba ──
@@ -8141,6 +8537,8 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                             st.info(f"🗺️ Mapa do rack atualizado automaticamente ({_sync_res['atualizadas']} posição(ões)).")
                         if _using_cloud:
                             st.info("☁️ Sincronizado.")
+                        # Força reprocessamento dos alertas (inclui conferência GV)
+                        st.session_state.pop("alertas_cache", None)
                         st.session_state.processed_file = None
                         st.rerun()
                     else:
