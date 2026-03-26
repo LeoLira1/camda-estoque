@@ -4859,84 +4859,128 @@ _GV_THRESHOLD_PCT = 5.0
 
 def checar_reconciliacao_gv() -> list:
     """
-    Compara vendas_historico (do dia de referência do faturamento mais recente)
-    com faturamento_gv por cooperado.
+    Dois checks independentes retornam alertas por cooperado:
 
-    Lógica por cooperado:
-      - qtd_vendida  = soma de vendas_historico para os produtos do cooperado
-                       (vinculados via estoque_mestre.nota)
-      - qtd_faturada = soma de faturamento_gv.qtd_faturada para o cooperado
-      - divergencia% = |qtd_vendida - qtd_faturada| / qtd_faturada * 100
+    CHECK 1 — GV × Vendas (requer faturamento_gv carregado):
+      Para cada cooperado no faturamento_gv, soma as vendas do dia via
+      estoque_mestre.nota. Alerta quando divergência > _GV_THRESHOLD_PCT.
+      BUG CORRIGIDO: não usa mais fallback sem filtro de cooperado.
 
-    Retorna lista de dicts para cooperados com divergência > _GV_THRESHOLD_PCT ou
-    sem nenhuma venda registrada (mas com faturamento).
+    CHECK 2 — Divergências abertas × Lançamento de vendas (automático):
+      Para cada cooperado com divergência aberta na tabela `divergencias`,
+      verifica se algum dos seus produtos aparece no lançamento de vendas
+      mais recente (vendas_historico). Se sim, alerta imediatamente —
+      independente de GV carregado.
     """
     try:
         conn = get_db()
+        hoje_iso = datetime.now(tz=_BRT).date().isoformat()
+        alertas: dict = {}   # chave: cooperado → dict de alerta (deduplica)
 
-        # Dia de referência do faturamento mais recente
+        # ── CHECK 1: faturamento_gv × vendas_historico ────────────────────
         row = conn.execute("SELECT MAX(data_ref) FROM faturamento_gv").fetchone()
-        if not row or not row[0]:
-            return []
-        data_ref = row[0]
+        data_ref_gv = row[0] if row and row[0] else None
 
-        # Faturamento GV do dia
-        fat_rows = conn.execute(
-            "SELECT cooperado, codigo, qtd_faturada FROM faturamento_gv WHERE data_ref = ?",
-            (data_ref,),
-        ).fetchall()
-        if not fat_rows:
-            return []
+        if data_ref_gv:
+            fat_rows = conn.execute(
+                "SELECT cooperado, codigo, qtd_faturada FROM faturamento_gv WHERE data_ref = ?",
+                (data_ref_gv,),
+            ).fetchall()
 
-        # Vendas do mesmo dia de referência, com cooperado via estoque_mestre.nota
-        vend_rows = conn.execute(
-            """SELECT v.codigo, v.qtd_vendida, COALESCE(em.nota, '') AS cooperado
-               FROM vendas_historico v
-               LEFT JOIN estoque_mestre em ON em.codigo = v.codigo
-               WHERE v.data_upload = ?""",
-            (data_ref,),
-        ).fetchall()
+            if fat_rows:
+                # Vendas do mesmo dia, cooperado via estoque_mestre.nota
+                vend_rows = conn.execute(
+                    """SELECT v.codigo, v.qtd_vendida, COALESCE(em.nota, '') AS cooperado
+                       FROM vendas_historico v
+                       LEFT JOIN estoque_mestre em ON em.codigo = v.codigo
+                       WHERE v.data_upload = ?""",
+                    (data_ref_gv,),
+                ).fetchall()
 
-        # Também tenta via faturamento_gv.cooperado (caso o arquivo GV já traga o vínculo)
-        fat_by_coop: dict = {}  # cooperado -> {codigo: qtd}
-        for coop, cod, qtd in fat_rows:
-            fat_by_coop.setdefault(coop.strip(), {})[cod.strip()] = qtd
+                fat_by_coop: dict = {}
+                for coop, cod, qtd in fat_rows:
+                    fat_by_coop.setdefault(coop.strip(), {})[cod.strip()] = qtd
 
-        vend_by_cod: dict = {cod.strip(): (int(qtd), coop.strip()) for cod, qtd, coop in vend_rows}
+                # CORRIGIDO: filtra vendas por cooperado via nota, sem fallback sem filtro
+                vend_by_nota: dict = {}   # cooperado_nota -> {codigo: qtd}
+                for cod, qtd, c_nota in vend_rows:
+                    vend_by_nota.setdefault(c_nota.strip(), {})[cod.strip()] = int(qtd)
 
-        alertas = []
-        for coop, fat_dict in fat_by_coop.items():
-            qtd_fat = sum(fat_dict.values())
-            if qtd_fat == 0:
-                continue
+                for coop, fat_dict in fat_by_coop.items():
+                    qtd_fat = sum(fat_dict.values())
+                    if qtd_fat == 0:
+                        continue
+                    # Soma apenas vendas onde estoque_mestre.nota == cooperado do GV
+                    coop_vend = vend_by_nota.get(coop, {})
+                    qtd_vend = sum(coop_vend.get(cod, 0) for cod in fat_dict)
 
-            # Soma vendas dos produtos desse cooperado (pelo vinculo via estoque_mestre.nota)
-            qtd_vend_nota = sum(
-                qtd for cod, (qtd, c_nota) in vend_by_cod.items()
-                if c_nota.strip() == coop and cod in fat_dict
-            )
-            # Fallback: soma vendas pelos próprios códigos do faturamento
-            qtd_vend_cod = sum(
-                vend_by_cod[cod][0] for cod in fat_dict if cod in vend_by_cod
-            )
-            # Usa o maior dos dois para ser mais conservador
-            qtd_vend = max(qtd_vend_nota, qtd_vend_cod)
+                    delta_abs = abs(qtd_vend - qtd_fat)
+                    delta_pct = (delta_abs / qtd_fat) * 100
 
-            delta_abs = abs(qtd_vend - qtd_fat)
-            delta_pct = (delta_abs / qtd_fat) * 100
+                    if delta_pct > _GV_THRESHOLD_PCT:
+                        alertas[coop] = {
+                            "cooperado": coop,
+                            "qtd_vendida": qtd_vend,
+                            "qtd_faturada": qtd_fat,
+                            "delta_abs": delta_abs,
+                            "delta_pct": round(delta_pct, 1),
+                            "data_ref": data_ref_gv,
+                            "status": "falta" if qtd_vend < qtd_fat else "sobra",
+                            "origem": "gv",
+                        }
 
-            if delta_pct > _GV_THRESHOLD_PCT:
-                alertas.append({
-                    "cooperado": coop,
-                    "qtd_vendida": qtd_vend,
-                    "qtd_faturada": qtd_fat,
-                    "delta_abs": delta_abs,
-                    "delta_pct": round(delta_pct, 1),
-                    "data_ref": data_ref,
-                    "status": "falta" if qtd_vend < qtd_fat else "sobra",
-                })
+        # ── CHECK 2: divergências abertas × lançamento recente ────────────
+        # Data do lançamento mais recente em vendas_historico
+        vend_ref_row = conn.execute("SELECT MAX(data_upload) FROM vendas_historico").fetchone()
+        data_ref_vend = vend_ref_row[0] if vend_ref_row and vend_ref_row[0] else None
 
-        return sorted(alertas, key=lambda x: x["delta_pct"], reverse=True)
+        if data_ref_vend:
+            # Produtos no lançamento recente
+            codigos_vend = {
+                row[0].strip()
+                for row in conn.execute(
+                    "SELECT codigo FROM vendas_historico WHERE data_upload = ?",
+                    (data_ref_vend,),
+                ).fetchall()
+            }
+
+            if codigos_vend:
+                # Cooperados com divergências abertas cujos produtos aparecem no lançamento
+                div_rows = conn.execute(
+                    "SELECT cooperado, codigo, produto, delta, status FROM divergencias WHERE cooperado != ''",
+                ).fetchall()
+
+                # Agrupa por cooperado os produtos que aparecem no lançamento
+                coops_em_lancamento: dict = {}   # cooperado -> lista de produtos
+                for coop, cod, prod, delta, st in div_rows:
+                    coop = (coop or "").strip()
+                    cod  = (cod  or "").strip()
+                    if not coop or cod not in codigos_vend:
+                        continue
+                    coops_em_lancamento.setdefault(coop, []).append({
+                        "produto": prod, "codigo": cod,
+                        "delta": delta, "status": st,
+                    })
+
+                for coop, itens in coops_em_lancamento.items():
+                    if coop in alertas:
+                        # Já tem alerta pelo Check 1; apenas enriquece a origem
+                        alertas[coop]["origem"] = "gv+divergencias"
+                        alertas[coop]["itens_divergentes"] = itens
+                    else:
+                        alertas[coop] = {
+                            "cooperado": coop,
+                            "qtd_vendida": 0,
+                            "qtd_faturada": 0,
+                            "delta_abs": len(itens),
+                            "delta_pct": 100.0,
+                            "data_ref": data_ref_vend,
+                            "status": "divergencia",
+                            "origem": "divergencias",
+                            "itens_divergentes": itens,
+                        }
+
+        return sorted(alertas.values(), key=lambda x: x["delta_pct"], reverse=True)
     except Exception:
         return []
 
@@ -6469,9 +6513,12 @@ if has_mestre:
             _coops_gv = ", ".join(dict.fromkeys(a["cooperado"] for a in _al_reconc[:3]))
             if _n_gv > 3:
                 _coops_gv += f" +{_n_gv - 3}"
+            # Distingue origem do alerta para mensagem mais precisa
+            _tem_div_origin = any(a.get("origem", "").startswith("div") for a in _al_reconc)
+            _label_gv = "c/ produtos em divergência no lançamento" if _tem_div_origin else "c/ divergência no GV"
             _pills.append(
-                f'<div class="al-pill al-gv">🔵 <b>Conferência GV — {_n_gv} cooperado{"s" if _n_gv > 1 else ""}'
-                f' c/ divergência:</b> {_coops_gv} · <i>verifique aba Vendas</i></div>'
+                f'<div class="al-pill al-gv">🔵 <b>Conferência — {_n_gv} cooperado{"s" if _n_gv > 1 else ""}'
+                f' {_label_gv}:</b> {_coops_gv} · <i>verifique aba Vendas</i></div>'
             )
         st.markdown(
             """
@@ -7129,19 +7176,39 @@ new Chart(document.getElementById('coop-chart'),{
 
         # ── Conferência GV ────────────────────────────────────────────────────
         st.markdown("---")
-        st.markdown("#### 🔵 Conferência GV — Vendas × Faturamento")
+        st.markdown("#### 🔵 Conferência — Vendas × Divergências / Faturamento GV")
+
+        # Check 2 sempre disponível (divergências abertas × lançamento)
+        _alertas_div_vend = checar_reconciliacao_gv()
+        _alertas_div_apenas = [a for a in _alertas_div_vend if a.get("origem", "").startswith("div")]
+        if _alertas_div_apenas:
+            _linhas_div = []
+            for _a in _alertas_div_apenas:
+                _itens = _a.get("itens_divergentes", [])
+                _prods = ", ".join(i["produto"][:30] for i in _itens[:3])
+                if len(_itens) > 3:
+                    _prods += f" +{len(_itens) - 3}"
+                _linhas_div.append(
+                    f'<div style="padding:6px 12px;border-radius:8px;background:rgba(59,130,246,0.08);'
+                    f'border:1px solid rgba(59,130,246,0.25);margin-bottom:4px;font-size:0.82rem;">'
+                    f'🔵 <b>{_a["cooperado"]}</b> — {len(_itens)} produto(s) em divergência no lançamento: '
+                    f'<span style="color:#94a3b8">{_prods}</span></div>'
+                )
+            st.markdown(
+                '<div style="margin-bottom:8px;">' + "".join(_linhas_div) + "</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.caption("Nenhum cooperado com divergências abertas encontrado no último lançamento.")
 
         _data_gv = get_data_ref_faturamento_gv()
-        if _data_gv:
-            st.caption(f"Faturamento GV carregado: **{_data_gv}**")
-        else:
-            st.caption("Nenhum faturamento GV carregado ainda.")
-
-        with st.expander("📤 Importar Faturamento GV (Excel/CSV)", expanded=not bool(_data_gv)):
+        with st.expander(
+            f"📤 Importar Faturamento GV (Excel/CSV){' · carregado: ' + _data_gv if _data_gv else ''}",
+            expanded=not bool(_data_gv),
+        ):
             st.markdown(
-                "Faça upload da planilha de faturamento GV. "
-                "Colunas necessárias: **CODIGO**, **COOPERADO** e **QTD FATURADA** "
-                "(a coluna PRODUTO é opcional)."
+                "Opcional — importe a planilha do GV para comparação de quantidades faturadas. "
+                "Colunas necessárias: **CODIGO**, **COOPERADO** e **QTD FATURADA**."
             )
             _gv_file = st.file_uploader(
                 "Planilha GV",
@@ -7183,11 +7250,10 @@ new Chart(document.getElementById('coop-chart'),{
             if not _df_reconc.empty:
                 _n_div = int((_df_reconc["Divergência %"] > _GV_THRESHOLD_PCT).sum())
                 _col_r1, _col_r2, _col_r3 = st.columns(3)
-                _col_r1.metric("Cooperados analisados", len(_df_reconc))
-                _col_r2.metric("Com divergência", _n_div, delta=f">{_GV_THRESHOLD_PCT}%", delta_color="inverse")
-                _col_r3.metric("Tolerância configurada", f"{_GV_THRESHOLD_PCT}%")
+                _col_r1.metric("Cooperados (GV)", len(_df_reconc))
+                _col_r2.metric("Com divergência GV", _n_div, delta=f">{_GV_THRESHOLD_PCT}%", delta_color="inverse")
+                _col_r3.metric("Tolerância", f"{_GV_THRESHOLD_PCT}%")
 
-                # Destaque visual para linhas com divergência
                 def _style_gv(row):
                     if row["Divergência %"] > _GV_THRESHOLD_PCT:
                         color = "rgba(255,71,87,0.12)" if row["Diferença"] < 0 else "rgba(255,193,7,0.10)"
@@ -7200,10 +7266,6 @@ new Chart(document.getElementById('coop-chart'),{
                     use_container_width=True,
                 )
 
-                if st.button("🔄 Verificar Alertas Agora", key="gv_check_now"):
-                    st.session_state.pop("alertas_cache", None)
-                    st.rerun()
-
                 if st.button("🗑️ Limpar Faturamento GV", key="gv_clear", help="Remove todos os dados de faturamento GV"):
                     try:
                         get_db().execute("DELETE FROM faturamento_gv")
@@ -7213,6 +7275,10 @@ new Chart(document.getElementById('coop-chart'),{
                         st.rerun()
                     except Exception as _e_del:
                         st.error(f"Erro: {_e_del}")
+
+        if st.button("🔄 Verificar Alertas Agora", key="gv_check_now"):
+            st.session_state.pop("alertas_cache", None)
+            st.rerun()
 
     with t6:
         # ── CSS da aba ──
