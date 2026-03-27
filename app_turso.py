@@ -6575,35 +6575,26 @@ if has_mestre:
     import streamlit.components.v1 as _stc_ac
     _stc_ac.html("""<script>
     (function() {
-        function fixLayout() {
-            try {
-                var d = window.parent.document;
-                // Remove padding-top reservado para o header do Streamlit
-                var selectors = [
-                    'section[data-testid="stMain"]',
-                    '.block-container',
-                    'section.main',
-                    'div[data-testid="stAppViewBlockContainer"]'
-                ];
-                selectors.forEach(function(s) {
-                    var el = d.querySelector(s);
-                    if (el) el.style.paddingTop = '0px';
-                });
-                // Oculta elementos do topo do Streamlit
-                ['[data-testid="stHeader"]','[data-testid="stDecoration"]',
-                 '[data-testid="stToolbar"]','[data-testid="stStatusWidget"]'].forEach(function(s) {
-                    var el = d.querySelector(s);
-                    if (el) el.style.display = 'none';
-                });
-            } catch(e) {}
+        var d = window.parent.document;
+
+        // Injeta CSS persistente no <head> — sobrevive a re-renders do Streamlit
+        if (!d.getElementById('camda-fix-padding')) {
+            var s = d.createElement('style');
+            s.id = 'camda-fix-padding';
+            s.textContent = [
+                'header[data-testid="stHeader"]{display:none!important;height:0!important;min-height:0!important;}',
+                'div[data-testid="stDecoration"]{display:none!important;}',
+                'div[data-testid="stToolbar"]{display:none!important;}',
+                'section[data-testid="stMain"]{padding-top:0!important;}',
+                '.block-container{padding-top:0!important;}',
+                'div[data-testid="stAppViewBlockContainer"]{padding-top:0!important;margin-top:0!important;}'
+            ].join('');
+            d.head.appendChild(s);
         }
-        fixLayout();
-        setTimeout(fixLayout, 100);
-        setTimeout(fixLayout, 500);
 
         function disableAutocomplete() {
             try {
-                var inputs = window.parent.document.querySelectorAll('input[type="text"], input:not([type])');
+                var inputs = d.querySelectorAll('input[type="text"], input:not([type])');
                 inputs.forEach(function(el) {
                     el.setAttribute('autocomplete', 'new-password');
                     el.setAttribute('readonly', '');
