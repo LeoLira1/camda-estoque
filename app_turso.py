@@ -498,11 +498,9 @@ st.markdown("""
     .dash-brand {
         display: inline-flex;
         align-items: center;
-        background: linear-gradient(145deg, rgba(17,24,39,0.95), rgba(26,35,50,0.92));
-        border: 1px solid rgba(255,255,255,0.08);
-        border-left: 4px solid #00d68f;
-        border-radius: 14px;
-        padding: 7px 20px;
+        background: transparent;
+        border: none;
+        padding: 4px 0;
     }
     .dash-brand-title {
         font-family: 'Outfit', sans-serif;
