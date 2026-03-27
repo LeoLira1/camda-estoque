@@ -486,10 +486,11 @@ st.markdown("""
         justify-content: center;
         position: relative;
         margin: 0;
-        padding: 6px 0;
+        padding: 0;
     }
     /* Elimina espaço do Streamlit entre header e barra de busca */
     div[data-testid="stVerticalBlock"] > div:has(.dash-top) {
+        margin-top: 0 !important; padding-top: 0 !important;
         margin-bottom: 0 !important; padding-bottom: 0 !important;
     }
     div[data-testid="stVerticalBlock"] > div:has(.stTextInput) {
