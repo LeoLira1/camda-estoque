@@ -474,7 +474,7 @@ st.markdown("""
     }
     .dash-top {
         display: flex;
-        align-items: stretch;
+        align-items: center;
         justify-content: space-between;
         gap: 10px;
         margin: 4px 0 10px 0;
@@ -487,7 +487,9 @@ st.markdown("""
         border: 1px solid rgba(255,255,255,0.08);
         border-left: 4px solid #00d68f;
         border-radius: 14px;
-        padding: 12px 14px;
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
     }
     .dash-brand-title {
         font-family: 'Outfit', sans-serif;
@@ -6563,8 +6565,6 @@ if has_mestre:
         <div class="dash-top">
           <div class="dash-brand">
             <div class="dash-brand-title">CAMDA</div>
-            <div class="dash-brand-sub">Dashboard de Estoque</div>
-            <div class="dash-brand-meta">Atualizado em {_meta_data}</div>
           </div>
           {_whtml}
         </div>
