@@ -3565,26 +3565,47 @@ def popular_contagem(records: list, upload_id: int, conn, zerados: list = None) 
             """, item)
 
 
+def _invalidar_cache_contagem() -> None:
+    """Invalida o cache em session_state da aba Contagem."""
+    st.session_state.pop("_ct_df_cache", None)
+
+
 def get_contagem_itens() -> "pd.DataFrame":
+    # Cache em session_state: evita hit no banco em reruns onde nenhum dado mudou.
+    # Invalidado explicitamente por _invalidar_cache_contagem() após escritas.
+    if "_ct_df_cache" in st.session_state:
+        return st.session_state["_ct_df_cache"]
+
     conn = get_db()
+    # CTE para obter o cooperado mais recente de cada código, sem subconsulta correlacionada
     rows = conn.execute("""
+        WITH last_div AS (
+            SELECT UPPER(TRIM(codigo)) AS cod,
+                   cooperado,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY UPPER(TRIM(codigo))
+                       ORDER BY criado_em DESC
+                   ) AS rn
+            FROM divergencias
+        )
         SELECT ci.id, ci.upload_id, ci.codigo, ci.produto, ci.categoria, ci.qtd_estoque,
                ci.status, ci.motivo, ci.qtd_divergencia, ci.registrado_em,
                COALESCE(
                    NULLIF(TRIM(em.observacoes), ''),
                    NULLIF(TRIM(em.nota), ''),
-                   (SELECT d.cooperado FROM divergencias d
-                    WHERE UPPER(TRIM(d.codigo)) = UPPER(TRIM(ci.codigo))
-                    ORDER BY d.criado_em DESC LIMIT 1),
+                   ld.cooperado,
                    ''
                ) AS observacoes
         FROM contagem_itens ci
         LEFT JOIN estoque_mestre em ON UPPER(TRIM(em.codigo)) = UPPER(TRIM(ci.codigo))
+        LEFT JOIN last_div ld ON ld.cod = UPPER(TRIM(ci.codigo)) AND ld.rn = 1
         ORDER BY ci.categoria, ci.produto
     """).fetchall()
     cols = ["id", "upload_id", "codigo", "produto", "categoria", "qtd_estoque",
             "status", "motivo", "qtd_divergencia", "registrado_em", "observacoes"]
-    return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
+    df = pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
+    st.session_state["_ct_df_cache"] = df
+    return df
 
 
 def atualizar_item_contagem(
@@ -3655,6 +3676,7 @@ def atualizar_item_contagem(
     # Só commit local — não chama sync_db() aqui para evitar que o pull
     # do Turso sobrescreva o write antes de ele ser confirmado no remoto.
     conn.commit()
+    _invalidar_cache_contagem()
     return rows_afetadas != 0
 
 
@@ -3663,6 +3685,7 @@ def limpar_contagem() -> None:
     conn = get_db()
     conn.execute("DELETE FROM contagem_itens")
     conn.commit()
+    _invalidar_cache_contagem()
     sync_db()
 
 
@@ -8029,7 +8052,8 @@ new Chart(document.getElementById('coop-chart'),{
                 unsafe_allow_html=True
             )
 
-    with t9:
+    @st.fragment
+    def _aba_contagem():
         st.markdown("""
         <style>
         .ct-card{background:rgba(59,130,246,0.06);border:1px solid rgba(59,130,246,0.18);border-radius:12px;padding:10px 14px;margin-bottom:6px;}
@@ -8162,6 +8186,9 @@ new Chart(document.getElementById('coop-chart'),{
                                 st.session_state.contagem_div_open.discard(item_id)
                                 st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
+
+    with t9:
+        _aba_contagem()
 
     with t10:
         # ── CSS da aba ──────────────────────────────────────────────────────────
