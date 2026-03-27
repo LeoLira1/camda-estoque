@@ -6578,7 +6578,7 @@ if has_mestre:
     (function() {
         var d = window.parent.document;
 
-        // Injeta CSS persistente no <head> — sobrevive a re-renders do Streamlit
+        // Injeta CSS persistente no <head> com MutationObserver p/ sobreviver re-renders
         if (!d.getElementById('camda-fix-padding')) {
             var s = d.createElement('style');
             s.id = 'camda-fix-padding';
@@ -6592,6 +6592,16 @@ if has_mestre:
             ].join('');
             d.head.appendChild(s);
         }
+        // MutationObserver para zerar padding sempre que o Streamlit o reaplica
+        try {
+            var obs = new MutationObserver(function() {
+                var main = d.querySelector('section[data-testid="stMain"]');
+                if (main && main.style.paddingTop !== '0px') main.style.paddingTop = '0px';
+                var bc = d.querySelector('.block-container');
+                if (bc && bc.style.paddingTop !== '0px') bc.style.paddingTop = '0px';
+            });
+            obs.observe(d.body, {attributes: true, subtree: true, attributeFilter: ['style']});
+        } catch(e) {}
 
         function disableAutocomplete() {
             try {
