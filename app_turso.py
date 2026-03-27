@@ -6575,6 +6575,32 @@ if has_mestre:
     import streamlit.components.v1 as _stc_ac
     _stc_ac.html("""<script>
     (function() {
+        function fixLayout() {
+            try {
+                var d = window.parent.document;
+                // Remove padding-top reservado para o header do Streamlit
+                var selectors = [
+                    'section[data-testid="stMain"]',
+                    '.block-container',
+                    'section.main',
+                    'div[data-testid="stAppViewBlockContainer"]'
+                ];
+                selectors.forEach(function(s) {
+                    var el = d.querySelector(s);
+                    if (el) el.style.paddingTop = '0px';
+                });
+                // Oculta elementos do topo do Streamlit
+                ['[data-testid="stHeader"]','[data-testid="stDecoration"]',
+                 '[data-testid="stToolbar"]','[data-testid="stStatusWidget"]'].forEach(function(s) {
+                    var el = d.querySelector(s);
+                    if (el) el.style.display = 'none';
+                });
+            } catch(e) {}
+        }
+        fixLayout();
+        setTimeout(fixLayout, 100);
+        setTimeout(fixLayout, 500);
+
         function disableAutocomplete() {
             try {
                 var inputs = window.parent.document.querySelectorAll('input[type="text"], input:not([type])');
