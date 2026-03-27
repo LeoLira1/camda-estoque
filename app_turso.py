@@ -465,7 +465,7 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;500;700;900&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
     .stApp { background: #0a0f1a; color: #e0e6ed; font-family: 'DM Sans', 'Outfit', sans-serif; }
     #MainMenu, footer, header { visibility: hidden; }
-    .block-container { padding: 0.5rem 0.8rem !important; max-width: 100% !important; }
+    .block-container { padding: 0 0.8rem !important; max-width: 100% !important; }
     .main-title {
         font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 1.6rem;
         background: linear-gradient(135deg, #00d68f, #00b887);
@@ -477,8 +477,8 @@ st.markdown("""
         align-items: center;
         justify-content: center;
         position: relative;
-        margin: 4px 0 0 0;
-        padding: 0;
+        margin: 0;
+        padding: 6px 0;
     }
     /* Elimina espaço do Streamlit entre header e barra de busca */
     div[data-testid="stVerticalBlock"] > div:has(.dash-top) {
@@ -6552,12 +6552,11 @@ if has_mestre:
     _agora_hdr = datetime.now(tz=_BRT)
     _meta_data = _agora_hdr.strftime("%d/%m/%Y · %H:%M")
     st.markdown(
-        f"""
+        """
         <div class="dash-top">
           <div class="dash-brand">
             <div class="dash-brand-title">CAMDA</div>
           </div>
-          {_whtml}
         </div>
         """,
         unsafe_allow_html=True,
