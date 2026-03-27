@@ -465,10 +465,14 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Outfit:wght@300;500;700;900&family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&display=swap');
     .stApp { background: #0a0f1a; color: #e0e6ed; font-family: 'DM Sans', 'Outfit', sans-serif; }
     #MainMenu, footer, header { display: none !important; }
-    header[data-testid="stHeader"] { display: none !important; height: 0 !important; }
+    header[data-testid="stHeader"] { display: none !important; height: 0 !important; min-height: 0 !important; }
+    div[data-testid="stDecoration"] { display: none !important; }
+    div[data-testid="stToolbar"] { display: none !important; }
+    div[data-testid="stStatusWidget"] { display: none !important; }
+    .stApp > div:first-child { margin-top: 0 !important; padding-top: 0 !important; }
+    section.main, [data-testid="stMain"] { padding-top: 0 !important; }
     .block-container { padding: 0 0.8rem !important; max-width: 100% !important; }
-    section[data-testid="stMain"] > div:first-child { padding-top: 0 !important; }
-    div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
+    div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; margin-top: 0 !important; }
     div[data-testid="stVerticalBlock"] > div:first-child { padding-top: 0 !important; margin-top: 0 !important; }
     .main-title {
         font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 1.6rem;
