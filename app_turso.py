@@ -477,17 +477,18 @@ st.markdown("""
         align-items: center;
         justify-content: space-between;
         gap: 10px;
-        margin: 4px 0 10px 0;
+        margin: 4px 0 6px 0;
         flex-wrap: wrap;
     }
+    .dash-top + div { margin-top: 0 !important; }
+    .element-container:has(.dash-top) { margin-bottom: 0 !important; }
     .dash-brand {
-        flex: 1 1 320px;
-        min-width: 280px;
+        flex: 0 0 auto;
         background: linear-gradient(145deg, rgba(17,24,39,0.95), rgba(26,35,50,0.92));
         border: 1px solid rgba(255,255,255,0.08);
         border-left: 4px solid #00d68f;
         border-radius: 14px;
-        padding: 10px 14px;
+        padding: 8px 18px;
         display: flex;
         align-items: center;
     }
