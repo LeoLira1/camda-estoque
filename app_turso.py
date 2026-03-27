@@ -485,8 +485,8 @@ st.markdown("""
         align-items: center;
         justify-content: center;
         position: relative;
-        margin: 0;
-        padding: 0;
+        margin-top: -3.5rem;
+        padding: 6px 0;
     }
     /* Elimina espaço do Streamlit entre header e barra de busca */
     div[data-testid="stVerticalBlock"] > div:has(.dash-top) {
