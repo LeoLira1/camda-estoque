@@ -472,6 +472,54 @@ st.markdown("""
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         text-align: center; margin: 0.3rem 0;
     }
+    .dash-top {
+        display: flex;
+        align-items: stretch;
+        justify-content: space-between;
+        gap: 10px;
+        margin: 4px 0 10px 0;
+        flex-wrap: wrap;
+    }
+    .dash-brand {
+        flex: 1 1 320px;
+        min-width: 280px;
+        background: linear-gradient(145deg, rgba(17,24,39,0.95), rgba(26,35,50,0.92));
+        border: 1px solid rgba(255,255,255,0.08);
+        border-left: 4px solid #00d68f;
+        border-radius: 14px;
+        padding: 12px 14px;
+    }
+    .dash-brand-title {
+        font-family: 'Outfit', sans-serif;
+        font-size: 1.6rem;
+        font-weight: 900;
+        line-height: 1;
+        letter-spacing: 0.02em;
+        background: linear-gradient(135deg, #00d68f, #00c4ff);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        text-transform: uppercase;
+    }
+    .dash-brand-sub {
+        margin-top: 5px;
+        font-size: 0.72rem;
+        color: #7bafd4;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .dash-brand-meta {
+        margin-top: 8px;
+        color: #94a3b8;
+        font-size: 0.72rem;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    .dash-top .wco {
+        min-width: 170px;
+        padding: 10px 12px !important;
+        border-radius: 14px !important;
+        border: 1px solid rgba(255,255,255,0.12) !important;
+    }
     .sub-title {
         font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
         color: #4a5568; text-align: center; margin-bottom: 0.5rem;
@@ -549,6 +597,11 @@ st.markdown("""
     @media (max-width: 640px) {
         .block-container { padding: 0.3rem 0.3rem !important; }
         .main-title { font-size: 1.2rem; }
+        .dash-top { gap: 6px; margin-bottom: 8px; }
+        .dash-brand { min-width: 0; width: 100%; padding: 10px 12px; }
+        .dash-brand-title { font-size: 1.25rem; }
+        .dash-brand-sub { font-size: 0.62rem; letter-spacing: 0.06em; }
+        .dash-brand-meta { font-size: 0.62rem; }
         .stat-row { flex-wrap: wrap; gap: 4px; }
         .stat-card { flex: 1 1 calc(33% - 4px); min-width: 0; padding: 6px 4px; }
         .stat-value { font-size: 0.85rem; }
@@ -6502,6 +6555,22 @@ if has_mestre:
         _mapa_db_search[str(_r["produto"]).strip().upper()] = str(_r["principio_ativo"]).strip()
     _mapa_pa_search = {**_mapa_excel_search, **_mapa_db_search}
     has_pa = bool(_mapa_pa_search)
+
+    _agora_hdr = datetime.now(tz=_BRT)
+    _meta_data = _agora_hdr.strftime("%d/%m/%Y · %H:%M")
+    st.markdown(
+        f"""
+        <div class="dash-top">
+          <div class="dash-brand">
+            <div class="dash-brand-title">CAMDA</div>
+            <div class="dash-brand-sub">Dashboard de Estoque</div>
+            <div class="dash-brand-meta">Atualizado em {_meta_data}</div>
+          </div>
+          {_whtml}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
     search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed", key="search_mestre")
