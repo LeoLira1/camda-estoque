@@ -475,22 +475,26 @@ st.markdown("""
     .dash-top {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 10px;
-        margin: 4px 0 6px 0;
-        flex-wrap: wrap;
+        justify-content: center;
+        position: relative;
+        margin: 4px 0 0 0;
+        padding: 0;
     }
-    .dash-top + div { margin-top: 0 !important; }
-    .element-container:has(.dash-top) { margin-bottom: 0 !important; }
+    /* Elimina espaço do Streamlit entre header e barra de busca */
+    div[data-testid="stVerticalBlock"] > div:has(.dash-top) {
+        margin-bottom: 0 !important; padding-bottom: 0 !important;
+    }
+    div[data-testid="stVerticalBlock"] > div:has(.stTextInput) {
+        margin-top: 0 !important; padding-top: 0 !important;
+    }
     .dash-brand {
-        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
         background: linear-gradient(145deg, rgba(17,24,39,0.95), rgba(26,35,50,0.92));
         border: 1px solid rgba(255,255,255,0.08);
         border-left: 4px solid #00d68f;
         border-radius: 14px;
-        padding: 8px 18px;
-        display: flex;
-        align-items: center;
+        padding: 7px 20px;
     }
     .dash-brand-title {
         font-family: 'Outfit', sans-serif;
@@ -503,25 +507,16 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         text-transform: uppercase;
     }
-    .dash-brand-sub {
-        margin-top: 5px;
-        font-size: 0.72rem;
-        color: #7bafd4;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        font-family: 'JetBrains Mono', monospace;
-    }
-    .dash-brand-meta {
-        margin-top: 8px;
-        color: #94a3b8;
-        font-size: 0.72rem;
-        font-family: 'JetBrains Mono', monospace;
-    }
+    .dash-brand-sub { display: none; }
+    .dash-brand-meta { display: none; }
     .dash-top .wco {
-        min-width: 170px;
-        padding: 10px 12px !important;
-        border-radius: 14px !important;
-        border: 1px solid rgba(255,255,255,0.12) !important;
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        padding: 6px 10px !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255,255,255,0.10) !important;
     }
     .sub-title {
         font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
@@ -6519,16 +6514,11 @@ if _wd_dash:
     elif _c in (95,96,99):           _wemoji_d, _wdesc_d = "⛈️", "Tempestade"
     elif _c in (71,73,75,77):        _wemoji_d, _wdesc_d = "❄️", "Neve"
     else:                            _wemoji_d, _wdesc_d = "🌡️", ""
-    _whtml = f"""<div class="wco">
-  <div style="font-size:0.58rem;color:rgba(255,255,255,0.55);margin-bottom:6px;letter-spacing:0.3px;">{_dia_abr_dash} · {_hora_dash}</div>
-  <div style="font-size:2.4rem;line-height:1;filter:drop-shadow(0 4px 10px rgba(0,0,0,0.4));">{_wemoji_d}</div>
-  <div style="font-size:2.1rem;font-weight:700;line-height:1.1;letter-spacing:-1px;margin-top:5px;text-shadow:0 2px 8px rgba(0,0,0,0.5);">{_wtemp_d}°</div>
-  <div style="font-size:0.7rem;color:rgba(255,255,255,0.9);margin-top:5px;font-weight:500;text-shadow:0 1px 4px rgba(0,0,0,0.5);">{_wdesc_d}</div>
-  <div style="font-size:0.58rem;color:rgba(255,255,255,0.6);margin-top:2px;text-shadow:0 1px 4px rgba(0,0,0,0.4);">Quirinópolis, GO</div>
-  <div style="display:flex;justify-content:center;gap:7px;font-size:0.6rem;color:rgba(255,255,255,0.8);
-              margin-top:8px;background:rgba(0,0,0,0.18);border-radius:10px;padding:5px 8px;">
-    <span>💧 {_humid_d}%</span><span style="opacity:0.3;">|</span><span>💨 {_vento_d}km/h</span>
-  </div>
+    _whtml = f"""<div class="wco" style="text-align:center;background:rgba(17,24,39,0.85);backdrop-filter:blur(8px);">
+  <div style="font-size:1.6rem;line-height:1;">{_wemoji_d}</div>
+  <div style="font-size:1.3rem;font-weight:700;line-height:1.2;letter-spacing:-0.5px;color:#fff;margin-top:3px;">{_wtemp_d}°</div>
+  <div style="font-size:0.6rem;color:rgba(255,255,255,0.6);margin-top:2px;">{_wdesc_d}</div>
+  <div style="font-size:0.55rem;color:rgba(255,255,255,0.4);margin-top:1px;">Quirinópolis</div>
 </div>"""
 else:
     _whtml = ""
