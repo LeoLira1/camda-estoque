@@ -466,6 +466,9 @@ st.markdown("""
     .stApp { background: #0a0f1a; color: #e0e6ed; font-family: 'DM Sans', 'Outfit', sans-serif; }
     #MainMenu, footer, header { visibility: hidden; }
     .block-container { padding: 0 0.8rem !important; max-width: 100% !important; }
+    section[data-testid="stMain"] > div:first-child { padding-top: 0 !important; }
+    div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; }
+    div[data-testid="stVerticalBlock"] > div:first-child { padding-top: 0 !important; margin-top: 0 !important; }
     .main-title {
         font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 1.6rem;
         background: linear-gradient(135deg, #00d68f, #00b887);
