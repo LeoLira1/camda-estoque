@@ -3730,6 +3730,8 @@ def atualizar_item_contagem(
                     ultima_contagem = ?
                 WHERE codigo = ? AND status IN ('falta', 'sobra')
             """, [now, codigo])
+            # Remove da tabela de divergências para sair da lista do cooperado na aba Divergências
+            conn.execute("DELETE FROM divergencias WHERE codigo = ?", [codigo])
 
     # Só commit local — não chama sync_db() aqui para evitar que o pull
     # do Turso sobrescreva o write antes de ele ser confirmado no remoto.
