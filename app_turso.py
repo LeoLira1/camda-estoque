@@ -5169,6 +5169,33 @@ def get_vendas_historico() -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def get_ultima_venda_por_produto() -> pd.DataFrame:
+    """Retorna, para cada produto, a data da última venda registrada e a quantidade vendida naquele dia."""
+    try:
+        rows = get_db().execute("""
+            SELECT v.codigo,
+                   v.produto,
+                   v.grupo,
+                   v.data_upload          AS ultima_data,
+                   v.qtd_vendida          AS qtd_ultimo_dia,
+                   SUM(v2.qtd_vendida)    AS qtd_total
+              FROM vendas_historico v
+              JOIN vendas_historico v2 ON v2.codigo = v.codigo
+             WHERE v.data_upload = (
+                   SELECT MAX(v3.data_upload)
+                     FROM vendas_historico v3
+                    WHERE v3.codigo = v.codigo
+             )
+             GROUP BY v.codigo
+             ORDER BY v.data_upload DESC, v.produto ASC
+        """).fetchall()
+        if rows:
+            return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "ultima_data", "qtd_ultimo_dia", "qtd_total"])
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
 def get_periodo_vendas() -> int:
     """Retorna o número de dias distintos com vendas registradas."""
     try:
@@ -6751,7 +6778,7 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t6, t7, t8, t9, t10, t11, t12, t_armazem = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "🏭 Mapa do Armazém"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_armazem = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "🏭 Mapa do Armazém"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -7424,6 +7451,95 @@ new Chart(document.getElementById('coop-chart'),{
         if st.button("🔄 Verificar Alertas Agora", key="gv_check_now"):
             st.session_state.pop("alertas_cache", None)
             st.rerun()
+
+    # ── Aba Última Venda ────────────────────────────────────────────────────
+    with t5:
+        st.markdown("### 🗓️ Última Venda Registrada por Produto")
+        st.caption("Mostra a data da última planilha de vendas que incluiu cada produto e a quantidade vendida naquele dia.")
+
+        _df_uv = get_ultima_venda_por_produto()
+
+        if _df_uv.empty:
+            st.info("Nenhuma venda registrada ainda. Importe uma planilha de vendas na aba **📈 Vendas**.")
+        else:
+            # ── Métricas rápidas ─────────────────────────────────────────
+            _uv_datas = sorted(_df_uv["ultima_data"].unique(), reverse=True)
+            _uv_ultima = _uv_datas[0] if _uv_datas else "—"
+            try:
+                _uv_ultima_fmt = datetime.strptime(_uv_ultima, "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                _uv_ultima_fmt = _uv_ultima
+
+            _uv_c1, _uv_c2, _uv_c3 = st.columns(3)
+            _uv_c1.metric("Última data de venda", _uv_ultima_fmt)
+            _uv_c2.metric("Produtos com venda registrada", len(_df_uv))
+            _uv_c3.metric("Dias distintos no histórico", len(_uv_datas))
+
+            st.markdown("---")
+
+            # ── Filtros ──────────────────────────────────────────────────
+            _uv_col_f1, _uv_col_f2 = st.columns([3, 2])
+            with _uv_col_f1:
+                _uv_busca = st.text_input(
+                    "🔍 Buscar produto",
+                    placeholder="Nome ou código...",
+                    key="uv_busca",
+                    label_visibility="collapsed",
+                )
+            with _uv_col_f2:
+                _uv_opcoes_data = ["Todas as datas"] + [
+                    datetime.strptime(d, "%Y-%m-%d").strftime("%d/%m/%Y")
+                    for d in _uv_datas
+                ]
+                _uv_sel_data = st.selectbox(
+                    "Filtrar por data",
+                    _uv_opcoes_data,
+                    key="uv_sel_data",
+                    label_visibility="collapsed",
+                )
+
+            # ── Aplica filtros ───────────────────────────────────────────
+            _df_uv_show = _df_uv.copy()
+            if _uv_busca.strip():
+                _q = _uv_busca.strip().lower()
+                _df_uv_show = _df_uv_show[
+                    _df_uv_show["produto"].str.lower().str.contains(_q, na=False)
+                    | _df_uv_show["codigo"].str.lower().str.contains(_q, na=False)
+                ]
+            if _uv_sel_data != "Todas as datas":
+                try:
+                    _uv_data_iso = datetime.strptime(_uv_sel_data, "%d/%m/%Y").strftime("%Y-%m-%d")
+                    _df_uv_show = _df_uv_show[_df_uv_show["ultima_data"] == _uv_data_iso]
+                except Exception:
+                    pass
+
+            # ── Formata para exibição ────────────────────────────────────
+            _df_uv_disp = _df_uv_show[["codigo", "produto", "grupo", "ultima_data", "qtd_ultimo_dia", "qtd_total"]].copy()
+            _df_uv_disp["ultima_data"] = _df_uv_disp["ultima_data"].apply(
+                lambda d: datetime.strptime(d, "%Y-%m-%d").strftime("%d/%m/%Y") if d else "—"
+            )
+            _df_uv_disp.rename(columns={
+                "codigo": "Código",
+                "produto": "Produto",
+                "grupo": "Grupo",
+                "ultima_data": "Última Venda",
+                "qtd_ultimo_dia": "Qtd no Dia",
+                "qtd_total": "Qtd Total (histórico)",
+            }, inplace=True)
+
+            st.dataframe(
+                _df_uv_disp,
+                hide_index=True,
+                use_container_width=True,
+                height=min(600, 56 + len(_df_uv_disp) * 35),
+                column_config={
+                    "Última Venda": st.column_config.TextColumn("Última Venda", width="small"),
+                    "Qtd no Dia": st.column_config.NumberColumn("Qtd no Dia", format="%d"),
+                    "Qtd Total (histórico)": st.column_config.NumberColumn("Qtd Total (histórico)", format="%d"),
+                },
+            )
+
+            st.caption(f"Exibindo {len(_df_uv_disp)} de {len(_df_uv)} produto(s).")
 
     with t6:
         # ── CSS da aba ──
