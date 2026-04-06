@@ -3669,7 +3669,7 @@ def get_contagem_itens() -> "pd.DataFrame":
 def atualizar_item_contagem(
     item_id: int, status: str, motivo: str = "",
     qtd_divergencia: int = 0, codigo: str = "", qtd_sistema: int = 0,
-    tipo_div: str = "falta"
+    tipo_div: str = "falta", confirmar_apenas: bool = False
 ) -> bool:
     """Atualiza item da contagem e reflete em estoque_mestre. Retorna True se atualizou estoque."""
     conn = get_db()
@@ -3704,21 +3704,23 @@ def atualizar_item_contagem(
             rows_afetadas = getattr(cur, "rowcount", -1)
 
             # Registra também na tabela divergencias para aparecer na aba Divergências
-            meta = conn.execute(
-                "SELECT produto, categoria FROM estoque_mestre WHERE codigo = ?", [codigo]
-            ).fetchone()
-            if meta:
-                _prod, _cat = meta
-                _delta = qtd_divergencia if tipo_div == "sobra" else -qtd_divergencia
-                _cooperado = motivo.strip() if motivo else ""
-                conn.execute(
-                    "INSERT INTO divergencias (codigo, produto, categoria, delta, status, cooperado, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (codigo, _prod, _cat, _delta, status_estoque, _cooperado, now),
-                )
-                conn.execute(
-                    "INSERT INTO historico_divergencias (codigo, produto, categoria, cooperado, delta, status, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (codigo, _prod, _cat, _cooperado, _delta, status_estoque, now),
-                )
+            # (pula se confirmar_apenas=True, pois a divergência já existe e não deve duplicar)
+            if not confirmar_apenas:
+                meta = conn.execute(
+                    "SELECT produto, categoria FROM estoque_mestre WHERE codigo = ?", [codigo]
+                ).fetchone()
+                if meta:
+                    _prod, _cat = meta
+                    _delta = qtd_divergencia if tipo_div == "sobra" else -qtd_divergencia
+                    _cooperado = motivo.strip() if motivo else ""
+                    conn.execute(
+                        "INSERT INTO divergencias (codigo, produto, categoria, delta, status, cooperado, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (codigo, _prod, _cat, _delta, status_estoque, _cooperado, now),
+                    )
+                    conn.execute(
+                        "INSERT INTO historico_divergencias (codigo, produto, categoria, cooperado, delta, status, criado_em) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        (codigo, _prod, _cat, _cooperado, _delta, status_estoque, now),
+                    )
 
         elif status == "certa":
             conn.execute("""
@@ -8365,6 +8367,34 @@ new Chart(document.getElementById('coop-chart'),{
                                 st.rerun()
 
                     if item_id in st.session_state.contagem_div_open:
+                        # Verificar se já existem divergências ativas para este produto
+                        _conn_check = get_db()
+                        _divs_existentes = _conn_check.execute(
+                            "SELECT cooperado, delta, status FROM divergencias WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(?))",
+                            [_cod]
+                        ).fetchall()
+
+                        _confirmar_apenas = False
+                        if _divs_existentes:
+                            # Montar texto descritivo das divergências existentes
+                            _linhas_div = []
+                            for _coop, _delta, _st_div in _divs_existentes:
+                                _qtd_abs = abs(_delta)
+                                _tipo_str = "falta" if _st_div == "falta" else "sobra"
+                                _coop_str = _coop.strip() if _coop and _coop.strip() else "sem cooperado"
+                                _linhas_div.append(f"👤 **{_coop_str}** — {_qtd_abs} un ({_tipo_str})")
+                            _div_texto = "\n".join(_linhas_div)
+                            st.warning(f"⚠️ **Divergência já registrada para este produto:**\n{_div_texto}")
+
+                            _modo_key = f"ct_modo_{item_id}"
+                            _modo_val = st.radio(
+                                "Esta contagem:",
+                                options=["Confirmar divergência existente (não cria novo registro)", "Registrar divergência adicional (soma ao total)"],
+                                key=_modo_key,
+                                index=0,
+                            )
+                            _confirmar_apenas = _modo_val.startswith("Confirmar")
+
                         fc1, fc2, fc3 = st.columns([3, 1.5, 1])
                         with fc1:
                             motivo_key = f"ct_motivo_{item_id}"
@@ -8390,7 +8420,8 @@ new Chart(document.getElementById('coop-chart'),{
                                     item_id, "divergencia",
                                     motivo_val.strip(), abs(int(qty_val)),
                                     codigo=_cod, qtd_sistema=_qtd_sis,
-                                    tipo_div=tipo_div_str
+                                    tipo_div=tipo_div_str,
+                                    confirmar_apenas=_confirmar_apenas,
                                 )
                                 if not ok:
                                     st.warning(f"⚠️ Divergência salva na contagem, mas não refletiu no estoque (código: {_cod}). Reporte ao suporte.")
