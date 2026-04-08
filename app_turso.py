@@ -7965,7 +7965,7 @@ new Chart(document.getElementById('coop-chart'),{
                     f'<span class="av-badge {badge_cls}">{badge_txt}</span>'
                     f'<span style="color:rgba(255,255,255,0.25);font-size:10px;margin-left:8px;">'
                     f'{tempo_av}</span>'
-                    f'<div style="color:#e0e6ed;font-weight:800;font-size:0.9rem;margin-top:4px;">'
+                    f'<div style="color:#e0e6ed;font-weight:800;font-size:1.15rem;margin-top:4px;">'
                     f'{av["produto"]}</div>'
                     f'<div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:2px;">'
                     f'Cod: {av["codigo"]} &nbsp;·&nbsp; '
