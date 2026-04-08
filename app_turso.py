@@ -7976,22 +7976,30 @@ new Chart(document.getElementById('coop-chart'),{
                 )
 
                 # ── Galões SVG ─────────────────────────────────────────────
+                _add_placeholder = """
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+            min-width:120px;height:185px;border:1.5px dashed rgba(255,255,255,0.15);
+            border-radius:12px;color:rgba(255,255,255,0.25);">
+  <span style="font-size:22px;line-height:1;">+</span>
+  <span style="font-size:9px;letter-spacing:1px;margin-top:4px;">ADD BALDE</span>
+</div>"""
+
                 if unidades:
                     galoes_html = "".join(
                         _galao_svg_html(u["uid"], niveis_atuais[u["uid"]], capacidade, i)
                         for i, u in enumerate(unidades)
-                    )
-                    # Botão ADD como último "galão"
-                    galoes_html += f"""
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-            min-width:120px;height:160px;border:1.5px dashed rgba(255,255,255,0.15);
-            border-radius:12px;cursor:pointer;color:rgba(255,255,255,0.25);">
-  <span style="font-size:22px;line-height:1;">+</span>
-  <span style="font-size:9px;letter-spacing:1px;margin-top:4px;">ADD BALDE</span>
-</div>"""
-                    st.markdown(f'<div class="av-galoes">{galoes_html}</div>', unsafe_allow_html=True)
+                    ) + _add_placeholder
+                else:
+                    galoes_html = (
+                        '<div style="color:rgba(255,255,255,0.25);font-size:12px;'
+                        'padding:20px 24px;align-self:center;">'
+                        '🪣 Nenhum balde registrado</div>'
+                    ) + _add_placeholder
 
-                    # ── Sliders de nível ───────────────────────────────────
+                st.markdown(f'<div class="av-galoes">{galoes_html}</div>', unsafe_allow_html=True)
+
+                # ── Sliders de nível + botão ADD ───────────────────────────
+                if unidades:
                     n_cols = len(unidades) + 1
                     slider_cols = st.columns(n_cols)
                     for i, u in enumerate(unidades):
@@ -8013,15 +8021,20 @@ new Chart(document.getElementById('coop-chart'),{
                                              use_container_width=True):
                                     remover_unidade_avaria(u["uid"])
                                     st.rerun()
-
                     with slider_cols[-1]:
                         st.markdown("<div style='padding-top:22px;'></div>", unsafe_allow_html=True)
                         if is_aberta and st.button("＋ Balde", key=f"av_add_{av_id}",
                                                     use_container_width=True):
                             adicionar_unidade_avaria(av_id)
                             st.rerun()
+                else:
+                    # Sem unidades: mostra só o botão de adicionar
+                    if is_aberta and st.button("＋ Adicionar balde", key=f"av_add_{av_id}"):
+                        adicionar_unidade_avaria(av_id)
+                        st.rerun()
 
-                    # ── Totais ─────────────────────────────────────────────
+                # ── Totais (só quando tem unidades) ────────────────────────
+                if unidades:
                     total_rest = sum((niveis_atuais[u["uid"]] / 100.0) * capacidade for u in unidades)
                     total_perd = sum(((100.0 - niveis_atuais[u["uid"]]) / 100.0) * capacidade for u in unidades)
                     nivel_min = min(niveis_atuais[u["uid"]] for u in unidades)
