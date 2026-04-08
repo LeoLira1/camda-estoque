@@ -8078,11 +8078,26 @@ new Chart(document.getElementById('coop-chart'),{
                             adicionar_unidade_avaria(av_id)
                             st.rerun()
 
-                    if st.button("🔒 Fechar edição", key=f"av_close_{av_id}"):
-                        st.session_state[_edit_key] = False
-                        st.rerun()
+                    # Resolver / Excluir também dentro do modo de edição
+                    st.markdown("<div style='margin-top:6px;'></div>", unsafe_allow_html=True)
+                    col_res, col_del, col_close = st.columns([1, 1, 1])
+                    with col_res:
+                        if is_aberta and st.button("✅ Resolver", key=f"av_res_{av_id}",
+                                                    use_container_width=True):
+                            resolver_avaria(av_id)
+                            st.rerun()
+                    with col_del:
+                        if st.button("🗑️ Excluir", key=f"av_del_{av_id}",
+                                     use_container_width=True):
+                            deletar_avaria(av_id)
+                            st.rerun()
+                    with col_close:
+                        if st.button("🔒 Fechar", key=f"av_close_{av_id}",
+                                     use_container_width=True):
+                            st.session_state[_edit_key] = False
+                            st.rerun()
                 else:
-                    with st.expander("🔒 Editar quantidades / baldes"):
+                    with st.expander("🔒 Editar / Resolver / Excluir"):
                         _senha_input = st.text_input(
                             "Senha", type="password",
                             key=f"av_senha_{av_id}",
@@ -8094,20 +8109,6 @@ new Chart(document.getElementById('coop-chart'),{
                                 st.rerun()
                             else:
                                 st.error("❌ Senha incorreta")
-
-                # ── Ações ─────────────────────────────────────────────────
-                col_btns1, col_btns2, col_btns3 = st.columns([2, 1, 1])
-                with col_btns2:
-                    if is_aberta:
-                        if st.button("✅ Resolver", key=f"av_res_{av_id}",
-                                     use_container_width=True):
-                            resolver_avaria(av_id)
-                            st.rerun()
-                with col_btns3:
-                    if st.button("🗑️ Excluir", key=f"av_del_{av_id}",
-                                 use_container_width=True):
-                        deletar_avaria(av_id)
-                        st.rerun()
 
                 if not is_aberta and av.get("resolvido_em"):
                     st.markdown(
