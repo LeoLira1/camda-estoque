@@ -7999,7 +7999,15 @@ new Chart(document.getElementById('coop-chart'),{
                         '🪣 Nenhum balde registrado</div>'
                     ) + _add_placeholder
 
-                st.markdown(f'<div class="av-galoes">{galoes_html}</div>', unsafe_allow_html=True)
+                # SVG precisa de st.components para não ser sanitizado pelo Streamlit
+                import streamlit.components.v1 as _cv1
+                _galoes_container = (
+                    '<div style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;'
+                    'background:rgba(255,255,255,0.025);border-radius:12px;'
+                    'padding:14px 10px 10px;">'
+                    + galoes_html + '</div>'
+                )
+                _cv1.html(_galoes_container, height=290, scrolling=False)
 
                 # ── Sliders de nível + botão ADD ───────────────────────────
                 if unidades:
