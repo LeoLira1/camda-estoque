@@ -8009,41 +8009,6 @@ new Chart(document.getElementById('coop-chart'),{
                 )
                 _cv1.html(_galoes_container, height=290, scrolling=False)
 
-                # ── Sliders de nível + botão ADD ───────────────────────────
-                if unidades:
-                    n_cols = len(unidades) + 1
-                    slider_cols = st.columns(n_cols)
-                    for i, u in enumerate(unidades):
-                        with slider_cols[i]:
-                            key_s = f"av_nivel_{u['uid']}"
-                            novo_nivel = st.slider(
-                                f"Nº{i+1} ({capacidade:.0f}L)",
-                                0.0, 100.0,
-                                value=float(u["nivel"]),
-                                step=1.0,
-                                key=key_s,
-                                format="%.0f%%"
-                            )
-                            if abs(novo_nivel - u["nivel"]) > 0.5:
-                                atualizar_nivel_unidade(u["uid"], novo_nivel)
-                                st.rerun()
-                            if len(unidades) > 1:
-                                if st.button("✕ Remover", key=f"av_rm_{u['uid']}",
-                                             use_container_width=True):
-                                    remover_unidade_avaria(u["uid"])
-                                    st.rerun()
-                    with slider_cols[-1]:
-                        st.markdown("<div style='padding-top:22px;'></div>", unsafe_allow_html=True)
-                        if is_aberta and st.button("＋ Balde", key=f"av_add_{av_id}",
-                                                    use_container_width=True):
-                            adicionar_unidade_avaria(av_id)
-                            st.rerun()
-                else:
-                    # Sem unidades: mostra só o botão de adicionar
-                    if is_aberta and st.button("＋ Adicionar balde", key=f"av_add_{av_id}"):
-                        adicionar_unidade_avaria(av_id)
-                        st.rerun()
-
                 # ── Totais (só quando tem unidades) ────────────────────────
                 if unidades:
                     total_rest = sum((niveis_atuais[u["uid"]] / 100.0) * capacidade for u in unidades)
@@ -8068,6 +8033,67 @@ new Chart(document.getElementById('coop-chart'),{
                         f'</div>',
                         unsafe_allow_html=True
                     )
+
+                # ── Edição protegida por senha ─────────────────────────────
+                _edit_key = f"av_editando_{av_id}"
+                _is_editing = st.session_state.get(_edit_key, False)
+
+                if _is_editing:
+                    st.markdown(
+                        '<div style="font-size:11px;color:#4ade80;margin-bottom:4px;">'
+                        '🔓 Modo de edição ativo</div>',
+                        unsafe_allow_html=True
+                    )
+                    # Sliders de nível
+                    if unidades:
+                        n_cols = len(unidades) + 1
+                        slider_cols = st.columns(n_cols)
+                        for i, u in enumerate(unidades):
+                            with slider_cols[i]:
+                                key_s = f"av_nivel_{u['uid']}"
+                                novo_nivel = st.slider(
+                                    f"Nº{i+1} ({capacidade:.0f}L)",
+                                    0.0, 100.0,
+                                    value=float(u["nivel"]),
+                                    step=1.0,
+                                    key=key_s,
+                                    format="%.0f%%"
+                                )
+                                if abs(novo_nivel - u["nivel"]) > 0.5:
+                                    atualizar_nivel_unidade(u["uid"], novo_nivel)
+                                    st.rerun()
+                                if len(unidades) > 1:
+                                    if st.button("✕ Remover", key=f"av_rm_{u['uid']}",
+                                                 use_container_width=True):
+                                        remover_unidade_avaria(u["uid"])
+                                        st.rerun()
+                        with slider_cols[-1]:
+                            st.markdown("<div style='padding-top:22px;'></div>", unsafe_allow_html=True)
+                            if is_aberta and st.button("＋ Balde", key=f"av_add_{av_id}",
+                                                        use_container_width=True):
+                                adicionar_unidade_avaria(av_id)
+                                st.rerun()
+                    else:
+                        if is_aberta and st.button("＋ Adicionar balde", key=f"av_add_{av_id}"):
+                            adicionar_unidade_avaria(av_id)
+                            st.rerun()
+
+                    if st.button("🔒 Fechar edição", key=f"av_close_{av_id}"):
+                        st.session_state[_edit_key] = False
+                        st.rerun()
+                else:
+                    with st.expander("🔒 Editar quantidades / baldes"):
+                        _senha_input = st.text_input(
+                            "Senha", type="password",
+                            key=f"av_senha_{av_id}",
+                            placeholder="Digite a senha para editar"
+                        )
+                        if st.button("Confirmar", key=f"av_auth_{av_id}", type="primary"):
+                            if _senha_input == "camda@edit":
+                                st.session_state[_edit_key] = True
+                                st.rerun()
+                            else:
+                                st.error("❌ Senha incorreta")
 
                 # ── Ações ─────────────────────────────────────────────────
                 col_btns1, col_btns2, col_btns3 = st.columns([2, 1, 1])
