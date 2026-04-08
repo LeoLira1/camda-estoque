@@ -1614,20 +1614,23 @@ def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str,
     try:
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+        # INSERT avaria — sem commit ainda para last_insert_rowid() funcionar
         conn.execute(
             """INSERT INTO avarias (codigo, produto, qtd_avariada, motivo, status,
                                     registrado_em, capacidade_litros)
                VALUES (?, ?, ?, ?, 'aberto', ?, ?)""",
             (codigo, produto, qtd, motivo, now, capacidade_litros)
         )
-        conn.commit()
-        # Cria a primeira unidade automaticamente com nível 50%
+        # Obtém o ID antes do commit
         avaria_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        uid = f"{avaria_id}_{int(datetime.now().timestamp() * 1000)}"
-        conn.execute(
-            "INSERT INTO avaria_unidades (avaria_id, uid, nivel) VALUES (?, ?, 50.0)",
-            (avaria_id, uid)
-        )
+        # Cria a primeira unidade (galão) com nível 50%
+        if avaria_id:
+            uid = f"{avaria_id}_{int(datetime.now().timestamp() * 1000)}"
+            conn.execute(
+                "INSERT INTO avaria_unidades (avaria_id, uid, nivel) VALUES (?, ?, 50.0)",
+                (avaria_id, uid)
+            )
+        # Um único commit para os dois inserts
         conn.commit()
         sync_db()
         return True
