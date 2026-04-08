@@ -1034,6 +1034,19 @@ def _get_connection():
             resolvido_em TEXT DEFAULT ''
         )
     """)
+    # Migração: coluna capacidade_litros e tabela avaria_unidades
+    try:
+        conn.execute("ALTER TABLE avarias ADD COLUMN capacidade_litros REAL DEFAULT 20.0")
+    except Exception:
+        pass  # coluna já existe
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS avaria_unidades (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            avaria_id INTEGER NOT NULL,
+            uid       TEXT    NOT NULL UNIQUE,
+            nivel     REAL    NOT NULL DEFAULT 50.0
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS contagem_itens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1442,27 +1455,13 @@ def checar_e_registrar_alertas() -> dict:
 # AVARIAS — funções CRUD
 # ══════════════════════════════════════════════════════════════════════════════
 
-def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str):
-    try:
-        conn = get_db()
-        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
-        conn.execute(
-            """INSERT INTO avarias (codigo, produto, qtd_avariada, motivo, status, registrado_em)
-               VALUES (?, ?, ?, ?, 'aberto', ?)""",
-            (codigo, produto, qtd, motivo, now)
-        )
-        conn.commit()
-        sync_db()
-        return True
-    except Exception as e:
-        st.error(f"❌ Erro ao registrar avaria: {e}")
-        return False
-
-
 def listar_avarias(apenas_abertas: bool = False) -> pd.DataFrame:
-    cols = ["id", "codigo", "produto", "qtd_avariada", "motivo", "status", "registrado_em", "resolvido_em"]
+    cols = ["id", "codigo", "produto", "qtd_avariada", "motivo", "status",
+            "registrado_em", "resolvido_em", "capacidade_litros"]
     try:
-        query = "SELECT id, codigo, produto, qtd_avariada, motivo, status, registrado_em, resolvido_em FROM avarias"
+        query = """SELECT id, codigo, produto, qtd_avariada, motivo, status,
+                          registrado_em, resolvido_em, capacidade_litros
+                   FROM avarias"""
         if apenas_abertas:
             query += " WHERE status = 'aberto'"
         query += " ORDER BY registrado_em DESC"
@@ -1551,6 +1550,208 @@ def get_avarias_count_abertas() -> int:
         return row[0] if row else 0
     except Exception:
         return 0
+
+
+# ── AVARIA UNIDADES (galões/baldes individuais) ────────────────────────────────
+
+def listar_unidades_avaria(avaria_id: int) -> list[dict]:
+    """Retorna lista de unidades (galões) de uma avaria, ordenadas por id."""
+    try:
+        rows = get_db().execute(
+            "SELECT id, avaria_id, uid, nivel FROM avaria_unidades WHERE avaria_id = ? ORDER BY id",
+            (avaria_id,)
+        ).fetchall()
+        return [{"id": r[0], "avaria_id": r[1], "uid": r[2], "nivel": float(r[3])} for r in rows]
+    except Exception:
+        return []
+
+
+def atualizar_nivel_unidade(uid: str, nivel: float):
+    """Grava o nível de preenchimento (0-100) de uma unidade no Turso."""
+    try:
+        conn = get_db()
+        conn.execute("UPDATE avaria_unidades SET nivel = ? WHERE uid = ?", (nivel, uid))
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao salvar nível: {e}")
+
+
+def adicionar_unidade_avaria(avaria_id: int, nivel: float = 50.0) -> dict | None:
+    """Adiciona um novo galão/balde a uma avaria. Retorna o registro criado."""
+    try:
+        uid = f"{avaria_id}_{int(datetime.now().timestamp() * 1000)}"
+        conn = get_db()
+        conn.execute(
+            "INSERT INTO avaria_unidades (avaria_id, uid, nivel) VALUES (?, ?, ?)",
+            (avaria_id, uid, nivel)
+        )
+        conn.commit()
+        sync_db()
+        row = conn.execute(
+            "SELECT id, avaria_id, uid, nivel FROM avaria_unidades WHERE uid = ?", (uid,)
+        ).fetchone()
+        if row:
+            return {"id": row[0], "avaria_id": row[1], "uid": row[2], "nivel": float(row[3])}
+    except Exception as e:
+        st.error(f"❌ Erro ao adicionar balde: {e}")
+    return None
+
+
+def remover_unidade_avaria(uid: str):
+    """Remove um galão/balde pelo uid."""
+    try:
+        conn = get_db()
+        conn.execute("DELETE FROM avaria_unidades WHERE uid = ?", (uid,))
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro ao remover balde: {e}")
+
+
+def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str,
+                     capacidade_litros: float = 20.0):
+    try:
+        conn = get_db()
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            """INSERT INTO avarias (codigo, produto, qtd_avariada, motivo, status,
+                                    registrado_em, capacidade_litros)
+               VALUES (?, ?, ?, ?, 'aberto', ?, ?)""",
+            (codigo, produto, qtd, motivo, now, capacidade_litros)
+        )
+        conn.commit()
+        # Cria a primeira unidade automaticamente com nível 50%
+        avaria_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        uid = f"{avaria_id}_{int(datetime.now().timestamp() * 1000)}"
+        conn.execute(
+            "INSERT INTO avaria_unidades (avaria_id, uid, nivel) VALUES (?, ?, 50.0)",
+            (avaria_id, uid)
+        )
+        conn.commit()
+        sync_db()
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao registrar avaria: {e}")
+        return False
+
+
+# ── Helpers de UI para galões ──────────────────────────────────────────────────
+
+def _galao_color(pct: float) -> dict:
+    if pct > 60:
+        return {"main": "#22c55e", "dark": "#15803d", "glow": "#4ade80"}
+    if pct > 25:
+        return {"main": "#f59e0b", "dark": "#b45309", "glow": "#fbbf24"}
+    return {"main": "#ef4444", "dark": "#991b1b", "glow": "#f87171"}
+
+
+def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> str:
+    """Gera o HTML de um galão animado com nível de líquido."""
+    import math as _math
+    pct = max(0.0, min(100.0, nivel))
+    litros = (pct / 100.0) * capacidade
+    c = _galao_color(pct)
+    bid = "g" + uid.replace("-", "").replace("_", "")
+
+    TH = 140    # altura da área de líquido no SVG
+    BY = 195    # Y do fundo do corpo
+    liq_h = (pct / 100.0) * TH
+    liq_y = BY - liq_h
+
+    # Caminho da onda (2× a largura para animação contínua)
+    body_w = 256   # 278 - 22
+    pts = [f"22,{liq_y:.1f}"]
+    steps = 32
+    for i in range(steps + 1):
+        x = 22 + body_w * 2 * i / steps
+        y = liq_y + 4 * _math.sin(i * _math.pi * 4 / steps)
+        pts.append(f"{x:.1f},{y:.1f}")
+    pts += [f"{22 + body_w * 2},{BY}", f"22,{BY}"]
+    wave_d = "M " + " L ".join(pts) + " Z"
+
+    status_txt = "✓ OK" if pct > 60 else ("⚠ Baixo" if pct > 25 else "● Crítico")
+    liq_block = ""
+    if pct > 0.1:
+        liq_block = f"""
+        <g clip-path="url(#cl_{bid})">
+          <g style="animation:wave_{bid} 3s linear infinite;will-change:transform;">
+            <path d="{wave_d}" fill="url(#lq_{bid})" opacity="0.93"/>
+          </g>
+          <rect x="22" y="{liq_y:.1f}" width="256" height="{liq_h:.1f}"
+                fill="url(#sh_{bid})" opacity="0.28"/>
+          <rect x="46" y="{liq_y + 4:.1f}" width="12"
+                height="{max(liq_h - 10, 0):.0f}" rx="6" fill="#fff" opacity="0.20"/>
+        </g>"""
+
+    scale_lines = "".join(
+        f'<line x1="28" y1="{55 + i*28}" x2="272" y2="{55 + i*28}" '
+        f'stroke="rgba(255,255,255,0.1)" stroke-width="0.9"/>'
+        for i in range(1, 5)
+    )
+
+    return f"""
+<div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:140px;">
+  <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:{c['glow']};opacity:0.85;">
+    Nº {index + 1}
+  </div>
+  <svg viewBox="0 0 300 235" width="138" height="112" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <style>@keyframes wave_{bid}{{0%{{transform:translateX(0)}}100%{{transform:translateX(-256px)}}}}</style>
+      <linearGradient id="lq_{bid}" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="{c['main']}"/>
+        <stop offset="100%" stop-color="{c['dark']}"/>
+      </linearGradient>
+      <linearGradient id="sh_{bid}" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#fff" stop-opacity="0"/>
+        <stop offset="50%" stop-color="#fff" stop-opacity="0.55"/>
+        <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="pl_{bid}" x1="0%" y1="0%" x2="100%" y2="0%">
+        <stop offset="0%" stop-color="#7ab0a8" stop-opacity="0.52"/>
+        <stop offset="42%" stop-color="#e0f4f0" stop-opacity="0.18"/>
+        <stop offset="62%" stop-color="#f0faf8" stop-opacity="0.12"/>
+        <stop offset="100%" stop-color="#7ab0a8" stop-opacity="0.52"/>
+      </linearGradient>
+      <linearGradient id="tp_{bid}" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#ccd8dc"/>
+        <stop offset="100%" stop-color="#a0b4b8"/>
+      </linearGradient>
+      <filter id="txt_{bid}">
+        <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="rgba(0,0,0,0.9)"/>
+      </filter>
+      <clipPath id="cl_{bid}">
+        <path d="M22,55 L278,55 L278,195 Q278,206 268,206 L52,206 Q22,206 22,195 Z"/>
+      </clipPath>
+    </defs>
+    {liq_block}
+    <path d="M22,55 L278,55 L278,195 Q278,206 268,206 L52,206 Q22,206 22,195 Z"
+          fill="url(#pl_{bid})"/>
+    {scale_lines}
+    <path d="M22,55 L278,55 L278,195 Q278,206 268,206 L52,206 Q22,206 22,195 Z"
+          fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
+    <path d="M22,55 L278,55 L264,44 L40,44 Z" fill="url(#tp_{bid})"/>
+    <line x1="22" y1="55" x2="278" y2="55" stroke="#9aacb4" stroke-width="1.5"/>
+    <path d="M40,44 L118,44 L118,22 L60,22 Z" fill="url(#tp_{bid})"/>
+    <rect x="58" y="12" width="42" height="15" rx="3" fill="#9aaab0"/>
+    <ellipse cx="79" cy="12" rx="22" ry="8" fill="#8898a0"/>
+    <ellipse cx="79" cy="10" rx="16" ry="5" fill="#b0bec4" opacity="0.38"/>
+    <rect x="50"  y="36" width="13" height="20" rx="4" fill="#8090a0"/>
+    <rect x="237" y="36" width="13" height="20" rx="4" fill="#8090a0"/>
+    <path d="M56,38 Q150,18 243,38" fill="none" stroke="#7888a0" stroke-width="14" stroke-linecap="round"/>
+    <path d="M56,38 Q150,18 243,38" fill="none" stroke="#c0d0d8" stroke-width="8"  stroke-linecap="round"/>
+    <path d="M56,38 Q150,18 243,38" fill="none" stroke="#eef4f8" stroke-width="3.5" stroke-linecap="round"/>
+    <text x="150" y="143" font-family="Arial Black,Impact,sans-serif"
+          font-size="42" font-weight="900" fill="white"
+          text-anchor="middle" filter="url(#txt_{bid})">{litros:.1f}L</text>
+    <text x="150" y="163" font-family="monospace" font-size="14" font-weight="700"
+          fill="{c['glow']}" text-anchor="middle" filter="url(#txt_{bid})">{pct:.0f}%</text>
+  </svg>
+  <div style="font-size:9px;font-weight:700;padding:2px 10px;border-radius:999px;
+              background:{c['glow']}18;border:1px solid {c['glow']}35;color:{c['glow']};">
+    {status_txt}
+  </div>
+</div>"""
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -7638,11 +7839,20 @@ new Chart(document.getElementById('coop-chart'),{
     with t7:
         st.markdown("""
         <style>
-        .av-card{background:rgba(165,94,234,0.06);border:1px solid rgba(165,94,234,0.25);border-radius:14px;padding:14px 16px;margin-bottom:10px;}
-        .av-card.resolvido{background:rgba(0,214,143,0.04);border-color:rgba(0,214,143,0.2);opacity:0.6;}
-        .av-badge{display:inline-block;padding:3px 12px;border-radius:20px;font-size:0.7rem;font-weight:700;letter-spacing:.5px;margin-bottom:8px;}
-        .av-aberto{background:rgba(255,71,87,0.15);color:#ff4757;border:1px solid #ff475744;}
-        .av-resolvido{background:rgba(0,214,143,0.15);color:#00d68f;border:1px solid #00d68f44;}
+        .av-card{background:linear-gradient(135deg,#0d1a18 0%,#111e1c 100%);
+                 border-radius:16px;padding:16px;margin-bottom:12px;}
+        .av-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;
+                  font-weight:800;letter-spacing:.5px;margin-bottom:6px;}
+        .av-aberto{background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.45);}
+        .av-resolvido{background:rgba(34,197,94,0.1);color:#4ade80;border:1px solid rgba(34,197,94,0.35);}
+        .av-galoes{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;
+                   background:rgba(255,255,255,0.025);border-radius:12px;
+                   padding:14px 10px 10px;margin:12px 0 8px;}
+        .av-stats{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;}
+        .av-stat{flex:1;min-width:80px;background:rgba(255,255,255,0.04);border-radius:8px;
+                 padding:7px 13px;}
+        .av-stat-lbl{font-size:9px;letter-spacing:1.5px;color:rgba(255,255,255,0.35);}
+        .av-stat-val{font-size:15px;font-weight:900;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -7652,7 +7862,6 @@ new Chart(document.getElementById('coop-chart'),{
             if df_estoque_av.empty:
                 st.info("Nenhum produto no estoque para selecionar.")
             else:
-                # Busca de produto
                 busca_av = st.text_input("🔍 Buscar produto", placeholder="Nome ou código...", key="av_busca")
                 df_filtrado_av = df_estoque_av
                 if busca_av:
@@ -7666,19 +7875,25 @@ new Chart(document.getElementById('coop-chart'),{
                 else:
                     opcoes = [f"{r['codigo']} — {r['produto']}" for _, r in df_filtrado_av.iterrows()]
                     sel = st.selectbox("Produto avariado", opcoes, key="av_produto_sel")
-
-                    # Recupera linha selecionada
                     idx_sel = opcoes.index(sel)
                     row_sel = df_filtrado_av.iloc[idx_sel]
 
-                    qtd_av = st.number_input(
+                    col_av1, col_av2 = st.columns(2)
+                    with col_av1:
+                        qtd_av = st.number_input(
                             "Qtd avariada", min_value=1,
                             max_value=int(row_sel["qtd_sistema"]) if int(row_sel["qtd_sistema"]) > 0 else 9999,
                             value=1, step=1, key="av_qtd"
                         )
+                    with col_av2:
+                        cap_av = st.number_input(
+                            "Capacidade do galão (litros)", min_value=0.1, max_value=1000.0,
+                            value=20.0, step=0.5, key="av_cap",
+                            help="Capacidade total de cada galão/balde avariado"
+                        )
 
                     motivo_av = st.text_area(
-                        "Motivo / descrição", placeholder="Ex: embalagem rasgada, produto vencido, vazamento...",
+                        "Motivo / descrição", placeholder="Ex: balde furado, galão aberto, vazamento...",
                         key="av_motivo", height=80
                     )
 
@@ -7688,13 +7903,14 @@ new Chart(document.getElementById('coop-chart'),{
                         else:
                             ok_av = registrar_avaria(
                                 row_sel["codigo"], row_sel["produto"],
-                                int(qtd_av), motivo_av.strip()
+                                int(qtd_av), motivo_av.strip(),
+                                capacidade_litros=float(cap_av)
                             )
                             if ok_av:
                                 st.success(f"✅ Avaria registrada: {row_sel['produto']} ({int(qtd_av)} un)")
                                 st.rerun()
 
-        # ── Filtro de visualização ──
+        # ── Filtro ──
         col_f1, col_f2 = st.columns([2, 1])
         with col_f2:
             mostrar_resolvidas = st.toggle("Mostrar resolvidas", value=False, key="av_mostrar_resolvidas")
@@ -7718,11 +7934,12 @@ new Chart(document.getElementById('coop-chart'),{
 
             for _, av in df_av.iterrows():
                 is_aberta = av["status"] == "aberto"
-                card_cls = "av-card" if is_aberta else "av-card resolvido"
+                av_id = int(av["id"])
+                capacidade = float(av.get("capacidade_litros") or 20.0)
                 badge_cls = "av-aberto" if is_aberta else "av-resolvido"
-                badge_txt = "🔴 ABERTA" if is_aberta else "✅ RESOLVIDA"
+                badge_txt = "⚠ ABERTA" if is_aberta else "✅ RESOLVIDA"
+                accent = "#ef4444" if is_aberta else "#22c55e"
 
-                # Data formatada
                 try:
                     dt_reg = datetime.strptime(av["registrado_em"], "%Y-%m-%d %H:%M:%S")
                     dias_av = (datetime.now(tz=_BRT).replace(tzinfo=None) - dt_reg).days
@@ -7730,44 +7947,126 @@ new Chart(document.getElementById('coop-chart'),{
                 except Exception:
                     tempo_av = av["registrado_em"]
 
-                st.markdown(f'<div class="{card_cls}">', unsafe_allow_html=True)
+                # Busca unidades do galão
+                unidades = listar_unidades_avaria(av_id)
+
+                # Coleta valores atuais dos sliders (session_state ou DB)
+                niveis_atuais = {
+                    u["uid"]: st.session_state.get(f"av_nivel_{u['uid']}", u["nivel"])
+                    for u in unidades
+                }
+
+                # ── Card HTML ──────────────────────────────────────────────
                 st.markdown(
-                    f'<span class="av-badge {badge_cls}">{badge_txt}</span>',
+                    f'<div class="av-card" style="border:1px solid {accent}22;">'
+                    f'<span class="av-badge {badge_cls}">{badge_txt}</span>'
+                    f'<span style="color:rgba(255,255,255,0.25);font-size:10px;margin-left:8px;">'
+                    f'{tempo_av}</span>'
+                    f'<div style="color:#e0e6ed;font-weight:800;font-size:0.9rem;margin-top:4px;">'
+                    f'{av["produto"]}</div>'
+                    f'<div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:2px;">'
+                    f'Cod: {av["codigo"]} &nbsp;·&nbsp; '
+                    f'<span style="color:{accent}99;">'
+                    f'{len(unidades)} {"unidade" if len(unidades)==1 else "unidades"} danificadas</span>'
+                    f'</div>'
+                    + (f'<div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:2px;">'
+                       f'🪣 {av["motivo"]}</div>' if av.get("motivo") else "")
+                    + "</div>",
                     unsafe_allow_html=True
                 )
 
-                col_info_av, col_btns_av = st.columns([5, 1])
-                with col_info_av:
+                # ── Galões SVG ─────────────────────────────────────────────
+                if unidades:
+                    galoes_html = "".join(
+                        _galao_svg_html(u["uid"], niveis_atuais[u["uid"]], capacidade, i)
+                        for i, u in enumerate(unidades)
+                    )
+                    # Botão ADD como último "galão"
+                    galoes_html += f"""
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+            min-width:120px;height:160px;border:1.5px dashed rgba(255,255,255,0.15);
+            border-radius:12px;cursor:pointer;color:rgba(255,255,255,0.25);">
+  <span style="font-size:22px;line-height:1;">+</span>
+  <span style="font-size:9px;letter-spacing:1px;margin-top:4px;">ADD BALDE</span>
+</div>"""
+                    st.markdown(f'<div class="av-galoes">{galoes_html}</div>', unsafe_allow_html=True)
+
+                    # ── Sliders de nível ───────────────────────────────────
+                    n_cols = len(unidades) + 1
+                    slider_cols = st.columns(n_cols)
+                    for i, u in enumerate(unidades):
+                        with slider_cols[i]:
+                            key_s = f"av_nivel_{u['uid']}"
+                            novo_nivel = st.slider(
+                                f"Nº{i+1} ({capacidade:.0f}L)",
+                                0.0, 100.0,
+                                value=float(u["nivel"]),
+                                step=1.0,
+                                key=key_s,
+                                format="%.0f%%"
+                            )
+                            if abs(novo_nivel - u["nivel"]) > 0.5:
+                                atualizar_nivel_unidade(u["uid"], novo_nivel)
+                                st.rerun()
+                            if len(unidades) > 1:
+                                if st.button("✕ Remover", key=f"av_rm_{u['uid']}",
+                                             use_container_width=True):
+                                    remover_unidade_avaria(u["uid"])
+                                    st.rerun()
+
+                    with slider_cols[-1]:
+                        st.markdown("<div style='padding-top:22px;'></div>", unsafe_allow_html=True)
+                        if is_aberta and st.button("＋ Balde", key=f"av_add_{av_id}",
+                                                    use_container_width=True):
+                            adicionar_unidade_avaria(av_id)
+                            st.rerun()
+
+                    # ── Totais ─────────────────────────────────────────────
+                    total_rest = sum((niveis_atuais[u["uid"]] / 100.0) * capacidade for u in unidades)
+                    total_perd = sum(((100.0 - niveis_atuais[u["uid"]]) / 100.0) * capacidade for u in unidades)
+                    nivel_min = min(niveis_atuais[u["uid"]] for u in unidades)
+                    accent_rest = _galao_color(nivel_min)["glow"]
+
                     st.markdown(
-                        f'<div style="display:flex;justify-content:space-between;align-items:flex-start;">'
-                        f'<div>'
-                        f'<div style="color:#e0e6ed;font-weight:700;font-size:0.9rem;">{av["produto"]}</div>'
-                        f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
-                        f'<span style="color:#64748b;font-size:0.65rem;">Cod: <b style="color:#94a3b8;">{av["codigo"]}</b></span>'
-                        f'<span style="color:#ff4757;font-size:0.7rem;font-weight:700;">Qtd: {int(av["qtd_avariada"])}</span>'
+                        f'<div class="av-stats">'
+                        f'<div class="av-stat" style="border-left:3px solid {accent_rest}55;">'
+                        f'<div class="av-stat-lbl">RESTANTE</div>'
+                        f'<div class="av-stat-val" style="color:{accent_rest};">{total_rest:.1f} L</div>'
                         f'</div>'
-                        f'<div style="margin-top:6px;color:#94a3b8;font-size:0.75rem;">📋 {av["motivo"]}</div>'
+                        f'<div class="av-stat" style="border-left:3px solid #f8717155;">'
+                        f'<div class="av-stat-lbl">PERDIDO</div>'
+                        f'<div class="av-stat-val" style="color:#f87171;">{total_perd:.1f} L</div>'
                         f'</div>'
-                        f'<span style="color:#3b82f6;font-size:0.6rem;font-family:monospace;white-space:nowrap;">{tempo_av}</span>'
+                        f'<div class="av-stat" style="border-left:3px solid #60a5fa55;">'
+                        f'<div class="av-stat-lbl">BALDES</div>'
+                        f'<div class="av-stat-val" style="color:#60a5fa;">{len(unidades)}</div>'
+                        f'</div>'
                         f'</div>',
                         unsafe_allow_html=True
                     )
-                    if not is_aberta and av["resolvido_em"]:
-                        st.markdown(
-                            f'<div style="margin-top:4px;color:#00d68f;font-size:0.65rem;">✅ Resolvido em: {av["resolvido_em"]}</div>',
-                            unsafe_allow_html=True
-                        )
 
-                with col_btns_av:
+                # ── Ações ─────────────────────────────────────────────────
+                col_btns1, col_btns2, col_btns3 = st.columns([2, 1, 1])
+                with col_btns2:
                     if is_aberta:
-                        if st.button("✅", key=f"av_res_{av['id']}", help="Marcar como resolvida"):
-                            resolver_avaria(int(av["id"]))
+                        if st.button("✅ Resolver", key=f"av_res_{av_id}",
+                                     use_container_width=True):
+                            resolver_avaria(av_id)
                             st.rerun()
-                    if st.button("🗑️", key=f"av_del_{av['id']}", help="Excluir registro"):
-                        deletar_avaria(int(av["id"]))
+                with col_btns3:
+                    if st.button("🗑️ Excluir", key=f"av_del_{av_id}",
+                                 use_container_width=True):
+                        deletar_avaria(av_id)
                         st.rerun()
 
-                st.markdown("</div>", unsafe_allow_html=True)
+                if not is_aberta and av.get("resolvido_em"):
+                    st.markdown(
+                        f'<div style="color:#4ade80;font-size:0.65rem;margin-top:4px;">'
+                        f'✅ Resolvido em: {av["resolvido_em"]}</div>',
+                        unsafe_allow_html=True
+                    )
+
+                st.divider()
 
     with t8:
         import streamlit.components.v1 as components
