@@ -9476,7 +9476,7 @@ new Chart(document.getElementById('coop-chart'),{
                 value=datetime.now(tz=_BRT).strftime("%Y-%m-%d"),
                 key="matr480_data_ref",
             )
-            _col_imp1, _col_imp2 = st.columns([2, 1])
+            _col_imp1, _col_imp2, _col_imp3 = st.columns([2, 1, 1])
             with _col_imp1:
                 _btn_import = st.button(
                     "📤 Processar e importar", key="matr480_import_btn",
@@ -9488,10 +9488,56 @@ new Chart(document.getElementById('coop-chart'),{
                     use_container_width=True,
                     help="Remove todos os registros da data de referência informada",
                 )
+            with _col_imp3:
+                _btn_diag = st.button(
+                    "🔍 Diagnóstico", key="matr480_diag_btn",
+                    use_container_width=True,
+                    help="Mostra o texto bruto extraído do PDF para depuração",
+                )
 
             if _btn_clear and _data_ref_inp:
                 if delete_materiais_por_referencia(_data_ref_inp.strip()):
                     st.success(f"✅ Registros de {_data_ref_inp} removidos.")
+                    st.rerun()
+
+            # ── Diagnóstico: exibe texto bruto extraído ─────────────────
+            if _btn_diag and _up_pdf is not None:
+                try:
+                    import pdfplumber as _plb
+                    from io import BytesIO as _BIO
+                    _pdf_bytes_d = _up_pdf.read()
+                    _diag_lines: list[str] = []
+                    with _plb.open(_BIO(_pdf_bytes_d)) as _pdf_d:
+                        for _pnum, _pg in enumerate(_pdf_d.pages, 1):
+                            _diag_lines.append(f"══ Página {_pnum} ══")
+                            _txt = _pg.extract_text(x_tolerance=3, y_tolerance=3) or ""
+                            _diag_lines.extend(_txt.splitlines())
+                    st.session_state["matr480_diag"] = _diag_lines
+                    st.session_state["matr480_diag_bytes"] = _pdf_bytes_d
+                except ImportError:
+                    st.error("❌ pdfplumber não instalado.")
+                except Exception as _ex:
+                    st.error(f"❌ Erro no diagnóstico: {_ex}")
+
+            if st.session_state.get("matr480_diag"):
+                _all_lines = st.session_state["matr480_diag"]
+                st.markdown(
+                    f"**🔍 Texto extraído — {len(_all_lines)} linhas** "
+                    f"(primeiras 300 mostradas abaixo, todas no arquivo de download)",
+                )
+                # Download completo
+                _diag_txt = "\n".join(_all_lines)
+                st.download_button(
+                    "⬇️ Baixar texto completo (.txt)",
+                    data=_diag_txt.encode("utf-8"),
+                    file_name="matr480_diagnostico.txt",
+                    mime="text/plain",
+                    key="matr480_diag_dl",
+                )
+                # Preview das primeiras 300 linhas
+                st.code("\n".join(_all_lines[:300]), language=None)
+                if st.button("✖️ Fechar diagnóstico", key="matr480_diag_close"):
+                    del st.session_state["matr480_diag"]
                     st.rerun()
 
             if _btn_import and _up_pdf is not None:
@@ -9502,6 +9548,7 @@ new Chart(document.getElementById('coop-chart'),{
                         _records, _warns = _parse_matr(
                             _pdf_bytes,
                             data_referencia=_data_ref_inp.strip() or None,
+                            debug=True,
                         )
                     if _records:
                         _ins, _upd = upsert_materiais_terceiros(
@@ -9514,10 +9561,11 @@ new Chart(document.getElementById('coop-chart'),{
                     else:
                         st.warning(
                             "⚠️ Nenhuma movimentação encontrada no PDF. "
-                            "Verifique se o arquivo é um MATR480 válido."
+                            "Use o botão **🔍 Diagnóstico** para ver o texto extraído "
+                            "e verificar o formato do relatório."
                         )
                     if _warns:
-                        with st.expander(f"⚠️ {len(_warns)} aviso(s) de parse", expanded=False):
+                        with st.expander(f"⚠️ {len(_warns)} aviso(s) de parse", expanded=True):
                             for _w in _warns:
                                 st.caption(_w)
                     st.rerun()
@@ -9527,7 +9575,9 @@ new Chart(document.getElementById('coop-chart'),{
                         "Adicione `pdfplumber` ao requirements.txt e reinicie."
                     )
                 except Exception as _ex:
+                    import traceback as _tb
                     st.error(f"❌ Erro ao processar PDF: {_ex}")
+                    st.code(_tb.format_exc(), language="python")
 
         # ── Filtros ────────────────────────────────────────────────────────
         _resumo = get_materiais_resumo()
