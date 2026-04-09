@@ -1141,31 +1141,76 @@ def _get_connection():
     """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS materiais_terceiros (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
-            codigo_produto TEXT NOT NULL,
-            descricao    TEXT    DEFAULT '',
-            armazem      TEXT    DEFAULT '',
-            tipo         TEXT    DEFAULT '',
-            codigo_parceiro TEXT DEFAULT '',
-            loja         TEXT    DEFAULT '',
-            razao_social TEXT    DEFAULT '',
-            doc_origin   TEXT    NOT NULL,
-            serie        TEXT    DEFAULT '',
-            dt_emissao   TEXT    DEFAULT '',
-            qtd_original REAL    DEFAULT 0,
-            qtd_entregue REAL    DEFAULT 0,
-            saldo        REAL    DEFAULT 0,
-            total_nf     REAL    DEFAULT 0,
-            total_devolvido REAL DEFAULT 0,
-            custo_prod   REAL    DEFAULT 0,
-            tm           TEXT    DEFAULT '',
-            data_lancto  TEXT    DEFAULT '',
-            data_referencia TEXT DEFAULT '',
-            created_at   TEXT    DEFAULT '',
-            UNIQUE(doc_origin, codigo_produto, loja)
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_produto  TEXT    NOT NULL,
+            descricao       TEXT    DEFAULT '',
+            armazem         TEXT    DEFAULT '',
+            tipo            TEXT    DEFAULT '',
+            codigo_parceiro TEXT    DEFAULT '',
+            loja            TEXT    DEFAULT '',
+            razao_social    TEXT    DEFAULT '',
+            doc_origin      TEXT    NOT NULL,
+            serie           TEXT    DEFAULT '',
+            dt_emissao      TEXT    DEFAULT '',
+            qtd_original    REAL    DEFAULT 0,
+            qtd_entregue    REAL    DEFAULT 0,
+            saldo           REAL    DEFAULT 0,
+            total_nf        REAL    DEFAULT 0,
+            total_devolvido REAL    DEFAULT 0,
+            custo_prod      REAL    DEFAULT 0,
+            tm              TEXT    DEFAULT '',
+            data_lancto     TEXT    DEFAULT '',
+            data_referencia TEXT    DEFAULT '',
+            created_at      TEXT    DEFAULT ''
         )
     """)
     conn.commit()
+
+    # ── Migração: remove UNIQUE antigo de materiais_terceiros se existir ──
+    try:
+        _mat_sql = (conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='materiais_terceiros'"
+        ).fetchone() or ("",))[0]
+        if "UNIQUE" in (_mat_sql or "").upper():
+            conn.execute("""
+                CREATE TABLE materiais_terceiros_new (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    codigo_produto  TEXT NOT NULL,
+                    descricao       TEXT DEFAULT '',
+                    armazem         TEXT DEFAULT '',
+                    tipo            TEXT DEFAULT '',
+                    codigo_parceiro TEXT DEFAULT '',
+                    loja            TEXT DEFAULT '',
+                    razao_social    TEXT DEFAULT '',
+                    doc_origin      TEXT NOT NULL,
+                    serie           TEXT DEFAULT '',
+                    dt_emissao      TEXT DEFAULT '',
+                    qtd_original    REAL DEFAULT 0,
+                    qtd_entregue    REAL DEFAULT 0,
+                    saldo           REAL DEFAULT 0,
+                    total_nf        REAL DEFAULT 0,
+                    total_devolvido REAL DEFAULT 0,
+                    custo_prod      REAL DEFAULT 0,
+                    tm              TEXT DEFAULT '',
+                    data_lancto     TEXT DEFAULT '',
+                    data_referencia TEXT DEFAULT '',
+                    created_at      TEXT DEFAULT ''
+                )
+            """)
+            conn.execute("""
+                INSERT OR IGNORE INTO materiais_terceiros_new
+                SELECT id, codigo_produto, descricao, armazem, tipo,
+                       codigo_parceiro, loja, razao_social, doc_origin, serie,
+                       dt_emissao, qtd_original, qtd_entregue, saldo, total_nf,
+                       total_devolvido, custo_prod, tm, data_lancto,
+                       data_referencia, created_at
+                FROM materiais_terceiros
+            """)
+            conn.execute("DROP TABLE materiais_terceiros")
+            conn.execute("ALTER TABLE materiais_terceiros_new RENAME TO materiais_terceiros")
+            conn.commit()
+    except Exception:
+        pass
 
     # ── Migrações (roda 1x) ──
     try:
@@ -2228,60 +2273,40 @@ def get_estocados_por_produto(produto: str) -> list:
 
 def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int, int]:
     """
-    Insere ou atualiza registros de materiais de terceiros.
-    Chave única: (doc_origin, codigo_produto, loja).
-    Retorna (inseridos, atualizados).
+    Substitui todos os registros da data_referencia pelos novos.
+    Estratégia: DELETE onde data_referencia=? → INSERT tudo.
+    Retorna (inseridos, removidos_anteriormente).
     """
     if not records:
         return 0, 0
     conn = get_db()
     now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
-    inseridos = atualizados = 0
+    # Remove registros antigos da mesma data de referência para reimportação limpa
+    cur = conn.execute(
+        "DELETE FROM materiais_terceiros WHERE data_referencia = ?", (data_referencia,)
+    )
+    removidos = getattr(cur, "rowcount", 0) or 0
+    # Insere todos os registros novos
     for r in records:
-        existing = conn.execute(
-            "SELECT id FROM materiais_terceiros WHERE doc_origin=? AND codigo_produto=? AND loja=?",
-            (r.get("doc_origin", ""), r.get("codigo_produto", ""), r.get("loja", "")),
-        ).fetchone()
-        if existing:
-            conn.execute("""
-                UPDATE materiais_terceiros SET
-                    descricao=?, armazem=?, tipo=?, codigo_parceiro=?,
-                    razao_social=?, serie=?, dt_emissao=?,
-                    qtd_original=?, qtd_entregue=?, saldo=?,
-                    total_nf=?, total_devolvido=?, custo_prod=?,
-                    tm=?, data_lancto=?, data_referencia=?, created_at=?
-                WHERE doc_origin=? AND codigo_produto=? AND loja=?
-            """, (
-                r.get("descricao", ""), r.get("armazem", ""), r.get("tipo", ""),
-                r.get("codigo_parceiro", ""), r.get("razao_social", ""),
-                r.get("serie", ""), r.get("dt_emissao", ""),
-                r.get("qtd_original", 0), r.get("qtd_entregue", 0), r.get("saldo", 0),
-                r.get("total_nf", 0), r.get("total_devolvido", 0), r.get("custo_prod", 0),
-                r.get("tm", ""), r.get("data_lancto", ""), data_referencia, now,
-                r.get("doc_origin", ""), r.get("codigo_produto", ""), r.get("loja", ""),
-            ))
-            atualizados += 1
-        else:
-            conn.execute("""
-                INSERT INTO materiais_terceiros
-                    (codigo_produto, descricao, armazem, tipo, codigo_parceiro, loja,
-                     razao_social, doc_origin, serie, dt_emissao,
-                     qtd_original, qtd_entregue, saldo, total_nf, total_devolvido,
-                     custo_prod, tm, data_lancto, data_referencia, created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            """, (
-                r.get("codigo_produto", ""), r.get("descricao", ""), r.get("armazem", ""),
-                r.get("tipo", ""), r.get("codigo_parceiro", ""), r.get("loja", ""),
-                r.get("razao_social", ""), r.get("doc_origin", ""), r.get("serie", ""),
-                r.get("dt_emissao", ""), r.get("qtd_original", 0), r.get("qtd_entregue", 0),
-                r.get("saldo", 0), r.get("total_nf", 0), r.get("total_devolvido", 0),
-                r.get("custo_prod", 0), r.get("tm", ""), r.get("data_lancto", ""),
-                data_referencia, now,
-            ))
-            inseridos += 1
+        conn.execute("""
+            INSERT INTO materiais_terceiros
+                (codigo_produto, descricao, armazem, tipo, codigo_parceiro, loja,
+                 razao_social, doc_origin, serie, dt_emissao,
+                 qtd_original, qtd_entregue, saldo, total_nf, total_devolvido,
+                 custo_prod, tm, data_lancto, data_referencia, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, (
+            r.get("codigo_produto", ""), r.get("descricao", ""), r.get("armazem", ""),
+            r.get("tipo", ""), r.get("codigo_parceiro", ""), r.get("loja", ""),
+            r.get("razao_social", ""), r.get("doc_origin", ""), r.get("serie", ""),
+            r.get("dt_emissao", ""), r.get("qtd_original", 0), r.get("qtd_entregue", 0),
+            r.get("saldo", 0), r.get("total_nf", 0), r.get("total_devolvido", 0),
+            r.get("custo_prod", 0), r.get("tm", ""), r.get("data_lancto", ""),
+            data_referencia, now,
+        ))
     conn.commit()
     sync_db()
-    return inseridos, atualizados
+    return len(records), removidos
 
 
 def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None) -> pd.DataFrame:
@@ -9551,12 +9576,12 @@ new Chart(document.getElementById('coop-chart'),{
                             debug=True,
                         )
                     if _records:
-                        _ins, _upd = upsert_materiais_terceiros(
+                        _ins, _rem = upsert_materiais_terceiros(
                             _records, _data_ref_inp.strip()
                         )
+                        _rem_txt = f" ({_rem} anteriores substituídos)" if _rem else ""
                         st.success(
-                            f"✅ {len(_records)} registros processados — "
-                            f"{_ins} inseridos, {_upd} atualizados."
+                            f"✅ {_ins} registros importados{_rem_txt}."
                         )
                     else:
                         st.warning(
