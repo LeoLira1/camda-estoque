@@ -5584,17 +5584,39 @@ def get_mais_menos_movimentados(data_inicio: str, data_fim: str, grupo: str = "T
 
 
 def get_produtos_sem_principio_ativo() -> list:
+    """Retorna defensivos do estoque que não têm princípio ativo resolvível,
+    usando o mesmo matching fuzzy multi-etapa da aba P. Ativos."""
     try:
-        rows = get_db().execute("""
+        conn = get_db()
+        rows = conn.execute("""
             SELECT produto, categoria, criado_em
             FROM estoque_mestre
-            WHERE UPPER(produto) NOT IN (
-                SELECT UPPER(produto) FROM principios_ativos
-            )
-            AND categoria IN ('HERBICIDAS','FUNGICIDAS','INSETICIDAS','NEMATICIDAS')
+            WHERE categoria IN ('HERBICIDAS','FUNGICIDAS','INSETICIDAS','NEMATICIDAS')
             ORDER BY criado_em DESC
         """).fetchall()
-        return rows
+        if not rows:
+            return []
+
+        # Monta o mesmo mapa combinado que a aba P. Ativos usa
+        pa_rows = conn.execute(
+            "SELECT produto, principio_ativo FROM principios_ativos"
+        ).fetchall()
+        mapa_db = {str(r[0]).strip().upper(): str(r[1]).strip() for r in pa_rows}
+        mapa_excel = carregar_mapa_produtos_camda()
+        mapa_combinado = {**mapa_excel, **mapa_db}
+
+        if not mapa_combinado:
+            return list(rows)
+
+        _idx = _build_pa_lookup(mapa_combinado)
+
+        sem_pa = []
+        for produto, categoria, criado_em in rows:
+            pa = _lookup_pa_from_index(str(produto), *_idx)
+            if not pa:
+                sem_pa.append((produto, categoria, criado_em))
+
+        return sem_pa
     except Exception:
         return []
 
