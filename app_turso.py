@@ -1139,6 +1139,32 @@ def _get_connection():
             ativo INTEGER DEFAULT 1
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS materiais_terceiros (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_produto TEXT NOT NULL,
+            descricao    TEXT    DEFAULT '',
+            armazem      TEXT    DEFAULT '',
+            tipo         TEXT    DEFAULT '',
+            codigo_parceiro TEXT DEFAULT '',
+            loja         TEXT    DEFAULT '',
+            razao_social TEXT    DEFAULT '',
+            doc_origin   TEXT    NOT NULL,
+            serie        TEXT    DEFAULT '',
+            dt_emissao   TEXT    DEFAULT '',
+            qtd_original REAL    DEFAULT 0,
+            qtd_entregue REAL    DEFAULT 0,
+            saldo        REAL    DEFAULT 0,
+            total_nf     REAL    DEFAULT 0,
+            total_devolvido REAL DEFAULT 0,
+            custo_prod   REAL    DEFAULT 0,
+            tm           TEXT    DEFAULT '',
+            data_lancto  TEXT    DEFAULT '',
+            data_referencia TEXT DEFAULT '',
+            created_at   TEXT    DEFAULT '',
+            UNIQUE(doc_origin, codigo_produto, loja)
+        )
+    """)
     conn.commit()
 
     # ── Migrações (roda 1x) ──
@@ -2196,6 +2222,129 @@ def get_estocados_por_produto(produto: str) -> list:
         return rows
     except Exception:
         return []
+
+
+# ── Materiais em Poder de Terceiros (MATR480) ─────────────────────────────────
+
+def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int, int]:
+    """
+    Insere ou atualiza registros de materiais de terceiros.
+    Chave única: (doc_origin, codigo_produto, loja).
+    Retorna (inseridos, atualizados).
+    """
+    if not records:
+        return 0, 0
+    conn = get_db()
+    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+    inseridos = atualizados = 0
+    for r in records:
+        existing = conn.execute(
+            "SELECT id FROM materiais_terceiros WHERE doc_origin=? AND codigo_produto=? AND loja=?",
+            (r.get("doc_origin", ""), r.get("codigo_produto", ""), r.get("loja", "")),
+        ).fetchone()
+        if existing:
+            conn.execute("""
+                UPDATE materiais_terceiros SET
+                    descricao=?, armazem=?, tipo=?, codigo_parceiro=?,
+                    razao_social=?, serie=?, dt_emissao=?,
+                    qtd_original=?, qtd_entregue=?, saldo=?,
+                    total_nf=?, total_devolvido=?, custo_prod=?,
+                    tm=?, data_lancto=?, data_referencia=?, created_at=?
+                WHERE doc_origin=? AND codigo_produto=? AND loja=?
+            """, (
+                r.get("descricao", ""), r.get("armazem", ""), r.get("tipo", ""),
+                r.get("codigo_parceiro", ""), r.get("razao_social", ""),
+                r.get("serie", ""), r.get("dt_emissao", ""),
+                r.get("qtd_original", 0), r.get("qtd_entregue", 0), r.get("saldo", 0),
+                r.get("total_nf", 0), r.get("total_devolvido", 0), r.get("custo_prod", 0),
+                r.get("tm", ""), r.get("data_lancto", ""), data_referencia, now,
+                r.get("doc_origin", ""), r.get("codigo_produto", ""), r.get("loja", ""),
+            ))
+            atualizados += 1
+        else:
+            conn.execute("""
+                INSERT INTO materiais_terceiros
+                    (codigo_produto, descricao, armazem, tipo, codigo_parceiro, loja,
+                     razao_social, doc_origin, serie, dt_emissao,
+                     qtd_original, qtd_entregue, saldo, total_nf, total_devolvido,
+                     custo_prod, tm, data_lancto, data_referencia, created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                r.get("codigo_produto", ""), r.get("descricao", ""), r.get("armazem", ""),
+                r.get("tipo", ""), r.get("codigo_parceiro", ""), r.get("loja", ""),
+                r.get("razao_social", ""), r.get("doc_origin", ""), r.get("serie", ""),
+                r.get("dt_emissao", ""), r.get("qtd_original", 0), r.get("qtd_entregue", 0),
+                r.get("saldo", 0), r.get("total_nf", 0), r.get("total_devolvido", 0),
+                r.get("custo_prod", 0), r.get("tm", ""), r.get("data_lancto", ""),
+                data_referencia, now,
+            ))
+            inseridos += 1
+    conn.commit()
+    sync_db()
+    return inseridos, atualizados
+
+
+def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None) -> pd.DataFrame:
+    """Retorna DataFrame de materiais em poder de terceiros, com filtros opcionais."""
+    cols = [
+        "id", "codigo_produto", "descricao", "armazem", "tipo", "codigo_parceiro",
+        "loja", "razao_social", "doc_origin", "serie", "dt_emissao",
+        "qtd_original", "qtd_entregue", "saldo", "total_nf", "total_devolvido",
+        "custo_prod", "tm", "data_lancto", "data_referencia",
+    ]
+    try:
+        where_clauses = []
+        params: list = []
+        if armazem:
+            where_clauses.append("armazem = ?")
+            params.append(armazem)
+        if tipo:
+            where_clauses.append("tipo = ?")
+            params.append(tipo)
+        where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        rows = get_db().execute(
+            f"SELECT {', '.join(cols)} FROM materiais_terceiros {where} ORDER BY razao_social, descricao",
+            params,
+        ).fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
+
+def get_materiais_resumo() -> dict:
+    """Retorna dict com totalizadores: parceiros, itens, saldo_total, nf_total."""
+    try:
+        row = get_db().execute("""
+            SELECT
+                COUNT(DISTINCT razao_social) AS parceiros,
+                COUNT(*)                     AS itens,
+                SUM(saldo)                   AS saldo_total,
+                SUM(total_nf)                AS nf_total
+            FROM materiais_terceiros
+        """).fetchone()
+        return {
+            "parceiros": row[0] or 0,
+            "itens": row[1] or 0,
+            "saldo_total": row[2] or 0.0,
+            "nf_total": row[3] or 0.0,
+        }
+    except Exception:
+        return {"parceiros": 0, "itens": 0, "saldo_total": 0.0, "nf_total": 0.0}
+
+
+def delete_materiais_por_referencia(data_referencia: str) -> bool:
+    """Remove todos os registros de uma data de referência (para reimportação)."""
+    try:
+        conn = get_db()
+        conn.execute(
+            "DELETE FROM materiais_terceiros WHERE data_referencia = ?",
+            (data_referencia,),
+        )
+        conn.commit()
+        sync_db()
+        return True
+    except Exception:
+        return False
 
 
 def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
@@ -7109,7 +7258,7 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_armazem = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "🏭 Mapa do Armazém"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_armazem, t_materiais = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "🏭 Mapa do Armazém", "📦 Estocados"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -9304,6 +9453,160 @@ new Chart(document.getElementById('coop-chart'),{
 
     with t_armazem:
         _warehouse_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, get_db())
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB MATERIAIS — Materiais Em Poder de Terceiros (MATR480)
+    # ══════════════════════════════════════════════════════════════════════════
+    with t_materiais:
+        st.markdown(
+            '<div style="font-size:1.05rem;font-weight:700;color:#e0e6ed;'
+            'margin-bottom:12px;">📦 Materiais Em Poder de Terceiros — MATR480</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Importar PDF ───────────────────────────────────────────────────
+        with st.expander("📥 Importar relatório PDF (MATR480)", expanded=False):
+            _up_pdf = st.file_uploader(
+                "Selecione o arquivo PDF do MATR480",
+                type=["pdf"],
+                key="matr480_upload",
+            )
+            _data_ref_inp = st.text_input(
+                "Data de referência (YYYY-MM-DD)",
+                value=datetime.now(tz=_BRT).strftime("%Y-%m-%d"),
+                key="matr480_data_ref",
+            )
+            _col_imp1, _col_imp2 = st.columns([2, 1])
+            with _col_imp1:
+                _btn_import = st.button(
+                    "📤 Processar e importar", key="matr480_import_btn",
+                    use_container_width=True,
+                )
+            with _col_imp2:
+                _btn_clear = st.button(
+                    "🗑️ Limpar referência", key="matr480_clear_btn",
+                    use_container_width=True,
+                    help="Remove todos os registros da data de referência informada",
+                )
+
+            if _btn_clear and _data_ref_inp:
+                if delete_materiais_por_referencia(_data_ref_inp.strip()):
+                    st.success(f"✅ Registros de {_data_ref_inp} removidos.")
+                    st.rerun()
+
+            if _btn_import and _up_pdf is not None:
+                try:
+                    from matr480_parser import parse_matr480 as _parse_matr
+                    with st.spinner("Processando PDF…"):
+                        _pdf_bytes = _up_pdf.read()
+                        _records, _warns = _parse_matr(
+                            _pdf_bytes,
+                            data_referencia=_data_ref_inp.strip() or None,
+                        )
+                    if _records:
+                        _ins, _upd = upsert_materiais_terceiros(
+                            _records, _data_ref_inp.strip()
+                        )
+                        st.success(
+                            f"✅ {len(_records)} registros processados — "
+                            f"{_ins} inseridos, {_upd} atualizados."
+                        )
+                    else:
+                        st.warning(
+                            "⚠️ Nenhuma movimentação encontrada no PDF. "
+                            "Verifique se o arquivo é um MATR480 válido."
+                        )
+                    if _warns:
+                        with st.expander(f"⚠️ {len(_warns)} aviso(s) de parse", expanded=False):
+                            for _w in _warns:
+                                st.caption(_w)
+                    st.rerun()
+                except ImportError:
+                    st.error(
+                        "❌ pdfplumber não está instalado. "
+                        "Adicione `pdfplumber` ao requirements.txt e reinicie."
+                    )
+                except Exception as _ex:
+                    st.error(f"❌ Erro ao processar PDF: {_ex}")
+
+        # ── Filtros ────────────────────────────────────────────────────────
+        _resumo = get_materiais_resumo()
+        _fc1, _fc2, _fc3, _fc4 = st.columns(4)
+        _fc1.metric("Parceiros", _resumo["parceiros"])
+        _fc2.metric("Itens", _resumo["itens"])
+        _fc3.metric("Saldo total (un.)", f"{_resumo['saldo_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        _fc4.metric("Total em NF (R$)", f"R$ {_resumo['nf_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+
+        st.markdown('<div style="margin:10px 0 6px;"></div>', unsafe_allow_html=True)
+        _mf1, _mf2 = st.columns(2)
+        with _mf1:
+            _arm_opts = ["Todos", "01 — CAMDA", "70 — Externo"]
+            _arm_sel = st.selectbox("Armazém", _arm_opts, key="mat_armazem_sel")
+        with _mf2:
+            _tipo_opts = ["Todos", "CLIE", "FORNEC"]
+            _tipo_sel = st.selectbox("Tipo", _tipo_opts, key="mat_tipo_sel")
+
+        _arm_filter = None if _arm_sel == "Todos" else _arm_sel.split(" ")[0]
+        _tipo_filter = None if _tipo_sel == "Todos" else _tipo_sel
+
+        _df_mat = get_materiais_terceiros(armazem=_arm_filter, tipo=_tipo_filter)
+
+        if _df_mat.empty:
+            st.info(
+                "Nenhum registro encontrado. "
+                "Importe um relatório MATR480 usando o painel acima."
+            )
+        else:
+            st.caption(
+                f"{len(_df_mat)} linha(s) · "
+                f"Armazém: {_arm_sel} · Tipo: {_tipo_sel}"
+            )
+
+            # ── Tabela agrupada por Razão Social ──────────────────────────
+            _parceiros_ordenados = sorted(_df_mat["razao_social"].dropna().unique().tolist())
+
+            for _parceiro in _parceiros_ordenados:
+                _df_p = _df_mat[_df_mat["razao_social"] == _parceiro].copy()
+                _tot_saldo = _df_p["saldo"].sum()
+                _tot_nf = _df_p["total_nf"].sum()
+                _n_itens = len(_df_p)
+
+                # Cabeçalho do grupo
+                st.markdown(
+                    f'<div style="margin:14px 0 4px;padding:8px 14px;'
+                    f'background:#1e293b;border-left:4px solid #3b82f6;border-radius:4px;">'
+                    f'<span style="color:#93c5fd;font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
+                    f'<span style="color:#64748b;font-size:0.72rem;margin-left:10px;">'
+                    f'{_n_itens} item(s) · '
+                    f'Saldo: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un. · '
+                    f'NF: <b style="color:#e0e6ed">R$ {_tot_nf:,.2f}</b>'
+                    f'</span></div>',
+                    unsafe_allow_html=True,
+                )
+
+                for _, _mrow in _df_p.iterrows():
+                    _saldo_cor = "#ef4444" if _mrow["saldo"] > 0 else "#22c55e"
+                    _tm_label = "📤 Saída" if _mrow["tm"] == "D" else "📥 Entrada"
+                    st.markdown(
+                        f'<div style="background:#0f172a;border:1px solid #1e293b;'
+                        f'border-left:3px solid #3b82f688;border-radius:6px;'
+                        f'padding:8px 12px;margin-bottom:3px;font-size:0.8rem;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span style="color:#e0e6ed;font-weight:600;">{_mrow["descricao"]}</span>'
+                        f'<span style="color:{_saldo_cor};font-weight:700;">'
+                        f'Saldo: {_mrow["saldo"]:,.0f} un.</span></div>'
+                        f'<div style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;color:#64748b;">'
+                        f'<span>Cod: <b style="color:#94a3b8">{_mrow["codigo_produto"]}</b></span>'
+                        f'<span>Arm: <b style="color:#94a3b8">{_mrow["armazem"]}</b></span>'
+                        f'<span>Doc: <b style="color:#94a3b8">{_mrow["doc_origin"]}</b></span>'
+                        f'<span>Emissão: <b style="color:#94a3b8">{_mrow["dt_emissao"]}</b></span>'
+                        f'<span>Orig: <b style="color:#94a3b8">{_mrow["qtd_original"]:,.0f}</b> '
+                        f'→ Entregue: <b style="color:#94a3b8">{_mrow["qtd_entregue"]:,.0f}</b></span>'
+                        f'<span>NF: <b style="color:#94a3b8">R$ {_mrow["total_nf"]:,.2f}</b></span>'
+                        f'<span style="color:#64748b">{_tm_label}</span>'
+                        f'</div></div>',
+                        unsafe_allow_html=True,
+                    )
 
 
 

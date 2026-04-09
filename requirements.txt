@@ -5,3 +5,4 @@ libsql>=0.0.3
 python-dotenv>=1.0.0
 plotly
 feedparser>=6.0.0
+pdfplumber>=0.11.0
