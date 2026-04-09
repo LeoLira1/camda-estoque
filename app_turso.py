@@ -5583,6 +5583,22 @@ def get_mais_menos_movimentados(data_inicio: str, data_fim: str, grupo: str = "T
     return pd.DataFrame()
 
 
+def get_produtos_sem_principio_ativo() -> list:
+    try:
+        rows = get_db().execute("""
+            SELECT produto, categoria, criado_em
+            FROM estoque_mestre
+            WHERE UPPER(produto) NOT IN (
+                SELECT UPPER(produto) FROM principios_ativos
+            )
+            AND categoria IN ('HERBICIDAS','FUNGICIDAS','INSETICIDAS','NEMATICIDAS')
+            ORDER BY criado_em DESC
+        """).fetchall()
+        return rows
+    except Exception:
+        return []
+
+
 @st.cache_data(ttl=300)
 def get_produtos_parados(dias_min: int) -> pd.DataFrame:
     """Retorna produtos sem movimentação de vendas há mais de X dias."""
@@ -6984,7 +7000,11 @@ if has_mestre:
     </div>
     """, unsafe_allow_html=True)
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_armazem = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "🏭 Mapa do Armazém"])
+    pendentes_pa = get_produtos_sem_principio_ativo()
+    n_pendentes = len(pendentes_pa)
+    label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
+
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_armazem = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "🏭 Mapa do Armazém"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -8994,6 +9014,26 @@ new Chart(document.getElementById('coop-chart'),{
     # TAB 11 — HISTÓRICO DE VENDAS
     # ══════════════════════════════════════════════════════════════════════════
     with t11:
+        if n_pendentes > 0:
+            st.warning(f"⚠️ {n_pendentes} produto(s) sem princípio ativo cadastrado")
+            with st.expander("📋 Ver produtos pendentes de classificação", expanded=True):
+                for produto, categoria, criado_em in pendentes_pa:
+                    col1, col2, col3 = st.columns([4, 2, 1])
+                    with col1:
+                        st.write(f"**{produto}**")
+                    with col2:
+                        tag_color = {
+                            "HERBICIDAS": "🟢",
+                            "FUNGICIDAS": "🟡",
+                            "INSETICIDAS": "🟣",
+                            "NEMATICIDAS": "🔵"
+                        }.get(categoria, "⚪")
+                        st.write(f"{tag_color} `{categoria}`")
+                    with col3:
+                        st.write(criado_em[:10] if criado_em else "")
+
+                st.info("💡 Acesse a aba **Princípio Ativo** para cadastrar.")
+
         df_dia   = get_vendas_por_dia()
         df_top   = get_top_produtos_historico(top_n=20)
         periodo  = get_periodo_vendas()
