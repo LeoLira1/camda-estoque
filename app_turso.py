@@ -1128,6 +1128,17 @@ def _get_connection():
             UNIQUE(fabricante, produto)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS estocados_cooperados (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            produto TEXT NOT NULL,
+            cooperado TEXT NOT NULL,
+            quantidade INTEGER NOT NULL DEFAULT 0,
+            data_entrada TEXT NOT NULL,
+            observacao TEXT DEFAULT '',
+            ativo INTEGER DEFAULT 1
+        )
+    """)
     conn.commit()
 
     # ── Migrações (roda 1x) ──
@@ -2113,6 +2124,78 @@ def delete_fabricante(fabricante: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# ── Estocados de Cooperados ───────────────────────────────────────────────────
+
+def get_estocados_ativos() -> pd.DataFrame:
+    cols = ["id", "produto", "cooperado", "quantidade", "data_entrada", "observacao"]
+    try:
+        rows = get_db().execute("""
+            SELECT id, produto, cooperado, quantidade, data_entrada, observacao
+            FROM estocados_cooperados
+            WHERE ativo = 1
+            ORDER BY produto
+        """).fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
+
+def inserir_estocado(produto: str, cooperado: str, quantidade: int,
+                     observacao: str = "") -> bool:
+    try:
+        conn = get_db()
+        conn.execute("""
+            INSERT INTO estocados_cooperados
+                (produto, cooperado, quantidade, data_entrada, observacao, ativo)
+            VALUES (?, ?, ?, ?, ?, 1)
+        """, (produto, cooperado, quantidade,
+              datetime.now().strftime("%Y-%m-%d"), observacao))
+        conn.commit()
+        sync_db()
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao inserir estocado: {e}")
+        return False
+
+
+def baixar_estocado(estocado_id: int) -> bool:
+    try:
+        conn = get_db()
+        conn.execute(
+            "UPDATE estocados_cooperados SET ativo = 0 WHERE id = ?",
+            (estocado_id,)
+        )
+        conn.commit()
+        sync_db()
+        return True
+    except Exception as e:
+        st.error(f"❌ Erro ao dar baixa: {e}")
+        return False
+
+
+def get_estocados_count_ativos() -> int:
+    try:
+        row = get_db().execute(
+            "SELECT COUNT(*) FROM estocados_cooperados WHERE ativo = 1"
+        ).fetchone()
+        return row[0] if row else 0
+    except Exception:
+        return 0
+
+
+def get_estocados_por_produto(produto: str) -> list:
+    """Retorna estocados ativos cujo nome contém o produto buscado (case-insensitive)."""
+    try:
+        rows = get_db().execute("""
+            SELECT cooperado, quantidade, observacao
+            FROM estocados_cooperados
+            WHERE ativo = 1 AND UPPER(produto) LIKE UPPER(?)
+        """, (f"%{produto}%",)).fetchall()
+        return rows
+    except Exception:
+        return []
 
 
 def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
@@ -7449,6 +7532,47 @@ new Chart(document.getElementById('coop-chart'),{
                     if st.button("✅", key=f"div_{item['id']}", help="Resolver divergência manualmente"):
                         resolver_divergencia(int(item["id"]))
                         st.rerun()
+
+                # Alerta de estocado de cooperado (apenas para faltas)
+                if item["status"] == "falta":
+                    estocados_match = get_estocados_por_produto(str(item["produto"]))
+                    if estocados_match:
+                        detalhes = ", ".join([
+                            f"{coop} ({qtd} un.)" for coop, qtd, _ in estocados_match
+                        ])
+                        st.warning(
+                            f"📦 Possível retirada indevida de estocado — "
+                            f"{item['produto']} possui estocado de cooperado(s): {detalhes}"
+                        )
+
+        # ── Gerenciamento de Estocados de Cooperados ──────────────────────────
+        st.markdown("---")
+        st.subheader("📦 Produtos Estocados de Cooperados")
+
+        with st.expander("➕ Cadastrar novo estocado", expanded=False):
+            col1, col2, col3 = st.columns([3, 2, 1])
+            produto_est = col1.text_input("Produto", key="est_produto")
+            cooperado_est = col2.text_input("Cooperado", key="est_cooperado")
+            qtd_est = col3.number_input("Qtd", min_value=1, value=1, key="est_qtd")
+            obs_est = st.text_input("Observação (opcional)", key="est_obs")
+            if st.button("💾 Salvar", key="est_salvar"):
+                if produto_est and cooperado_est:
+                    if inserir_estocado(produto_est, cooperado_est, int(qtd_est), obs_est):
+                        st.success("✅ Estocado cadastrado!")
+                        st.rerun()
+
+        df_est = get_estocados_ativos()
+        if not df_est.empty:
+            for _, row_est in df_est.iterrows():
+                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+                col1.write(f"**{row_est['produto']}**")
+                col2.write(row_est['cooperado'])
+                col3.write(f"{row_est['quantidade']} un.")
+                if col4.button("✅ Baixa", key=f"baixa_{row_est['id']}"):
+                    baixar_estocado(int(row_est['id']))
+                    st.rerun()
+        else:
+            st.info("Nenhum produto estocado de cooperado cadastrado.")
 
     with t3:
         if df_reposicao.empty:  # Repor na Loja
