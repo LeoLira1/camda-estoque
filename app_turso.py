@@ -2308,7 +2308,7 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     return len(records), removidos
 
 
-def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None) -> pd.DataFrame:
+def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None, cooperado: str | None = None) -> pd.DataFrame:
     """Retorna DataFrame de materiais em poder de terceiros, com filtros opcionais."""
     cols = [
         "id", "codigo_produto", "descricao", "armazem", "tipo", "codigo_parceiro",
@@ -2324,6 +2324,9 @@ def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None)
         if tipo:
             where_clauses.append("tipo = ?")
             params.append(tipo)
+        if cooperado:
+            where_clauses.append("razao_social = ?")
+            params.append(cooperado)
         where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
         rows = get_db().execute(
             f"SELECT id, codigo_produto, descricao, armazem, tipo, codigo_parceiro,"
@@ -2335,6 +2338,19 @@ def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None)
         return pd.DataFrame(rows, columns=cols)
     except Exception:
         return pd.DataFrame(columns=cols)
+
+
+def get_materiais_cooperados() -> list:
+    """Retorna lista ordenada de razões sociais distintas em materiais_terceiros."""
+    try:
+        rows = get_db().execute(
+            "SELECT DISTINCT razao_social FROM materiais_terceiros"
+            " WHERE razao_social IS NOT NULL AND razao_social != ''"
+            " ORDER BY razao_social"
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
 
 
 def get_materiais_resumo() -> dict:
@@ -9601,10 +9617,20 @@ new Chart(document.getElementById('coop-chart'),{
             _tipo_opts = ["Todos", "CLIE", "FORNEC"]
             _tipo_sel = st.selectbox("Tipo", _tipo_opts, key="mat_tipo_sel")
 
+        _coop_lista = get_materiais_cooperados()
+        _coop_opts = ["Todos"] + _coop_lista
+        _coop_sel = st.selectbox(
+            "Cooperado",
+            _coop_opts,
+            key="mat_cooperado_sel",
+            help="Digite para filtrar por nome do cooperado",
+        )
+
         _arm_filter = None if _arm_sel == "Todos" else _arm_sel.split(" ")[0]
         _tipo_filter = None if _tipo_sel == "Todos" else _tipo_sel
+        _coop_filter = None if _coop_sel == "Todos" else _coop_sel
 
-        _df_mat = get_materiais_terceiros(armazem=_arm_filter, tipo=_tipo_filter)
+        _df_mat = get_materiais_terceiros(armazem=_arm_filter, tipo=_tipo_filter, cooperado=_coop_filter)
 
         if _df_mat.empty:
             st.info(
@@ -9614,7 +9640,7 @@ new Chart(document.getElementById('coop-chart'),{
         else:
             st.caption(
                 f"{len(_df_mat)} linha(s) · "
-                f"Armazém: {_arm_sel} · Tipo: {_tipo_sel}"
+                f"Armazém: {_arm_sel} · Tipo: {_tipo_sel} · Cooperado: {_coop_sel}"
             )
 
             # ── Tabela agrupada por Razão Social ──────────────────────────
