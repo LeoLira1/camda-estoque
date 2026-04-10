@@ -2292,16 +2292,15 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
             INSERT INTO materiais_terceiros
                 (codigo_produto, descricao, armazem, tipo, codigo_parceiro, loja,
                  razao_social, doc_origin, serie, dt_emissao,
-                 qtd_original, qtd_entregue, saldo, total_nf, total_devolvido,
-                 custo_prod, tm, data_lancto, data_referencia, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                 qtd_original, qtd_entregue, saldo,
+                 tm, data_lancto, data_referencia, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             r.get("codigo_produto", ""), r.get("descricao", ""), r.get("armazem", ""),
             r.get("tipo", ""), r.get("codigo_parceiro", ""), r.get("loja", ""),
             r.get("razao_social", ""), r.get("doc_origin", ""), r.get("serie", ""),
             r.get("dt_emissao", ""), r.get("qtd_original", 0), r.get("qtd_entregue", 0),
-            r.get("saldo", 0), r.get("total_nf", 0), r.get("total_devolvido", 0),
-            r.get("custo_prod", 0), r.get("tm", ""), r.get("data_lancto", ""),
+            r.get("saldo", 0), r.get("tm", ""), r.get("data_lancto", ""),
             data_referencia, now,
         ))
     conn.commit()
@@ -2314,8 +2313,7 @@ def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None)
     cols = [
         "id", "codigo_produto", "descricao", "armazem", "tipo", "codigo_parceiro",
         "loja", "razao_social", "doc_origin", "serie", "dt_emissao",
-        "qtd_original", "qtd_entregue", "saldo", "total_nf", "total_devolvido",
-        "custo_prod", "tm", "data_lancto", "data_referencia",
+        "qtd_original", "qtd_entregue", "saldo", "tm", "data_lancto", "data_referencia",
     ]
     try:
         where_clauses = []
@@ -2328,7 +2326,10 @@ def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None)
             params.append(tipo)
         where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
         rows = get_db().execute(
-            f"SELECT {', '.join(cols)} FROM materiais_terceiros {where} ORDER BY razao_social, descricao",
+            f"SELECT id, codigo_produto, descricao, armazem, tipo, codigo_parceiro,"
+            f" loja, razao_social, doc_origin, serie, dt_emissao,"
+            f" qtd_original, qtd_entregue, saldo, tm, data_lancto, data_referencia"
+            f" FROM materiais_terceiros {where} ORDER BY razao_social, descricao",
             params,
         ).fetchall()
         return pd.DataFrame(rows, columns=cols)
@@ -2337,24 +2338,22 @@ def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None)
 
 
 def get_materiais_resumo() -> dict:
-    """Retorna dict com totalizadores: parceiros, itens, saldo_total, nf_total."""
+    """Retorna dict com totalizadores: parceiros, itens, saldo_total."""
     try:
         row = get_db().execute("""
             SELECT
                 COUNT(DISTINCT razao_social) AS parceiros,
                 COUNT(*)                     AS itens,
-                SUM(saldo)                   AS saldo_total,
-                SUM(total_nf)                AS nf_total
+                SUM(saldo)                   AS saldo_total
             FROM materiais_terceiros
         """).fetchone()
         return {
             "parceiros": row[0] or 0,
             "itens": row[1] or 0,
             "saldo_total": row[2] or 0.0,
-            "nf_total": row[3] or 0.0,
         }
     except Exception:
-        return {"parceiros": 0, "itens": 0, "saldo_total": 0.0, "nf_total": 0.0}
+        return {"parceiros": 0, "itens": 0, "saldo_total": 0.0}
 
 
 def delete_materiais_por_referencia(data_referencia: str) -> bool:
@@ -7719,35 +7718,6 @@ new Chart(document.getElementById('coop-chart'),{
                             f"{item['produto']} possui estocado de cooperado(s): {detalhes}"
                         )
 
-        # ── Gerenciamento de Estocados de Cooperados ──────────────────────────
-        st.markdown("---")
-        st.subheader("📦 Produtos Estocados de Cooperados")
-
-        with st.expander("➕ Cadastrar novo estocado", expanded=False):
-            col1, col2, col3 = st.columns([3, 2, 1])
-            produto_est = col1.text_input("Produto", key="est_produto")
-            cooperado_est = col2.text_input("Cooperado", key="est_cooperado")
-            qtd_est = col3.number_input("Qtd", min_value=1, value=1, key="est_qtd")
-            obs_est = st.text_input("Observação (opcional)", key="est_obs")
-            if st.button("💾 Salvar", key="est_salvar"):
-                if produto_est and cooperado_est:
-                    if inserir_estocado(produto_est, cooperado_est, int(qtd_est), obs_est):
-                        st.success("✅ Estocado cadastrado!")
-                        st.rerun()
-
-        df_est = get_estocados_ativos()
-        if not df_est.empty:
-            for _, row_est in df_est.iterrows():
-                col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
-                col1.write(f"**{row_est['produto']}**")
-                col2.write(row_est['cooperado'])
-                col3.write(f"{row_est['quantidade']} un.")
-                if col4.button("✅ Baixa", key=f"baixa_{row_est['id']}"):
-                    baixar_estocado(int(row_est['id']))
-                    st.rerun()
-        else:
-            st.info("Nenhum produto estocado de cooperado cadastrado.")
-
     with t3:
         if df_reposicao.empty:  # Repor na Loja
             st.success("Nenhum produto pendente de reposição! 🎉")
@@ -7881,6 +7851,17 @@ new Chart(document.getElementById('coop-chart'),{
                                 ok, msg = registrar_divergencia_manual(cod_corr, int(delta_corr), obs_corr)
                                 if ok:
                                     st.success(msg)
+                                    # Cruzar com estocados de cooperados
+                                    _prod_nome = str(row_corr["produto"].iloc[0]) if not row_corr.empty else cod_corr
+                                    _est_match = get_estocados_por_produto(_prod_nome)
+                                    if _est_match:
+                                        _det = ", ".join(
+                                            f"{_c} ({_q} un.)" for _c, _q, _ in _est_match
+                                        )
+                                        st.warning(
+                                            f"📦 Atenção: **{_prod_nome}** possui estocado de cooperado(s): {_det}. "
+                                            f"Verifique se a retirada foi feita do estocado correto."
+                                        )
                                     st.rerun()
                                 else:
                                     st.error(msg)
@@ -9606,11 +9587,10 @@ new Chart(document.getElementById('coop-chart'),{
 
         # ── Filtros ────────────────────────────────────────────────────────
         _resumo = get_materiais_resumo()
-        _fc1, _fc2, _fc3, _fc4 = st.columns(4)
+        _fc1, _fc2, _fc3 = st.columns(3)
         _fc1.metric("Parceiros", _resumo["parceiros"])
         _fc2.metric("Itens", _resumo["itens"])
         _fc3.metric("Saldo total (un.)", f"{_resumo['saldo_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-        _fc4.metric("Total em NF (R$)", f"R$ {_resumo['nf_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
         st.markdown('<div style="margin:10px 0 6px;"></div>', unsafe_allow_html=True)
         _mf1, _mf2 = st.columns(2)
@@ -9643,7 +9623,6 @@ new Chart(document.getElementById('coop-chart'),{
             for _parceiro in _parceiros_ordenados:
                 _df_p = _df_mat[_df_mat["razao_social"] == _parceiro].copy()
                 _tot_saldo = _df_p["saldo"].sum()
-                _tot_nf = _df_p["total_nf"].sum()
                 _n_itens = len(_df_p)
 
                 # Cabeçalho do grupo
@@ -9653,8 +9632,7 @@ new Chart(document.getElementById('coop-chart'),{
                     f'<span style="color:#93c5fd;font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
                     f'<span style="color:#64748b;font-size:0.72rem;margin-left:10px;">'
                     f'{_n_itens} item(s) · '
-                    f'Saldo: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un. · '
-                    f'NF: <b style="color:#e0e6ed">R$ {_tot_nf:,.2f}</b>'
+                    f'Saldo: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un.'
                     f'</span></div>',
                     unsafe_allow_html=True,
                 )
@@ -9677,7 +9655,6 @@ new Chart(document.getElementById('coop-chart'),{
                         f'<span>Emissão: <b style="color:#94a3b8">{_mrow["dt_emissao"]}</b></span>'
                         f'<span>Orig: <b style="color:#94a3b8">{_mrow["qtd_original"]:,.0f}</b> '
                         f'→ Entregue: <b style="color:#94a3b8">{_mrow["qtd_entregue"]:,.0f}</b></span>'
-                        f'<span>NF: <b style="color:#94a3b8">R$ {_mrow["total_nf"]:,.2f}</b></span>'
                         f'<span style="color:#64748b">{_tm_label}</span>'
                         f'</div></div>',
                         unsafe_allow_html=True,
