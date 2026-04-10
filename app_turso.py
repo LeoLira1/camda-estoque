@@ -6,7 +6,7 @@ import os
 import base64
 import io
 import unicodedata
-from difflib import get_close_matches as _gcm, SequenceMatcher as _SM
+from difflib import get_close_matches as _gcm
 import plotly.graph_objects as go
 import plotly.express as px
 from datetime import datetime, timedelta, date, timezone
@@ -1911,6 +1911,7 @@ _STOCK_COLS = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
                "diferenca", "nota", "status", "ultima_contagem", "criado_em", "observacoes"]
 
 
+@st.cache_data(ttl=60)
 def get_current_stock() -> pd.DataFrame:
     try:
         rows = get_db().execute("SELECT * FROM estoque_mestre ORDER BY categoria, produto").fetchall()
@@ -1923,6 +1924,7 @@ def get_current_stock() -> pd.DataFrame:
         return pd.DataFrame(columns=_STOCK_COLS)
 
 
+@st.cache_data(ttl=60)
 def get_stock_count() -> int:
     try:
         row = get_db().execute("SELECT COUNT(*) FROM estoque_mestre").fetchone()
@@ -1931,6 +1933,7 @@ def get_stock_count() -> int:
         return 0
 
 
+@st.cache_data(ttl=60)
 def get_reposicao_pendente() -> pd.DataFrame:
     cols = ["id", "codigo", "produto", "categoria", "qtd_vendida", "qtd_estoque", "criado_em"]
     try:
@@ -1952,6 +1955,7 @@ def get_reposicao_pendente() -> pd.DataFrame:
         return pd.DataFrame(columns=cols)
 
 
+@st.cache_data(ttl=60)
 def get_historico_uploads() -> pd.DataFrame:
     cols = ["data", "tipo", "arquivo", "total_produtos_lote", "novos", "atualizados", "divergentes"]
     try:
@@ -2127,6 +2131,7 @@ def _auto_cache_principios_ativos(produtos: list, conn) -> int:
         return 0
 
 
+@st.cache_data(ttl=300)
 def get_principios_ativos() -> pd.DataFrame:
     """Retorna DataFrame com mapeamento produto ↔ princípio ativo."""
     try:
@@ -2136,6 +2141,7 @@ def get_principios_ativos() -> pd.DataFrame:
         return pd.DataFrame(columns=_PA_COLS)
 
 
+@st.cache_data(ttl=300)
 def get_pa_count() -> int:
     try:
         row = get_db().execute("SELECT COUNT(*) FROM principios_ativos").fetchone()
@@ -2146,6 +2152,7 @@ def get_pa_count() -> int:
 
 # ── Fabricantes ──────────────────────────────────────────────────────────────
 
+@st.cache_data(ttl=300)
 def get_fabricantes_produtos() -> pd.DataFrame:
     """Retorna DataFrame com colunas [id, fabricante, produto]."""
     try:
@@ -3324,6 +3331,7 @@ def resolver_divergencia(div_id: int):
         st.error(f"❌ Erro ao resolver divergência: {e}")
 
 
+@st.cache_data(ttl=60)
 def get_divergencias() -> pd.DataFrame:
     """Retorna todas as divergências da tabela dedicada."""
     try:
@@ -3340,6 +3348,7 @@ def get_divergencias() -> pd.DataFrame:
         return pd.DataFrame(columns=["id", "codigo", "produto", "categoria", "delta", "status", "cooperado", "criado_em", "qtd_sistema"])
 
 
+@st.cache_data(ttl=60)
 def get_historico_divergencias() -> pd.DataFrame:
     """Retorna todo o histórico de divergências registradas (nunca apagadas automaticamente)."""
     try:
@@ -4079,24 +4088,39 @@ def popular_contagem(records: list, upload_id: int, conn, zerados: list = None) 
                     upload_id, z["codigo"], z["produto"], categoria,
                     0, "pendente", "", 0, now
                 ))
+    if not itens_novos:
+        return
+
+    # 1 query para buscar todos os códigos existentes de uma vez
+    codigos = [item[1] for item in itens_novos]
+    ph = ",".join(["?"] * len(codigos))
+    existing_codigos = {
+        row[0] for row in conn.execute(
+            f"SELECT codigo FROM contagem_itens WHERE codigo IN ({ph})", codigos
+        ).fetchall()
+    }
+
+    update_data, insert_data = [], []
     for item in itens_novos:
         uid, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_div, reg_em = item
-        existing = conn.execute(
-            "SELECT id FROM contagem_itens WHERE codigo = ?", (codigo,)
-        ).fetchone()
-        if existing:
-            conn.execute("""
-                UPDATE contagem_itens
-                SET upload_id = ?, produto = ?, categoria = ?, qtd_estoque = ?,
-                    status = 'pendente', motivo = '', qtd_divergencia = 0, registrado_em = ?
-                WHERE codigo = ?
-            """, (uid, produto, categoria, qtd_estoque, reg_em, codigo))
+        if codigo in existing_codigos:
+            update_data.append((uid, produto, categoria, qtd_estoque, reg_em, codigo))
         else:
-            conn.execute("""
-                INSERT INTO contagem_itens
-                    (upload_id, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_divergencia, registrado_em)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, item)
+            insert_data.append(item)
+
+    if update_data:
+        conn.executemany("""
+            UPDATE contagem_itens
+            SET upload_id = ?, produto = ?, categoria = ?, qtd_estoque = ?,
+                status = 'pendente', motivo = '', qtd_divergencia = 0, registrado_em = ?
+            WHERE codigo = ?
+        """, update_data)
+    if insert_data:
+        conn.executemany("""
+            INSERT INTO contagem_itens
+                (upload_id, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_divergencia, registrado_em)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, insert_data)
 
 
 def _invalidar_cache_contagem() -> None:
@@ -9819,6 +9843,13 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         # Força reprocessamento dos alertas (inclui conferência GV)
                         st.session_state.pop("alertas_cache", None)
                         st.session_state.processed_file = None
+                        # Invalida caches de leitura para que o próximo rerun mostre dados atualizados
+                        get_current_stock.clear()
+                        get_stock_count.clear()
+                        get_reposicao_pendente.clear()
+                        get_historico_uploads.clear()
+                        get_divergencias.clear()
+                        get_historico_divergencias.clear()
                         st.rerun()
                     else:
                         st.error(msg)
