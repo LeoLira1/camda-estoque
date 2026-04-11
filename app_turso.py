@@ -7902,6 +7902,8 @@ new Chart(document.getElementById('coop-chart'),{
                                             f"📦 Atenção: **{_prod_nome}** possui estocado de cooperado(s): {_det}. "
                                             f"Verifique se a retirada foi feita do estocado correto."
                                         )
+                                    get_divergencias.clear()
+                                    get_historico_divergencias.clear()
                                     st.rerun()
                                 else:
                                     st.error(msg)
