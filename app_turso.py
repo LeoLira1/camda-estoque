@@ -7744,6 +7744,8 @@ new Chart(document.getElementById('coop-chart'),{
                 with col_btn:
                     if st.button("✅", key=f"div_{item['id']}", help="Resolver divergência manualmente"):
                         resolver_divergencia(int(item["id"]))
+                        get_divergencias.clear()
+                        get_historico_divergencias.clear()
                         st.rerun()
 
                 # Alerta de estocado de cooperado (apenas para faltas)
