@@ -5502,6 +5502,8 @@ def parse_faturamento_gv_excel(df: pd.DataFrame):
 _GV_THRESHOLD_PCT = 5.0
 # Tolerância para considerar quantidade vendida "similar" ao delta da divergência (30%)
 _QTD_MATCH_TOLERANCIA = 0.30
+# Percentual mínimo de produtos com match para disparar alerta de possível faturamento (85%)
+_POSSIVEL_FAT_MIN_MATCH_PCT = 0.85
 # Valores que aparecem no campo cooperado mas não são nomes reais
 _NOMES_INVALIDOS_COOP = {
     "faltando", "falta", "sobra", "sobrando", "ok", "none", "nan",
@@ -5622,6 +5624,15 @@ def checar_reconciliacao_gv() -> list:
                             matches_qtd.append({**item, "qtd_vendida": qtd_vend})
 
                     if not matches_qtd:
+                        continue
+
+                    # Verifica se ao menos _POSSIVEL_FAT_MIN_MATCH_PCT dos produtos
+                    # elegíveis (com delta > 0 e presentes nas vendas) têm match
+                    n_elegiveis = sum(
+                        1 for item in div_items
+                        if abs(item["delta"]) != 0 and item["codigo"] in vend_qtd
+                    )
+                    if n_elegiveis == 0 or len(matches_qtd) / n_elegiveis < _POSSIVEL_FAT_MIN_MATCH_PCT:
                         continue
 
                     # Enriquece alerta GV existente ou cria novo
