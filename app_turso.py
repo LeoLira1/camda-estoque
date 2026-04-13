@@ -7678,7 +7678,7 @@ new Chart(document.getElementById('coop-chart'),{
             if _agrupar:
                 df_div = df_div.copy()
                 df_div["_obs_sort"] = df_div["cooperado"].fillna("").astype(str).str.strip()
-                df_div = df_div.sort_values("_obs_sort")
+                df_div = df_div.sort_values(["_obs_sort", "criado_em"], ascending=[True, False])
 
             # Paleta de cores discretas por pessoa (tema escuro)
             _PERSON_PALETTE = [
