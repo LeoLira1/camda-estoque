@@ -1052,6 +1052,14 @@ def _get_connection():
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS avaria_fotos (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            avaria_id     INTEGER NOT NULL,
+            foto_base64   TEXT    NOT NULL,
+            registrado_em TEXT    NOT NULL
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS contagem_itens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             upload_id INTEGER NOT NULL DEFAULT 0,
@@ -1726,16 +1734,34 @@ def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str,
         return False
 
 
-def salvar_foto_avaria(avaria_id: int, foto_bytes: bytes) -> bool:
-    """Comprime a foto (max 400px, JPEG 60%) e salva como base64 na avaria."""
+def listar_fotos_avaria(avaria_id: int) -> list[dict]:
+    """Retorna lista de fotos de uma avaria, ordenadas por id."""
+    try:
+        rows = get_db().execute(
+            "SELECT id, avaria_id, foto_base64, registrado_em "
+            "FROM avaria_fotos WHERE avaria_id = ? ORDER BY id",
+            (avaria_id,)
+        ).fetchall()
+        return [{"id": r[0], "avaria_id": r[1], "foto_base64": r[2], "registrado_em": r[3]}
+                for r in rows]
+    except Exception:
+        return []
+
+
+def adicionar_foto_avaria(avaria_id: int, foto_bytes: bytes) -> bool:
+    """Comprime a foto (max 400px, JPEG 60%) e insere na tabela avaria_fotos."""
     try:
         img = Image.open(io.BytesIO(foto_bytes)).convert("RGB")
         img.thumbnail((400, 400), Image.LANCZOS)
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=60, optimize=True)
         foto_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         conn = get_db()
-        conn.execute("UPDATE avarias SET foto_base64 = ? WHERE id = ?", (foto_b64, avaria_id))
+        conn.execute(
+            "INSERT INTO avaria_fotos (avaria_id, foto_base64, registrado_em) VALUES (?, ?, ?)",
+            (avaria_id, foto_b64, now)
+        )
         conn.commit()
         sync_db()
         return True
@@ -1744,11 +1770,11 @@ def salvar_foto_avaria(avaria_id: int, foto_bytes: bytes) -> bool:
         return False
 
 
-def remover_foto_avaria(avaria_id: int):
-    """Remove a foto de uma avaria."""
+def remover_foto_item(foto_id: int):
+    """Remove uma foto individual da tabela avaria_fotos pelo id."""
     try:
         conn = get_db()
-        conn.execute("UPDATE avarias SET foto_base64 = '' WHERE id = ?", (avaria_id,))
+        conn.execute("DELETE FROM avaria_fotos WHERE id = ?", (foto_id,))
         conn.commit()
         sync_db()
     except Exception as e:
@@ -8359,32 +8385,13 @@ new Chart(document.getElementById('coop-chart'),{
                     for u in unidades
                 }
 
-                # ── Foto da avaria ─────────────────────────────────────────
-                foto_b64 = av.get("foto_base64", "") or ""
-                if foto_b64:
-                    _foto_thumb_html = (
-                        f'<img src="data:image/jpeg;base64,{foto_b64}" '
-                        f'style="width:58px;height:58px;object-fit:cover;border-radius:8px;'
-                        f'border:1.5px solid rgba(255,255,255,0.18);flex-shrink:0;">'
-                    )
-                else:
-                    _foto_thumb_html = (
-                        '<span style="display:flex;align-items:center;justify-content:center;'
-                        'width:58px;height:58px;border-radius:8px;'
-                        'border:1.5px dashed rgba(255,255,255,0.12);font-size:22px;flex-shrink:0;'
-                        'color:rgba(255,255,255,0.2);">📷</span>'
-                    )
-
                 # ── Card HTML ──────────────────────────────────────────────
                 st.markdown(
                     f'<div class="av-card" style="border:1px solid {accent}22;">'
-                    f'<div style="display:flex;align-items:flex-start;gap:12px;">'
-                    f'<div style="flex:1;min-width:0;">'
                     f'<span class="av-badge {badge_cls}">{badge_txt}</span>'
                     f'<span style="color:rgba(255,255,255,0.25);font-size:10px;margin-left:8px;">'
                     f'{tempo_av}</span>'
-                    f'<div style="color:#e0e6ed;font-weight:800;font-size:1.15rem;margin-top:4px;'
-                    f'word-break:break-word;">'
+                    f'<div style="color:#e0e6ed;font-weight:800;font-size:1.15rem;margin-top:4px;">'
                     f'{av["produto"]}</div>'
                     f'<div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:2px;">'
                     f'Cod: {av["codigo"]} &nbsp;·&nbsp; '
@@ -8393,54 +8400,54 @@ new Chart(document.getElementById('coop-chart'),{
                     f'</div>'
                     + (f'<div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:2px;">'
                        f'🪣 {av["motivo"]}</div>' if av.get("motivo") else "")
-                    + f'</div>'
-                    + _foto_thumb_html
-                    + f'</div>'
                     + "</div>",
                     unsafe_allow_html=True
                 )
 
-                # ── Controles de foto ───────────────────────────────────────
-                if foto_b64:
-                    _col_rmfoto, _ = st.columns([1, 5])
-                    with _col_rmfoto:
-                        if st.button("🗑️ Remover foto", key=f"av_rmfoto_{av_id}",
-                                     use_container_width=True):
-                            remover_foto_avaria(av_id)
-                            st.rerun()
-                else:
-                    with st.expander("📷 Adicionar foto", expanded=False):
-                        _foto_up = st.file_uploader(
-                            "Foto da avaria",
-                            type=["jpg", "jpeg", "png", "webp"],
-                            label_visibility="collapsed",
-                            key=f"av_foto_{av_id}",
-                        )
-                        if _foto_up is not None:
-                            if salvar_foto_avaria(av_id, _foto_up.read()):
-                                st.success("Foto salva! ✔")
-                                st.rerun()
+                # ── Galões SVG + Fotos na mesma galeria ────────────────────
+                fotos_av = listar_fotos_avaria(av_id)
 
-                # ── Galões SVG ─────────────────────────────────────────────
-                _add_placeholder = """
+                _add_balde_ph = """
 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
             min-width:120px;height:185px;border:1.5px dashed rgba(255,255,255,0.15);
-            border-radius:12px;color:rgba(255,255,255,0.25);">
+            border-radius:12px;color:rgba(255,255,255,0.25);flex-shrink:0;">
   <span style="font-size:22px;line-height:1;">+</span>
   <span style="font-size:9px;letter-spacing:1px;margin-top:4px;">ADD BALDE</span>
 </div>"""
+
+                _add_foto_ph = """
+<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
+            min-width:120px;height:185px;border:1.5px dashed rgba(100,180,255,0.25);
+            border-radius:12px;color:rgba(100,180,255,0.4);flex-shrink:0;">
+  <span style="font-size:22px;line-height:1;">📷</span>
+  <span style="font-size:9px;letter-spacing:1px;margin-top:4px;">ADD FOTO</span>
+</div>"""
+
+                # Cards de foto (mesmo tamanho dos baldes)
+                _foto_cards_html = "".join(
+                    f'<div style="display:flex;flex-direction:column;align-items:center;'
+                    f'min-width:120px;max-width:120px;height:185px;border-radius:12px;'
+                    f'overflow:hidden;border:1px solid rgba(100,180,255,0.2);'
+                    f'flex-shrink:0;background:rgba(0,0,0,0.25);">'
+                    f'<img src="data:image/jpeg;base64,{f["foto_base64"]}" '
+                    f'style="width:120px;height:152px;object-fit:cover;">'
+                    f'<div style="font-size:9px;color:rgba(100,180,255,0.5);padding:5px 0;'
+                    f'letter-spacing:0.5px;font-family:monospace;">FOTO {i+1}</div>'
+                    f'</div>'
+                    for i, f in enumerate(fotos_av)
+                )
 
                 if unidades:
                     galoes_html = "".join(
                         _galao_svg_html(u["uid"], niveis_atuais[u["uid"]], capacidade, i)
                         for i, u in enumerate(unidades)
-                    ) + _add_placeholder
+                    ) + _add_balde_ph
                 else:
                     galoes_html = (
                         '<div style="color:rgba(255,255,255,0.25);font-size:12px;'
                         'padding:20px 24px;align-self:center;">'
                         '🪣 Nenhum balde registrado</div>'
-                    ) + _add_placeholder
+                    ) + _add_balde_ph
 
                 # SVG precisa de st.components para não ser sanitizado pelo Streamlit
                 import streamlit.components.v1 as _cv1
@@ -8448,9 +8455,34 @@ new Chart(document.getElementById('coop-chart'),{
                     '<div style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;'
                     'background:rgba(255,255,255,0.025);border-radius:12px;'
                     'padding:14px 10px 10px;">'
-                    + galoes_html + '</div>'
+                    + galoes_html
+                    + _foto_cards_html
+                    + _add_foto_ph
+                    + '</div>'
                 )
                 _cv1.html(_galoes_container, height=290, scrolling=False)
+
+                # ── Controles de fotos ─────────────────────────────────────
+                if fotos_av:
+                    _del_cols = st.columns(len(fotos_av))
+                    for i, f in enumerate(fotos_av):
+                        with _del_cols[i]:
+                            if st.button(f"✕ foto {i+1}", key=f"av_delfoto_{f['id']}",
+                                         use_container_width=True):
+                                remover_foto_item(f["id"])
+                                st.rerun()
+
+                with st.expander("📷 Adicionar foto", expanded=False):
+                    _foto_up = st.file_uploader(
+                        "Foto da avaria",
+                        type=["jpg", "jpeg", "png", "webp"],
+                        label_visibility="collapsed",
+                        key=f"av_foto_{av_id}",
+                    )
+                    if _foto_up is not None:
+                        if adicionar_foto_avaria(av_id, _foto_up.read()):
+                            st.success("Foto salva! ✔")
+                            st.rerun()
 
                 # ── Totais (só quando tem unidades) ────────────────────────
                 if unidades:
