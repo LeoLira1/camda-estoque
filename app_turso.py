@@ -1395,7 +1395,7 @@ def inserir_pendencia(foto_bytes: bytes, observacao: str = ""):
 def listar_pendencias() -> list:
     try:
         rows = get_db().execute(
-            "SELECT id, foto_base64, data_registro, observacao FROM pendencias_entrega ORDER BY data_registro ASC"
+            "SELECT id, foto_base64, data_registro, observacao FROM pendencias_entrega ORDER BY data_registro DESC"
         ).fetchall()
         return rows
     except Exception:
