@@ -3341,7 +3341,7 @@ def get_divergencias() -> pd.DataFrame:
                    e.qtd_sistema
             FROM divergencias d
             LEFT JOIN estoque_mestre e ON d.codigo = e.codigo
-            ORDER BY d.cooperado, d.produto
+            ORDER BY d.criado_em DESC
         """).fetchall()
         return pd.DataFrame(rows, columns=["id", "codigo", "produto", "categoria", "delta", "status", "cooperado", "criado_em", "qtd_sistema"])
     except Exception:
