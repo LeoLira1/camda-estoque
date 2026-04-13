@@ -8472,15 +8472,23 @@ new Chart(document.getElementById('coop-chart'),{
                                 remover_foto_item(f["id"])
                                 st.rerun()
 
+                # Chave versionada: incrementar após salvar reseta o widget,
+                # evitando que o Streamlit reinsira a mesma foto a cada rerun.
+                _foto_ver_key = f"av_foto_ver_{av_id}"
+                _foto_up_key = f"av_foto_{av_id}_{st.session_state.get(_foto_ver_key, 0)}"
+
                 with st.expander("📷 Adicionar foto", expanded=False):
                     _foto_up = st.file_uploader(
                         "Foto da avaria",
                         type=["jpg", "jpeg", "png", "webp"],
                         label_visibility="collapsed",
-                        key=f"av_foto_{av_id}",
+                        key=_foto_up_key,
                     )
                     if _foto_up is not None:
                         if adicionar_foto_avaria(av_id, _foto_up.read()):
+                            st.session_state[_foto_ver_key] = (
+                                st.session_state.get(_foto_ver_key, 0) + 1
+                            )
                             st.success("Foto salva! ✔")
                             st.rerun()
 
