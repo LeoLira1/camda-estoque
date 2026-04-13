@@ -8282,12 +8282,7 @@ new Chart(document.getElementById('coop-chart'),{
                                 st.success(f"✅ Avaria registrada: {row_sel['produto']} ({int(qtd_av)} un)")
                                 st.rerun()
 
-        # ── Filtro ──
-        col_f1, col_f2 = st.columns([2, 1])
-        with col_f2:
-            mostrar_resolvidas = st.toggle("Mostrar resolvidas", value=False, key="av_mostrar_resolvidas")
-
-        df_av = listar_avarias(apenas_abertas=not mostrar_resolvidas)
+        df_av = listar_avarias(apenas_abertas=True)
 
         if df_av.empty:
             st.markdown("""
@@ -8297,19 +8292,11 @@ new Chart(document.getElementById('coop-chart'),{
             </div>
             """, unsafe_allow_html=True)
         else:
-            n_abertas = (df_av["status"] == "aberto").sum()
-            n_resolvidas = (df_av["status"] == "resolvido").sum()
             st.markdown(
                 f'<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'
-                f'<span style="font-size:11px;color:#9CA3AF">Total</span>'
-                f'<span style="background:#1F2937;border:1px solid #374151;border-radius:10px;'
-                f'padding:1px 8px;font-size:12px;font-weight:700;color:#E5E7EB">{len(df_av)}</span>'
-                f'<span style="font-size:11px;color:#9CA3AF">Abertas</span>'
+                f'<span style="font-size:11px;color:#9CA3AF">Avarias abertas</span>'
                 f'<span style="background:#3B0A0A;border:1px solid #FF4455;border-radius:10px;'
-                f'padding:1px 8px;font-size:12px;font-weight:700;color:#FF6B7A">{n_abertas}</span>'
-                f'<span style="font-size:11px;color:#9CA3AF">Resolvidas</span>'
-                f'<span style="background:#052e16;border:1px solid #16a34a;border-radius:10px;'
-                f'padding:1px 8px;font-size:12px;font-weight:700;color:#4ade80">{n_resolvidas}</span>'
+                f'padding:1px 8px;font-size:12px;font-weight:700;color:#FF6B7A">{len(df_av)}</span>'
                 f'</div>',
                 unsafe_allow_html=True
             )
