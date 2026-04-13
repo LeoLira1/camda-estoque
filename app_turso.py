@@ -8443,11 +8443,7 @@ new Chart(document.getElementById('coop-chart'),{
                         for i, u in enumerate(unidades)
                     ) + _add_balde_ph
                 else:
-                    galoes_html = (
-                        '<div style="color:rgba(255,255,255,0.25);font-size:12px;'
-                        'padding:20px 24px;align-self:center;">'
-                        '🪣 Nenhum balde registrado</div>'
-                    ) + _add_balde_ph
+                    galoes_html = _add_balde_ph
 
                 # SVG precisa de st.components para não ser sanitizado pelo Streamlit
                 import streamlit.components.v1 as _cv1
