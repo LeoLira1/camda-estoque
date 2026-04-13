@@ -8407,22 +8407,6 @@ new Chart(document.getElementById('coop-chart'),{
                 # ── Galões SVG + Fotos na mesma galeria ────────────────────
                 fotos_av = listar_fotos_avaria(av_id)
 
-                _add_balde_ph = """
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-            min-width:120px;height:185px;border:1.5px dashed rgba(255,255,255,0.15);
-            border-radius:12px;color:rgba(255,255,255,0.25);flex-shrink:0;">
-  <span style="font-size:22px;line-height:1;">+</span>
-  <span style="font-size:9px;letter-spacing:1px;margin-top:4px;">ADD BALDE</span>
-</div>"""
-
-                _add_foto_ph = """
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-            min-width:120px;height:185px;border:1.5px dashed rgba(100,180,255,0.25);
-            border-radius:12px;color:rgba(100,180,255,0.4);flex-shrink:0;">
-  <span style="font-size:22px;line-height:1;">📷</span>
-  <span style="font-size:9px;letter-spacing:1px;margin-top:4px;">ADD FOTO</span>
-</div>"""
-
                 # Cards de foto (mesmo tamanho dos baldes)
                 _foto_cards_html = "".join(
                     f'<div style="display:flex;flex-direction:column;align-items:center;'
@@ -8437,26 +8421,23 @@ new Chart(document.getElementById('coop-chart'),{
                     for i, f in enumerate(fotos_av)
                 )
 
-                if unidades:
-                    galoes_html = "".join(
-                        _galao_svg_html(u["uid"], niveis_atuais[u["uid"]], capacidade, i)
-                        for i, u in enumerate(unidades)
-                    ) + _add_balde_ph
-                else:
-                    galoes_html = _add_balde_ph
-
-                # SVG precisa de st.components para não ser sanitizado pelo Streamlit
-                import streamlit.components.v1 as _cv1
-                _galoes_container = (
-                    '<div style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;'
-                    'background:rgba(255,255,255,0.025);border-radius:12px;'
-                    'padding:14px 10px 10px;">'
-                    + galoes_html
-                    + _foto_cards_html
-                    + _add_foto_ph
-                    + '</div>'
+                galoes_html = "".join(
+                    _galao_svg_html(u["uid"], niveis_atuais[u["uid"]], capacidade, i)
+                    for i, u in enumerate(unidades)
                 )
-                _cv1.html(_galoes_container, height=290, scrolling=False)
+
+                # Só exibe o container se houver baldes ou fotos
+                import streamlit.components.v1 as _cv1
+                if galoes_html or _foto_cards_html:
+                    _galoes_container = (
+                        '<div style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;'
+                        'background:rgba(255,255,255,0.025);border-radius:12px;'
+                        'padding:14px 10px 10px;">'
+                        + galoes_html
+                        + _foto_cards_html
+                        + '</div>'
+                    )
+                    _cv1.html(_galoes_container, height=290, scrolling=False)
 
                 # Chave versionada: incrementar após salvar reseta o widget,
                 # evitando que o Streamlit reinsira a mesma foto a cada rerun.
