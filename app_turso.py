@@ -8462,16 +8462,6 @@ new Chart(document.getElementById('coop-chart'),{
                 )
                 _cv1.html(_galoes_container, height=290, scrolling=False)
 
-                # ── Controles de fotos ─────────────────────────────────────
-                if fotos_av:
-                    _del_cols = st.columns(len(fotos_av))
-                    for i, f in enumerate(fotos_av):
-                        with _del_cols[i]:
-                            if st.button(f"✕ foto {i+1}", key=f"av_delfoto_{f['id']}",
-                                         use_container_width=True):
-                                remover_foto_item(f["id"])
-                                st.rerun()
-
                 # Chave versionada: incrementar após salvar reseta o widget,
                 # evitando que o Streamlit reinsira a mesma foto a cada rerun.
                 _foto_ver_key = f"av_foto_ver_{av_id}"
@@ -8560,6 +8550,21 @@ new Chart(document.getElementById('coop-chart'),{
                         if is_aberta and st.button("＋ Adicionar balde", key=f"av_add_{av_id}"):
                             adicionar_unidade_avaria(av_id)
                             st.rerun()
+
+                    # Remover fotos (dentro do modo de edição)
+                    if fotos_av:
+                        st.markdown(
+                            '<div style="font-size:10px;color:rgba(255,255,255,0.35);'
+                            'margin:8px 0 4px;">🗑️ Remover fotos</div>',
+                            unsafe_allow_html=True
+                        )
+                        _del_cols = st.columns(len(fotos_av))
+                        for i, f in enumerate(fotos_av):
+                            with _del_cols[i]:
+                                if st.button(f"✕ foto {i+1}", key=f"av_delfoto_{f['id']}",
+                                             use_container_width=True):
+                                    remover_foto_item(f["id"])
+                                    st.rerun()
 
                     # Resolver / Excluir também dentro do modo de edição
                     st.markdown("<div style='margin-top:6px;'></div>", unsafe_allow_html=True)
