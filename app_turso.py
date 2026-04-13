@@ -1395,7 +1395,7 @@ def inserir_pendencia(foto_bytes: bytes, observacao: str = ""):
 def listar_pendencias() -> list:
     try:
         rows = get_db().execute(
-            "SELECT id, foto_base64, data_registro, observacao FROM pendencias_entrega ORDER BY data_registro ASC"
+            "SELECT id, foto_base64, data_registro, observacao FROM pendencias_entrega ORDER BY data_registro DESC"
         ).fetchall()
         return rows
     except Exception:
@@ -7678,7 +7678,11 @@ new Chart(document.getElementById('coop-chart'),{
             if _agrupar:
                 df_div = df_div.copy()
                 df_div["_obs_sort"] = df_div["cooperado"].fillna("").astype(str).str.strip()
-                df_div = df_div.sort_values(["_obs_sort", "criado_em"], ascending=[True, False])
+                # Ordena grupos pelo criado_em mais recente do grupo (mais novo primeiro)
+                _group_newest = df_div.groupby("_obs_sort")["criado_em"].transform("max")
+                df_div["_group_newest"] = _group_newest
+                df_div = df_div.sort_values(["_group_newest", "criado_em"], ascending=[False, False])
+                df_div = df_div.drop(columns=["_group_newest"])
 
             # Paleta de cores discretas por pessoa (tema escuro)
             _PERSON_PALETTE = [
