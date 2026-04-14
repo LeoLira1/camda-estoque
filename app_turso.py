@@ -7517,22 +7517,28 @@ if has_mestre:
 
             # ── Gráfico de barras: faltas por cooperado ──────────────────────────
             import json as _json_chart
+            # Agrega produtos com mesmo código dentro de cada cooperado
             _chart_groups: dict = {}
             for _, _cr in df_div.iterrows():
                 _coop = str(_cr.get("cooperado") or "").strip() or "Sem cooperado"
                 _delta = int(_cr["delta"]) if pd.notnull(_cr.get("delta")) else 0
                 _sis = int(_cr["qtd_sistema"]) if pd.notnull(_cr.get("qtd_sistema")) else 0
-                _fis = _sis + _delta
-                _chart_groups.setdefault(_coop, []).append({
-                    "p": str(_cr.get("produto", "")),
-                    "cod": str(_cr.get("codigo", "")),
-                    "cat": str(_cr.get("categoria", "")),
-                    "sis": _sis,
-                    "fis": _fis,
-                    "diff": _delta,
-                })
+                _cod = str(_cr.get("codigo", ""))
+                _coop_dict = _chart_groups.setdefault(_coop, {})
+                if _cod not in _coop_dict:
+                    _coop_dict[_cod] = {
+                        "p": str(_cr.get("produto", "")),
+                        "cod": _cod,
+                        "cat": str(_cr.get("categoria", "")),
+                        "sis": _sis,
+                        "diff": _delta,
+                    }
+                else:
+                    _coop_dict[_cod]["diff"] += _delta
+                # fis sempre recalculado a partir do sis e diff acumulado
+                _coop_dict[_cod]["fis"] = _coop_dict[_cod]["sis"] + _coop_dict[_cod]["diff"]
             _dados_json = _json_chart.dumps(
-                [{"coop": _c, "itens": _its} for _c, _its in _chart_groups.items()],
+                [{"coop": _c, "itens": list(_its.values())} for _c, _its in _chart_groups.items()],
                 ensure_ascii=False,
             )
             _html_divbar = """<!DOCTYPE html>
