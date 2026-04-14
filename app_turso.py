@@ -7789,14 +7789,47 @@ new Chart(document.getElementById('coop-chart'),{
                     _group_color_map[_gname] = _PERSON_PALETTE[_color_idx_counter % len(_PERSON_PALETTE)]
                     _color_idx_counter += 1
 
+            # --- Agrega divergências do mesmo produto (mesmo código + cooperado) ---
+            _div_agg_seen: dict = {}
+            _div_agg_list: list = []
+            for _, _row in df_div.iterrows():
+                _coop_val = str(_row["cooperado"]).strip() if pd.notnull(_row.get("cooperado")) else ""
+                _cod_val = str(_row["codigo"])
+                _agg_key = (_coop_val, _cod_val)
+                _row_delta = int(_row["delta"]) if pd.notnull(_row.get("delta")) else 0
+                if _agg_key not in _div_agg_seen:
+                    _div_agg_seen[_agg_key] = len(_div_agg_list)
+                    _div_agg_list.append({
+                        "ids": [int(_row["id"])],
+                        "codigo": _cod_val,
+                        "produto": str(_row["produto"]),
+                        "categoria": str(_row["categoria"]),
+                        "delta": _row_delta,
+                        "status": str(_row["status"]),
+                        "cooperado": str(_row["cooperado"]) if pd.notnull(_row.get("cooperado")) else "",
+                        "qtd_sistema": int(_row["qtd_sistema"]) if pd.notnull(_row.get("qtd_sistema")) else 0,
+                        "criado_em": str(_row["criado_em"]),
+                    })
+                else:
+                    _agg_idx = _div_agg_seen[_agg_key]
+                    _div_agg_list[_agg_idx]["ids"].append(int(_row["id"]))
+                    _div_agg_list[_agg_idx]["delta"] += _row_delta
+            # Recalcula status com base no delta somado
+            for _agg_entry in _div_agg_list:
+                _agg_entry["status"] = "falta" if _agg_entry["delta"] < 0 else "sobra"
+            df_div_agg = pd.DataFrame(_div_agg_list) if _div_agg_list else pd.DataFrame(
+                columns=["ids", "codigo", "produto", "categoria", "delta", "status", "cooperado", "qtd_sistema", "criado_em"]
+            )
+
             _prev_obs_group = None
-            for _, item in df_div.iterrows():
+            for _, item in df_div_agg.iterrows():
                 status_cor = "#ef4444" if item["status"] == "falta" else "#f59e0b"
                 status_label = "⬇️ FALTA" if item["status"] == "falta" else "⬆️ SOBRA"
                 delta = int(item["delta"]) if pd.notnull(item["delta"]) else 0
                 qtd_s = int(item["qtd_sistema"]) if pd.notnull(item["qtd_sistema"]) else 0
                 qtd_f = qtd_s + delta
                 cooperado = str(item["cooperado"]) if pd.notnull(item.get("cooperado")) and str(item.get("cooperado", "")).strip() else ""
+                _item_ids = item["ids"] if isinstance(item["ids"], list) else [item["ids"]]
 
                 _grp_name = cooperado if cooperado else "Sem cooperado"
                 _grp_color = _group_color_map.get(_grp_name, _PERSON_PALETTE[0])
@@ -7805,7 +7838,7 @@ new Chart(document.getElementById('coop-chart'),{
                 if _agrupar:
                     _obs_group = _grp_name
                     if _obs_group != _prev_obs_group:
-                        _count_group = len(df_div[df_div["cooperado"].fillna("").astype(str).str.strip() == (cooperado if cooperado else "")])
+                        _count_group = len(df_div_agg[df_div_agg["cooperado"].fillna("").astype(str).str.strip() == (cooperado if cooperado else "")])
                         st.markdown(
                             f'<div style="margin:14px 0 6px;padding:6px 12px;background:{_grp_color["h_bg"]};border-left:4px solid {_grp_color["h_bd"]};border-radius:4px;">'
                             f'<span style="color:{_grp_color["h_tx"]};font-weight:700;font-size:0.82rem;">👤 {_obs_group}</span>'
@@ -7817,10 +7850,11 @@ new Chart(document.getElementById('coop-chart'),{
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
+                    _merged_badge = (f'<span style="color:#64748b;font-size:0.65rem;margin-left:4px;">({len(_item_ids)} registros)</span>' if len(_item_ids) > 1 else '')
                     st.markdown(
                         f'<div style="background:{_grp_color["c_bg"]};border:1px solid {_grp_color["h_bd"]}33;border-left:3px solid {_grp_color["h_bd"]}88;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
+                        f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}{_merged_badge}</span>'
                         f'<span style="color:{status_cor};font-size:0.7rem;font-weight:700;">{status_label} {abs(delta)}</span></div>'
                         f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
                         f'<span style="color:#64748b;font-size:0.78rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
@@ -7831,8 +7865,10 @@ new Chart(document.getElementById('coop-chart'),{
                         unsafe_allow_html=True,
                     )
                 with col_btn:
-                    if st.button("✅", key=f"div_{item['id']}", help="Resolver divergência manualmente"):
-                        resolver_divergencia(int(item["id"]))
+                    _btn_key = f"div_{'_'.join(str(i) for i in _item_ids)}"
+                    if st.button("✅", key=_btn_key, help="Resolver divergência manualmente"):
+                        for _rid in _item_ids:
+                            resolver_divergencia(int(_rid))
                         get_divergencias.clear()
                         get_historico_divergencias.clear()
                         st.rerun()
