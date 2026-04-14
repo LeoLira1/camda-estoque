@@ -7922,6 +7922,7 @@ new Chart(document.getElementById('coop-chart'),{
                 with col_btn:
                     if st.button("✅", key=f"repor_{item['id']}", help="Marcar como reposto"):
                         marcar_reposto(int(item["id"]))
+                        get_reposicao_pendente.clear()
                         st.rerun()
 
         # ── Registrar divergência manual ─────────────────────────────────────
