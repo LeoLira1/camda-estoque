@@ -5494,8 +5494,8 @@ def parse_faturamento_gv_excel(df: pd.DataFrame):
 _GV_THRESHOLD_PCT = 5.0
 # Tolerância para considerar quantidade vendida "similar" ao delta da divergência (30%)
 _QTD_MATCH_TOLERANCIA = 0.30
-# Percentual mínimo de produtos com match para disparar alerta de possível faturamento (85%)
-_POSSIVEL_FAT_MIN_MATCH_PCT = 0.85
+# Percentual mínimo de produtos com match para disparar alerta de possível faturamento (70%)
+_POSSIVEL_FAT_MIN_MATCH_PCT = 0.70
 # Janela máxima (dias) para considerar divergências ativas no CHECK 2
 _POSSIVEL_FAT_MAX_DIAS_DIV = 60
 # Mínimo de produtos elegíveis para disparar alerta de possível faturamento
