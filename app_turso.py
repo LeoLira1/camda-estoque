@@ -2334,18 +2334,16 @@ def get_estocados_por_produto(produto: str) -> list:
 
 def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int, int]:
     """
-    Substitui todos os registros da data_referencia pelos novos.
-    Estratégia: DELETE onde data_referencia=? → INSERT tudo.
+    Substitui TODOS os registros da tabela pelos novos.
+    Estratégia: DELETE tudo → INSERT tudo.
     Retorna (inseridos, removidos_anteriormente).
     """
     if not records:
         return 0, 0
     conn = get_db()
     now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
-    # Remove registros antigos da mesma data de referência para reimportação limpa
-    cur = conn.execute(
-        "DELETE FROM materiais_terceiros WHERE data_referencia = ?", (data_referencia,)
-    )
+    # Remove TODOS os registros anteriores (qualquer data de referência)
+    cur = conn.execute("DELETE FROM materiais_terceiros")
     removidos = getattr(cur, "rowcount", 0) or 0
     # Insere todos os registros novos
     for r in records:
