@@ -27,7 +27,6 @@ from db_mapa import (
     sync_quantidades_from_estoque,
     get_posicoes_vazias,
 )
-from warehouse_tab import init_warehouse_table, warehouse_tab as _warehouse_tab
 from mapa_3d_component import render_rack_3d
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
@@ -1276,11 +1275,6 @@ def _get_connection():
     except Exception:
         pass
 
-    # ── Tabela do Mapa do Armazém (posições físicas A/B) ──
-    try:
-        init_warehouse_table(conn)
-    except Exception:
-        pass
 
     # ── Migração: sincroniza divergências órfãs (só em estoque_mestre) para tabela divergencias ──
     try:
@@ -7407,7 +7401,7 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_armazem, t_materiais = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "🏭 Mapa do Armazém", "📦 Estocados"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -9686,9 +9680,6 @@ new Chart(document.getElementById('coop-chart'),{
     # ══════════════════════════════════════════════════════════════════════════
     with t12:
         build_principios_ativos_tab(df_mestre, df_pa)
-
-    with t_armazem:
-        _warehouse_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, get_db())
 
     # ══════════════════════════════════════════════════════════════════════════
     # TAB MATERIAIS — Materiais Em Poder de Terceiros (MATR480)
