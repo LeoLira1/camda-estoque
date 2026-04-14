@@ -9325,9 +9325,27 @@ new Chart(document.getElementById('coop-chart'),{
                     df_parsed["VALOR"]      = pd.to_numeric(df_parsed["VALOR"],      errors="coerce").fillna(0)
 
                     st.caption(f"✅ {len(df_parsed)} lotes encontrados na planilha.")
+
+                    # ── Aviso de lotes AUTO ───────────────────────────────────
+                    lotes_auto = df_parsed[
+                        df_parsed["LOTE"].astype(str).str.upper().str.startswith("AUTO")
+                    ]
+                    if not lotes_auto.empty:
+                        produtos_auto = lotes_auto["PRODUTO"].dropna().unique().tolist()
+                        lista_produtos = "\n".join(f"• {p}" for p in produtos_auto[:15])
+                        sufixo = f"\n• ...e mais {len(produtos_auto) - 15} produto(s)" if len(produtos_auto) > 15 else ""
+                        st.warning(
+                            f"⚠️ **{len(lotes_auto)} lote(s) com prefixo AUTO detectado(s)!**\n\n"
+                            f"Lotes AUTO geralmente são gerados automaticamente pelo sistema com **data de validade incorreta**. "
+                            f"Solicite ao responsável a **correção da data de validade** antes de salvar.\n\n"
+                            f"**Produtos com lote AUTO:**\n{lista_produtos}{sufixo}"
+                        )
+
                     if st.button("💾 Salvar no banco", type="primary", key="val_salvar"):
                         if save_validade_lotes(df_parsed):
                             st.success(f"✅ {len(df_parsed)} lotes salvos no banco com sucesso!")
+                            if not lotes_auto.empty:
+                                st.warning(f"⚠️ Lembre-se: {len(lotes_auto)} lote(s) AUTO foram salvos com possível validade incorreta. Solicite a correção!")
                             st.rerun()
                 except Exception as e:
                     st.error(f"❌ Erro ao processar planilha: {e}")
