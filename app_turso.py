@@ -5504,6 +5504,10 @@ _GV_THRESHOLD_PCT = 5.0
 _QTD_MATCH_TOLERANCIA = 0.30
 # Percentual mínimo de produtos com match para disparar alerta de possível faturamento (85%)
 _POSSIVEL_FAT_MIN_MATCH_PCT = 0.85
+# Janela máxima (dias) para considerar divergências ativas no CHECK 2
+_POSSIVEL_FAT_MAX_DIAS_DIV = 60
+# Mínimo de produtos elegíveis para disparar alerta de possível faturamento
+_POSSIVEL_FAT_MIN_ELEGIVEIS = 2
 # Valores que aparecem no campo cooperado mas não são nomes reais
 _NOMES_INVALIDOS_COOP = {
     "faltando", "falta", "sobra", "sobrando", "ok", "none", "nan",
@@ -5593,8 +5597,14 @@ def checar_reconciliacao_gv() -> list:
             }
 
             if vend_qtd:
+                # Apenas divergências criadas nos últimos _POSSIVEL_FAT_MAX_DIAS_DIV dias
+                _cutoff_div = (
+                    datetime.now(tz=_BRT) - timedelta(days=_POSSIVEL_FAT_MAX_DIAS_DIV)
+                ).date().isoformat()
                 div_rows = conn.execute(
-                    "SELECT cooperado, codigo, produto, delta, status FROM divergencias WHERE cooperado != ''",
+                    "SELECT cooperado, codigo, produto, delta, status FROM divergencias"
+                    " WHERE cooperado != '' AND criado_em >= ?",
+                    (_cutoff_div,),
                 ).fetchall()
 
                 todos_por_coop: dict = {}
@@ -5627,12 +5637,16 @@ def checar_reconciliacao_gv() -> list:
                         continue
 
                     # Verifica se ao menos _POSSIVEL_FAT_MIN_MATCH_PCT dos produtos
-                    # elegíveis (com delta > 0 e presentes nas vendas) têm match
+                    # elegíveis (com delta > 0 e presentes nas vendas) têm match,
+                    # e se há pelo menos _POSSIVEL_FAT_MIN_ELEGIVEIS produtos elegíveis
                     n_elegiveis = sum(
                         1 for item in div_items
                         if abs(item["delta"]) != 0 and item["codigo"] in vend_qtd
                     )
-                    if n_elegiveis == 0 or len(matches_qtd) / n_elegiveis < _POSSIVEL_FAT_MIN_MATCH_PCT:
+                    if (
+                        n_elegiveis < _POSSIVEL_FAT_MIN_ELEGIVEIS
+                        or len(matches_qtd) / n_elegiveis < _POSSIVEL_FAT_MIN_MATCH_PCT
+                    ):
                         continue
 
                     # Enriquece alerta GV existente ou cria novo
