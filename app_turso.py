@@ -5852,7 +5852,7 @@ def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
         rows = get_db().execute("""
             SELECT produto, grupo, SUM(qtd_vendida) AS total
               FROM vendas_historico
-             GROUP BY codigo
+             GROUP BY produto
              ORDER BY total DESC
         """).fetchall()
         if rows:
