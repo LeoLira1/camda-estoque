@@ -28,6 +28,7 @@ from db_mapa import (
     get_posicoes_vazias,
 )
 from mapa_3d_component import render_rack_3d
+from mural_tab import mural_tab as _render_mural_tab
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
 _BRT = timezone(timedelta(hours=-3))
@@ -1175,6 +1176,16 @@ def _get_connection():
             created_at      TEXT    DEFAULT ''
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS mural_recados (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            autor     TEXT    NOT NULL DEFAULT 'Anônimo',
+            texto     TEXT    NOT NULL,
+            tag       TEXT    NOT NULL DEFAULT 'aviso',
+            cor       INTEGER NOT NULL DEFAULT 0,
+            criado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now'))
+        )
+    """)
     conn.commit()
 
     # ── Migração: remove UNIQUE antigo de materiais_terceiros se existir ──
@@ -1537,6 +1548,30 @@ def checar_e_registrar_alertas() -> dict:
             pass
 
     return result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MURAL — funções CRUD
+# ══════════════════════════════════════════════════════════════════════════════
+
+def get_mural_recados(tag: str | None = None) -> list:
+    """Retorna lista de recados do mural (mais recentes primeiro)."""
+    conn = get_db()
+    try:
+        if tag and tag != "all":
+            rows = conn.execute(
+                "SELECT id, autor, texto, tag, cor, criado_em FROM mural_recados"
+                " WHERE tag=? ORDER BY criado_em DESC",
+                (tag,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT id, autor, texto, tag, cor, criado_em FROM mural_recados"
+                " ORDER BY criado_em DESC"
+            ).fetchall()
+        return rows
+    except Exception:
+        return []
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -7411,7 +7446,7 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_mural = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "📌 Mural"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -10317,6 +10352,10 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     else:
                         st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
 
+    # ── TAB: MURAL ──────────────────────────────────────────────────────────
+    with t_mural:
+        _mural_rows = get_mural_recados()
+        _render_mural_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, _mural_rows)
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
