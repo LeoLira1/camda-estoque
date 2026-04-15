@@ -2318,18 +2318,23 @@ def get_estocados_count_ativos() -> int:
 
 
 def get_estocados_por_produto(produto: str) -> list:
-    """Retorna estocados ativos cujo nome contém o produto buscado ou é contido por ele (case-insensitive, busca bidirecional)."""
+    """Retorna estocados ativos cujo nome tem relação de substring bidirecional com o produto buscado (case-insensitive)."""
     try:
-        rows = get_db().execute("""
-            SELECT cooperado, quantidade, observacao
+        all_rows = get_db().execute("""
+            SELECT cooperado, quantidade, observacao, produto
             FROM estocados_cooperados
-            WHERE ativo = 1 AND (
-                UPPER(produto) LIKE UPPER(?)
-                OR UPPER(?) LIKE UPPER('%' || produto || '%')
-            )
-        """, (f"%{produto}%", produto)).fetchall()
-        return rows
-    except Exception:
+            WHERE ativo = 1
+        """).fetchall()
+        busca = produto.strip().upper()
+        resultado = []
+        for cooperado, quantidade, observacao, nome_estocado in all_rows:
+            nome = (nome_estocado or "").strip().upper()
+            if nome and (busca in nome or nome in busca):
+                resultado.append((cooperado, quantidade, observacao))
+        return resultado
+    except Exception as e:
+        import logging
+        logging.warning(f"get_estocados_por_produto erro: {e}")
         return []
 
 
