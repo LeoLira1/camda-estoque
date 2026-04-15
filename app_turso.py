@@ -5804,14 +5804,14 @@ def get_vendas_por_dia() -> pd.DataFrame:
     """
     try:
         rows = get_db().execute("""
-            SELECT data_upload AS dia,
+            SELECT DATE(data_upload) AS dia,
                    codigo,
                    produto,
                    grupo,
                    SUM(qtd_vendida) AS qtd_vendida
               FROM vendas_historico
-             GROUP BY data_upload, codigo
-             ORDER BY data_upload ASC
+             GROUP BY DATE(data_upload), codigo
+             ORDER BY DATE(data_upload) ASC
         """).fetchall()
         if rows:
             df = pd.DataFrame(rows, columns=["dia", "codigo", "produto", "grupo", "qtd_vendida"])
