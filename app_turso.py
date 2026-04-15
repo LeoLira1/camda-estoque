@@ -5869,7 +5869,11 @@ def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
                 return r["total"]
 
             df["total"] = df.apply(_ajustar_lona, axis=1)
-            return df.nlargest(top_n, "total").reset_index(drop=True)
+            return (
+                df.nlargest(top_n, "total")
+                .sort_values("total", ascending=False)
+                .reset_index(drop=True)
+            )
     except Exception:
         pass
     return pd.DataFrame()
@@ -9644,7 +9648,8 @@ new Chart(document.getElementById('coop-chart'),{
                     **_PLOTLY_LAYOUT,
                     height=max(400, len(df_top) * 28),
                     xaxis=dict(gridcolor="#1e293b", title="Unidades vendidas"),
-                    yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
+                    yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9),
+                               categoryorder="total ascending"),
                     showlegend=False,
                 )
                 st.plotly_chart(fig_top_h, use_container_width=True,
