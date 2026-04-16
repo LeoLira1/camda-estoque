@@ -8678,20 +8678,6 @@ new Chart(document.getElementById('coop-chart'),{
                 _foto_ver_key = f"av_foto_ver_{av_id}"
                 _foto_up_key = f"av_foto_{av_id}_{st.session_state.get(_foto_ver_key, 0)}"
 
-                with st.expander("📷 Adicionar foto", expanded=False):
-                    _foto_up = st.file_uploader(
-                        "Foto da avaria",
-                        type=["jpg", "jpeg", "png", "webp"],
-                        label_visibility="collapsed",
-                        key=_foto_up_key,
-                    )
-                    if _foto_up is not None:
-                        if adicionar_foto_avaria(av_id, _foto_up.read()):
-                            st.session_state[_foto_ver_key] = (
-                                st.session_state.get(_foto_ver_key, 0) + 1
-                            )
-                            st.success("Foto salva! ✔")
-                            st.rerun()
 
                 # ── Totais (só quando tem unidades) ────────────────────────
                 if unidades:
@@ -8797,6 +8783,20 @@ new Chart(document.getElementById('coop-chart'),{
                             st.rerun()
                 else:
                     with st.expander("🔒 Editar / Resolver / Excluir"):
+                        _foto_up = st.file_uploader(
+                            "Foto da avaria",
+                            type=["jpg", "jpeg", "png", "webp"],
+                            label_visibility="collapsed",
+                            key=_foto_up_key,
+                        )
+                        if _foto_up is not None:
+                            if adicionar_foto_avaria(av_id, _foto_up.read()):
+                                st.session_state[_foto_ver_key] = (
+                                    st.session_state.get(_foto_ver_key, 0) + 1
+                                )
+                                st.success("Foto salva! ✔")
+                                st.rerun()
+                        st.divider()
                         _senha_input = st.text_input(
                             "Senha", type="password",
                             key=f"av_senha_{av_id}",
