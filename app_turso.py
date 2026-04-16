@@ -7685,43 +7685,53 @@ if has_mestre:
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'Inter',system-ui,sans-serif;}
-body{background:#f5f4f0;padding:1rem;}
-.panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:50;align-items:center;justify-content:center;}
+body{background:transparent;padding:0;}
+.card{background:#0E1117;border:0.5px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.25rem 1.5rem 1rem;}
+.card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem;}
+.card-title{font-size:11px;font-weight:500;letter-spacing:0.08em;color:rgba(255,255,255,0.5);margin:0 0 4px;text-transform:uppercase;}
+.card-subtitle{font-size:13px;color:rgba(255,255,255,0.75);margin:0;opacity:0.7;}
+.legend{display:flex;gap:14px;font-size:12px;color:rgba(255,255,255,0.75);flex-shrink:0;}
+.legend span{display:flex;align-items:center;gap:6px;}
+.ldot{width:8px;height:8px;border-radius:2px;display:inline-block;}
+.panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;align-items:center;justify-content:center;}
 .panel-overlay.open{display:flex;}
-.panel-box{background:#fff;border-radius:14px;width:90%;max-width:420px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:0.5px solid #e0e0e0;}
-.phead{padding:14px 16px 10px;border-bottom:0.5px solid #eee;flex-shrink:0;}
-.pclose{float:right;background:none;border:none;font-size:18px;color:#bbb;cursor:pointer;}
+.panel-box{background:#1a1d24;border-radius:14px;width:90%;max-width:420px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:0.5px solid rgba(255,255,255,0.08);}
+.phead{padding:14px 16px 10px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;}
+.pclose{float:right;background:none;border:none;font-size:18px;color:rgba(255,255,255,0.4);cursor:pointer;}
 .pcolorbar{height:3px;border-radius:2px;width:36px;margin-bottom:6px;}
-.pname{font-size:16px;font-weight:500;color:#111;margin-bottom:8px;}
+.pname{font-size:16px;font-weight:500;color:rgba(255,255,255,0.9);margin-bottom:8px;}
 .pstats{display:flex;gap:6px;}
-.pstat{flex:1;background:#f5f4f0;border-radius:8px;padding:8px 6px;text-align:center;}
-.pstatv{font-size:22px;font-weight:600;color:#3b82f6;}
-.pstatl{font-size:10px;color:#aaa;margin-top:2px;}
+.pstat{flex:1;background:rgba(255,255,255,0.05);border-radius:8px;padding:8px 6px;text-align:center;}
+.pstatv{font-size:22px;font-weight:600;color:#378ADD;}
+.pstatl{font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px;}
 .pitems{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:7px;}
-.icard{background:#fafafa;border-radius:9px;padding:10px 12px;border-left:3px solid #E24B4A;}
-.icard.sobra{border-left-color:#3b82f6;}
-.icard-name{font-size:12px;font-weight:500;color:#111;line-height:1.35;margin-bottom:3px;}
-.icard-meta{font-size:10px;color:#bbb;margin-bottom:6px;}
+.icard{background:rgba(255,255,255,0.04);border-radius:9px;padding:10px 12px;border-left:3px solid #E24B4A;}
+.icard.sobra{border-left-color:#378ADD;}
+.icard-name{font-size:12px;font-weight:500;color:rgba(255,255,255,0.85);line-height:1.35;margin-bottom:3px;}
+.icard-meta{font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:6px;}
 .icard-bar{display:flex;align-items:center;gap:7px;}
-.ibar-track{flex:1;height:5px;background:#eee;border-radius:3px;overflow:hidden;}
+.ibar-track{flex:1;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;}
 .ibar-fill{height:100%;border-radius:3px;transition:width .6s ease;}
-.icard-nums{font-size:10px;color:#999;white-space:nowrap;}
-.icard-diff{font-size:13px;font-weight:700;padding:3px 10px;border-radius:20px;background:#FCEBEB;color:#A32D2D;min-width:40px;text-align:center;}
-.icard-diff.pos{background:#EBF3FC;color:#1d5fa8;}
-.legend{display:flex;gap:12px;margin-bottom:6px;font-size:11px;color:#666;}
-.legend-dot{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:middle;}
+.icard-nums{font-size:10px;color:rgba(255,255,255,0.5);white-space:nowrap;}
+.icard-diff{font-size:13px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(226,75,74,0.15);color:#E24B4A;min-width:40px;text-align:center;}
+.icard-diff.pos{background:rgba(55,138,221,0.15);color:#378ADD;}
 </style>
 </head>
 <body>
-<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-  <div style="font-size:12px;font-weight:500;color:#888;letter-spacing:.3px;">DIVERGÊNCIAS POR COOPERADO \u00b7 clique para ver produtos</div>
-  <div style="display:flex;gap:14px;font-size:11px;color:#666;">
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#E24B4A;margin-right:4px;vertical-align:middle;"></span>Faltas</span>
-    <span><span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:#3b82f6;margin-right:4px;vertical-align:middle;"></span>Sobras</span>
+<div class="card">
+  <div class="card-header">
+    <div>
+      <p class="card-title">Divergências por cooperado</p>
+      <p class="card-subtitle">__TOTAL__ divergências \u00b7 clique para ver produtos</p>
+    </div>
+    <div class="legend">
+      <span><span class="ldot" style="background:#E24B4A;"></span>Faltas</span>
+      <span><span class="ldot" style="background:#378ADD;"></span>Sobras</span>
+    </div>
   </div>
-</div>
-<div style="position:relative;width:100%;height:__CHART_H__px;">
-  <canvas id="coop-chart"></canvas>
+  <div style="position:relative;width:100%;height:__CHART_H__px;">
+    <canvas id="coop-chart"></canvas>
+  </div>
 </div>
 <div class="panel-overlay" id="overlay">
   <div class="panel-box">
@@ -7737,7 +7747,11 @@ body{background:#f5f4f0;padding:1rem;}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 <script>
 const dados=__DADOS__;
-const palette=['#2d6e6e','#d85a30','#a8c840','#7f77dd','#185fa5','#e8a060','#c8587a','#3b6d11','#6ab87a'];
+const SEM_COOP='SEM COOPERADO';
+const CLR_FALTA='#E24B4A';
+const CLR_SOBRA='#378ADD';
+const CLR_EXCEP='#F2A93B';
+const CLR_LABEL='rgba(255,255,255,0.75)';
 const coopMap={};
 dados.forEach((d,i)=>{
   const totF=d.itens.filter(it=>it.diff<0).reduce((s,it)=>s+Math.abs(it.diff),0);
@@ -7749,25 +7763,27 @@ const labels=sorted.map(x=>x[0]);
 const valsF=sorted.map(x=>x[1].totF);
 const valsS=sorted.map(x=>x[1].totS);
 const idxs=sorted.map(x=>x[1].idx);
-const bgs=idxs.map(i=>palette[i%palette.length]);
+function labelColor(lbl){return lbl.toUpperCase()===SEM_COOP?CLR_EXCEP:CLR_LABEL;}
 function openPanel(dataIdx){
   const d=dados[dataIdx];
   const faltas=d.itens.filter(i=>i.diff<0);
   const sobras=d.itens.filter(i=>i.diff>0);
   const totF=faltas.reduce((s,i)=>s+Math.abs(i.diff),0);
   const totS=sobras.reduce((s,i)=>s+i.diff,0);
-  const col=palette[dataIdx%palette.length];
+  const isExcep=d.coop.toUpperCase()===SEM_COOP;
+  const col=isExcep?CLR_EXCEP:CLR_SOBRA;
   document.getElementById('pcolorbar').style.background=col;
   document.getElementById('pname').textContent=d.coop;
-  let statsHtml=`<div class="pstat"><div class="pstatv">${totF}</div><div class="pstatl">unid. faltando</div></div>`;
+  let statsHtml=`<div class="pstat"><div class="pstatv" style="color:${CLR_FALTA}">${totF}</div><div class="pstatl">unid. faltando</div></div>`;
   if(totS>0) statsHtml+=`<div class="pstat"><div class="pstatv">${totS}</div><div class="pstatl">unid. sobrando</div></div>`;
-  statsHtml+=`<div class="pstat"><div class="pstatv">${faltas.length+sobras.length}</div><div class="pstatl">produtos</div></div>`;
+  statsHtml+=`<div class="pstat"><div class="pstatv" style="color:rgba(255,255,255,0.55)">${faltas.length+sobras.length}</div><div class="pstatl">produtos</div></div>`;
   document.getElementById('pstats').innerHTML=statsHtml;
   const pi=document.getElementById('pitems');
   pi.innerHTML='';
   const allItems=[...faltas.sort((a,b)=>a.diff-b.diff),...sobras.sort((a,b)=>b.diff-a.diff)];
   allItems.forEach(it=>{
     const isSobra=it.diff>0;
+    const barCol=isSobra?CLR_SOBRA:CLR_FALTA;
     const maxV=isSobra?Math.max(it.fis,it.sis):it.sis;
     const fillV=isSobra?it.sis:it.fis;
     const pct=maxV>0?Math.round((fillV/maxV)*100):0;
@@ -7775,12 +7791,11 @@ function openPanel(dataIdx){
     const sign=it.diff>0?'+':'';
     const c=document.createElement('div');
     c.className=isSobra?'icard sobra':'icard';
-    c.style.borderLeftColor=col;
     c.innerHTML=`
       <div class="icard-name">${it.p}</div>
       <div class="icard-meta">C\u00f3d: ${it.cod} \u00b7 ${it.cat}</div>
       <div class="icard-bar">
-        <div class="ibar-track"><div class="ibar-fill" style="width:${pct}%;background:${col};"></div></div>
+        <div class="ibar-track"><div class="ibar-fill" style="width:${pct}%;background:${barCol};"></div></div>
         <span class="icard-nums">${it.fis}/${it.sis}</span>
         <span class="${diffClass}">${sign}${it.diff}</span>
       </div>`;
@@ -7800,17 +7815,17 @@ new Chart(document.getElementById('coop-chart'),{
         label:'Faltas',
         data:valsF,
         backgroundColor:'rgba(226,75,74,0.82)',
-        hoverBackgroundColor:'#E24B4A',
-        borderRadius:0,
+        hoverBackgroundColor:CLR_FALTA,
+        borderRadius:{topLeft:4,bottomLeft:4,topRight:0,bottomRight:0},
         borderSkipped:false,
         stack:'div',
       },
       {
         label:'Sobras',
         data:valsS,
-        backgroundColor:'rgba(59,130,246,0.78)',
-        hoverBackgroundColor:'#3b82f6',
-        borderRadius:{topLeft:0,bottomLeft:0,topRight:5,bottomRight:5},
+        backgroundColor:'rgba(55,138,221,0.78)',
+        hoverBackgroundColor:CLR_SOBRA,
+        borderRadius:{topLeft:0,bottomLeft:0,topRight:4,bottomRight:4},
         borderSkipped:false,
         stack:'div',
       }
@@ -7823,6 +7838,12 @@ new Chart(document.getElementById('coop-chart'),{
     plugins:{
       legend:{display:false},
       tooltip:{
+        backgroundColor:'#1a1d24',
+        borderColor:'rgba(255,255,255,0.08)',
+        borderWidth:1,
+        titleColor:'rgba(255,255,255,0.85)',
+        bodyColor:'rgba(255,255,255,0.6)',
+        padding:10,
         callbacks:{
           label:ctx=>{
             const v=Math.abs(ctx.parsed.x);
@@ -7835,23 +7856,23 @@ new Chart(document.getElementById('coop-chart'),{
     scales:{
       x:{
         stacked:true,
-        grid:{color:'rgba(0,0,0,0.06)'},
+        grid:{color:'rgba(255,255,255,0.05)',drawBorder:false},
         border:{display:false},
-        ticks:{font:{size:12}}
+        ticks:{font:{size:11},color:'rgba(255,255,255,0.5)'}
       },
       y:{
         stacked:true,
         grid:{display:false},
         border:{display:false},
         ticks:{
-          font:{size:13,weight:'500',family:"'Inter',system-ui,sans-serif"},
-          color:'#333',
-          callback:v=>typeof v==='string'?v.toUpperCase():labels[v].toUpperCase()
+          font:{size:12,weight:'500',family:"'Inter',system-ui,sans-serif"},
+          color:ctx=>labelColor(labels[ctx.index]||''),
+          callback:v=>typeof v==='string'?v.toUpperCase():(labels[v]||'').toUpperCase()
         }
       }
     },
-    categoryPercentage:0.82,
-    barPercentage:0.88,
+    categoryPercentage:0.45,
+    barPercentage:0.95,
     onClick(evt,els){if(els.length>0)openPanel(idxs[els[0].index]);},
     onHover(evt,els){evt.native.target.style.cursor=els.length>0?'pointer':'default';}
   }
@@ -7860,11 +7881,13 @@ new Chart(document.getElementById('coop-chart'),{
 </body>
 </html>"""
             _n_coops = len(_chart_groups)
-            _chart_h = max(280, _n_coops * 52 + 60)
+            _chart_h = max(280, _n_coops * 48 + 60)
+            _total_div_count = len(df_div)
             _html_divbar = _html_divbar.replace("__DADOS__", _dados_json)
             _html_divbar = _html_divbar.replace("__CHART_H__", str(_chart_h))
+            _html_divbar = _html_divbar.replace("__TOTAL__", str(_total_div_count))
             import streamlit.components.v1 as _stcv1_divbar
-            _stcv1_divbar.html(_html_divbar, height=_chart_h + 120)
+            _stcv1_divbar.html(_html_divbar, height=_chart_h + 140)
 
             # --- Filtro / Agrupamento por cooperado ---
             coop_unicos = sorted([
