@@ -8055,7 +8055,7 @@ new Chart(document.getElementById('coop-chart'),{
         if df_reposicao.empty:  # Repor na Loja
             st.success("Nenhum produto pendente de reposição! 🎉")
         else:
-            st.caption(f"{n_repor} produto(s) para repor. Itens saem apenas quando desmarcados.")
+
             for _, item in df_reposicao.iterrows():
                 try:
                     dias = (datetime.now(tz=_BRT).replace(tzinfo=None) - datetime.strptime(item["criado_em"], "%Y-%m-%d %H:%M:%S")).days
