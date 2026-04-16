@@ -691,6 +691,23 @@ st.markdown("""
     .tm-tile:nth-child(18) { animation-delay: 0.54s; }
     .tm-tile:nth-child(19) { animation-delay: 0.57s; }
     .tm-tile:nth-child(20) { animation-delay: 0.60s; }
+    /* ── Animações de validade nos tiles do Mapa Estoque ─────────────── */
+    @keyframes blink-urgent {
+        0%, 100% { border-color: #E24B4A; box-shadow: 0 0 0 0 rgba(226,75,74,0); }
+        50%       { border-color: #E24B4A; box-shadow: 0 0 0 4px rgba(226,75,74,0.35); }
+    }
+    @keyframes blink-expiring {
+        0%, 100% { border-color: #EF9F27; box-shadow: 0 0 0 0 rgba(239,159,39,0); }
+        50%       { border-color: #EF9F27; box-shadow: 0 0 0 4px rgba(239,159,39,0.35); }
+    }
+    .tm-tile.card-urgent {
+        animation: cardPop 0.4s ease both, blink-urgent 0.8s ease-in-out 0.5s infinite;
+        border: 2px solid #E24B4A !important;
+    }
+    .tm-tile.card-expiring {
+        animation: cardPop 0.4s ease both, blink-expiring 1.2s ease-in-out 0.5s infinite;
+        border: 2px solid #EF9F27 !important;
+    }
     /* ── Transição suave entre abas ───────────────────────────────────── */
     @keyframes tabFadeIn {
         from { opacity: 0; transform: translateY(10px); }
@@ -5191,7 +5208,7 @@ def render_mapa_visual(conn):
     st.plotly_chart(fig_hm, use_container_width=True)
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None) -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None) -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
@@ -5204,6 +5221,32 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
         avarias_map = {}
     if divergencias_map is None:
         divergencias_map = {}
+    if validade_map is None:
+        validade_map = {}
+
+    from datetime import date as _vdate, datetime as _vdatetime
+
+    def _blink_cls(produto: str) -> str:
+        """Retorna a classe CSS de piscado baseada na validade mais próxima do produto."""
+        k = str(produto).strip().upper()
+        venc = validade_map.get(k)
+        if venc is None:
+            for mk, mv in validade_map.items():
+                if len(k) >= 6 and len(mk) >= 6 and (k in mk or mk in k):
+                    venc = mv
+                    break
+        if venc is None:
+            return ""
+        try:
+            exp = _vdatetime.strptime(str(venc), "%Y-%m-%d").date()
+            dias = (exp - _vdate.today()).days
+            if dias <= 30:
+                return " card-urgent"
+            if dias <= 60:
+                return " card-expiring"
+        except Exception:
+            pass
+        return ""
 
     # Agrupar por categoria
     categories = {}
@@ -5307,11 +5350,14 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Dashed border overlay for products without stock count
             opacity_style = "opacity:0.55;" if sem_contagem else ""
 
+            # Classe de piscado por validade (não sobrescreve badge de avarias)
+            blink_cls = _blink_cls(r["produto"])
+
             prods.append(
-                f'<div class="tm-tile" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
+                f'<div class="tm-tile{blink_cls}" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
                 f' data-codigo="{cod_str}"'
                 f' style="background:{card_bg};{card_border}'
-                f'border-radius:12px;padding:14px;{opacity_style}">'
+                f'border-radius:12px;padding:14px;position:relative;{opacity_style}">'
                 f'{cat_badge}'
                 f'{badge_html}'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
@@ -7464,7 +7510,20 @@ if has_mestre:
                     "status": str(drow["status"]),
                 }
                 divs_map.setdefault(cod, []).append(entry)
-        st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map, divergencias_map=divs_map), unsafe_allow_html=True)
+        # Monta dict produto_upper -> vencimento mais próximo para animação de validade
+        _val_map_mapa: dict = {}
+        try:
+            _val_rows_mapa = get_db().execute(
+                "SELECT produto, vencimento FROM validade_lotes"
+            ).fetchall()
+            for _vr in _val_rows_mapa:
+                _vk = str(_vr[0]).strip().upper()
+                _vv = str(_vr[1])
+                if _vk not in _val_map_mapa or _vv < _val_map_mapa[_vk]:
+                    _val_map_mapa[_vk] = _vv
+        except Exception:
+            pass
+        st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map, divergencias_map=divs_map, validade_map=_val_map_mapa), unsafe_allow_html=True)
 
         # Injeta modal de cooperados via components.v1.html (st.markdown bloqueia <script>)
         import json as _json
