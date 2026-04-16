@@ -7650,7 +7650,7 @@ if has_mestre:
         if df_div.empty:
             st.info("Nenhuma divergência.")
         else:
-            st.caption(f"{len(df_div)} divergência(s) · Itens saem apenas quando resolvidos manualmente.")
+
 
             # ── Gráfico de barras: faltas por cooperado ──────────────────────────
             import json as _json_chart
