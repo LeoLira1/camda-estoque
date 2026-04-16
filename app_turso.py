@@ -8239,7 +8239,7 @@ new Chart(document.getElementById('coop-chart'),{
         _data_gv = get_data_ref_faturamento_gv()
         with st.expander(
             f"📤 Importar Faturamento GV (Excel/CSV){' · carregado: ' + _data_gv if _data_gv else ''}",
-            expanded=not bool(_data_gv),
+            expanded=False,
         ):
             st.markdown(
                 "Opcional — importe a planilha do GV para comparação de quantidades faturadas. "
