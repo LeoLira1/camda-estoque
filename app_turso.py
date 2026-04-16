@@ -5248,6 +5248,40 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             pass
         return ""
 
+    _MONTHS_PT = ["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"]
+
+    def _venc_info(produto: str):
+        """Retorna (blink_cls, venc_label_html) para o card."""
+        k = str(produto).strip().upper()
+        venc = validade_map.get(k)
+        if venc is None:
+            for mk, mv in validade_map.items():
+                if len(k) >= 6 and len(mk) >= 6 and (k in mk or mk in k):
+                    venc = mv
+                    break
+        if venc is None:
+            return "", ""
+        try:
+            exp = _vdatetime.strptime(str(venc), "%Y-%m-%d").date()
+            dias = (exp - _vdate.today()).days
+            if dias <= 30:
+                blink = " card-urgent"
+                color = "#E24B4A"
+            elif dias <= 60:
+                blink = " card-expiring"
+                color = "#EF9F27"
+            else:
+                return "", ""
+            fmt = f"{exp.day:02d}/{_MONTHS_PT[exp.month-1]}/{exp.year}"
+            label = (
+                f'<div style="margin-top:6px;font-size:9px;font-weight:600;'
+                f'font-family:\'JetBrains Mono\',monospace;letter-spacing:0.4px;'
+                f'color:{color};">venc. {fmt}</div>'
+            )
+            return blink, label
+        except Exception:
+            return "", ""
+
     # Agrupar por categoria
     categories = {}
     for _, row in df.iterrows():
@@ -5350,8 +5384,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Dashed border overlay for products without stock count
             opacity_style = "opacity:0.55;" if sem_contagem else ""
 
-            # Classe de piscado por validade (não sobrescreve badge de avarias)
-            blink_cls = _blink_cls(r["produto"])
+            # Classe de piscado por validade + label de data (somente para alertas)
+            blink_cls, venc_label_html = _venc_info(r["produto"])
 
             prods.append(
                 f'<div class="tm-tile{blink_cls}" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
@@ -5362,6 +5396,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 f'{badge_html}'
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
                 f'<div class="tm-info" style="color:{qty_color};">{info}</div>'
+                f'{venc_label_html}'
                 f'<div class="tm-cod">{r["codigo"]}</div>'
                 f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}</div>'
                 f'</div>'
