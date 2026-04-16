@@ -5240,6 +5240,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
         try:
             exp = _vdatetime.strptime(str(venc), "%Y-%m-%d").date()
             dias = (exp - _vdate.today()).days
+            if dias <= 0:
+                return ""
             if dias <= 30:
                 return " card-urgent"
             if dias <= 60:
@@ -5264,6 +5266,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
         try:
             exp = _vdatetime.strptime(str(venc), "%Y-%m-%d").date()
             dias = (exp - _vdate.today()).days
+            if dias <= 0:
+                return "", ""
             if dias <= 30:
                 blink = " card-urgent"
                 color = "#E24B4A"
