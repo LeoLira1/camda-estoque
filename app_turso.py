@@ -8500,7 +8500,7 @@ new Chart(document.getElementById('coop-chart'),{
         st.markdown("""
         <style>
         .av-card{background:linear-gradient(135deg,#0d1a18 0%,#111e1c 100%);
-                 border-radius:16px;padding:16px;margin-bottom:12px;}
+                 border-radius:16px;padding:14px 16px 10px;margin-bottom:2px;}
         .av-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;
                   font-weight:800;letter-spacing:.5px;margin-bottom:6px;}
         .av-aberto{background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.45);}
@@ -8513,6 +8513,11 @@ new Chart(document.getElementById('coop-chart'),{
                  padding:7px 13px;}
         .av-stat-lbl{font-size:9px;letter-spacing:1.5px;color:rgba(255,255,255,0.35);}
         .av-stat-val{font-size:15px;font-weight:900;}
+        .av-sep{height:1px;background:rgba(255,255,255,0.06);margin:10px 0 14px;}
+        /* Compacta espaçamentos internos da aba Avarias */
+        div[data-testid="stVerticalBlock"] div[data-testid="stExpander"]{margin-bottom:4px;}
+        div[data-testid="stExpander"] summary{padding:6px 12px;}
+        iframe[title="streamlit_components.v1.html.html"]{display:block;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -8657,15 +8662,16 @@ new Chart(document.getElementById('coop-chart'),{
                 # Só exibe o container se houver baldes ou fotos
                 import streamlit.components.v1 as _cv1
                 if galoes_html or _foto_cards_html:
+                    _has_foto = bool(_foto_cards_html)
                     _galoes_container = (
                         '<div style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;'
                         'background:rgba(255,255,255,0.025);border-radius:12px;'
-                        'padding:14px 10px 10px;">'
+                        'padding:10px 10px 8px;">'
                         + galoes_html
                         + _foto_cards_html
                         + '</div>'
                     )
-                    _cv1.html(_galoes_container, height=290, scrolling=False)
+                    _cv1.html(_galoes_container, height=220 if _has_foto else 180, scrolling=False)
 
                 # Chave versionada: incrementar após salvar reseta o widget,
                 # evitando que o Streamlit reinsira a mesma foto a cada rerun.
@@ -8810,7 +8816,7 @@ new Chart(document.getElementById('coop-chart'),{
                         unsafe_allow_html=True
                     )
 
-                st.divider()
+                st.markdown('<div class="av-sep"></div>', unsafe_allow_html=True)
 
     with t8:
         import streamlit.components.v1 as components
