@@ -2531,6 +2531,7 @@ def search_by_principio_ativo(search_term: str, df_pa: pd.DataFrame) -> set:
     return set(df_pa.loc[mask, "produto"].str.upper())
 
 
+@st.cache_data(ttl=3600)
 def carregar_mapa_produtos_camda() -> dict:
     """
     Lê produtos_CAMDA.xlsx (abas Herbicidas, Inseticidas e Acaricidas, Fungicidas)
@@ -3883,15 +3884,19 @@ def parse_parcial_estoque(df_raw: pd.DataFrame) -> tuple:
     col_qtd = col_map["qtd"]
     col_nota = col_map.get("nota")
 
+    prod_vals = df[col_prod].tolist()
+    qtd_vals = df[col_qtd].tolist()
+    cod_vals = df[col_cod].tolist() if col_cod else [None] * len(df)
+    nota_vals = df[col_nota].tolist() if col_nota else [None] * len(df)
+
     records = []
-    for _, row in df.iterrows():
-        produto = str(row.get(col_prod, "")).strip()
+    for produto_raw, raw_val, cod_raw, nota_raw_val in zip(prod_vals, qtd_vals, cod_vals, nota_vals):
+        produto = str(produto_raw).strip()
         if not produto or produto.upper() in ("NAN", "NONE", "SUM", "ROLLUP", "TOTAL", "PRODUTO"):
             continue
 
         try:
-            raw_val = row.get(col_qtd)
-            if pd.isna(raw_val):
+            if raw_val is None or pd.isna(raw_val):
                 continue
             qtd_sistema = int(float(raw_val))
             if qtd_sistema < 0:
@@ -3901,7 +3906,7 @@ def parse_parcial_estoque(df_raw: pd.DataFrame) -> tuple:
 
         codigo = ""
         if col_cod:
-            codigo = str(row.get(col_cod, "")).strip()
+            codigo = str(cod_raw).strip()
             if codigo.upper() in ("NAN", "NONE", ""):
                 codigo = ""
         if not codigo:
@@ -3909,7 +3914,7 @@ def parse_parcial_estoque(df_raw: pd.DataFrame) -> tuple:
 
         nota_raw = ""
         if col_nota:
-            nv = str(row.get(col_nota, "")).strip()
+            nv = str(nota_raw_val).strip()
             if nv.upper() not in ("NAN", "NONE", "") and not _RE_ONLY_NUMBER.match(nv):
                 nota_raw = nv
 
