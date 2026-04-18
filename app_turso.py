@@ -102,6 +102,8 @@ if "login_error" not in st.session_state:
     st.session_state.login_error = False
 if "admin_unlocked" not in st.session_state:
     st.session_state.admin_unlocked = False
+if "_upload_success_msg" not in st.session_state:
+    st.session_state["_upload_success_msg"] = None
 
 # ── Weather gradient helper (usada na tela de login e no dashboard) ───────────
 def _wcode_bg_gradient(code, alpha=1.0):
@@ -10096,6 +10098,9 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                 else:
                     st.error("❌ Senha incorreta")
     else:
+        if st.session_state.get("_upload_success_msg"):
+            st.success(st.session_state["_upload_success_msg"])
+            st.session_state["_upload_success_msg"] = None
         # ── Botão para bloquear novamente ────────────────────────────────
         _col_relock, _ = st.columns([1, 5])
         with _col_relock:
@@ -10184,20 +10189,32 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                             ok_up, msg = upload_parcial(records, zerados)
 
                     if ok_up:
-                        st.success(msg)
-                        # Salvar dados de vendas para gráficos (apenas Mestre e Parcial vendas)
+                        _post_errors = []
                         if not is_parcial_estoque:
-                            save_vendas_historico(records, _GRUPO_MAP, zerados, is_mestre=is_mestre_upload, data_ref=data_planilha.isoformat())
-                        # Sincroniza automaticamente as quantidades no mapa do rack
-                        _sync_res = sync_quantidades_from_estoque(get_db())
-                        if _sync_res["atualizadas"] > 0:
-                            st.info(f"🗺️ Mapa do rack atualizado automaticamente ({_sync_res['atualizadas']} posição(ões)).")
+                            try:
+                                save_vendas_historico(
+                                    records, _GRUPO_MAP, zerados,
+                                    is_mestre=is_mestre_upload,
+                                    data_ref=data_planilha.isoformat(),
+                                )
+                            except Exception as _e:
+                                _post_errors.append(f"Histórico de vendas não salvo: {_e}")
+                        try:
+                            _sync_res = sync_quantidades_from_estoque(get_db())
+                            _sync_atualizadas = _sync_res["atualizadas"]
+                        except Exception as _e:
+                            _post_errors.append(f"Sincronização do mapa não concluída: {_e}")
+                            _sync_atualizadas = 0
+                        _flash_parts = [msg]
+                        if _sync_atualizadas > 0:
+                            _flash_parts.append(f"🗺️ Mapa do rack atualizado automaticamente ({_sync_atualizadas} posição(ões)).")
                         if _using_cloud:
-                            st.info("☁️ Sincronizado.")
-                        # Força reprocessamento dos alertas (inclui conferência GV)
+                            _flash_parts.append("☁️ Sincronizado.")
+                        if _post_errors:
+                            _flash_parts.append("⚠️ " + " | ".join(_post_errors))
+                        st.session_state["_upload_success_msg"] = " ".join(_flash_parts)
                         st.session_state.pop("alertas_cache", None)
                         st.session_state.processed_file = None
-                        # Invalida caches de leitura para que o próximo rerun mostre dados atualizados
                         get_current_stock.clear()
                         get_stock_count.clear()
                         get_reposicao_pendente.clear()
