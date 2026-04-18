@@ -952,9 +952,9 @@ _using_cloud = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN)
 EDIT_PASSWORD = _get_secret("CAMDA_EDIT_PASSWORD") or "camda@edit"
 
 
-@st.cache_resource
+@st.cache_resource(ttl=1800)
 def _get_connection():
-    """Cria conexão UMA VEZ e já inicializa tabelas + migrações."""
+    """Cria conexão (renovada a cada 30 min) e inicializa tabelas + migrações."""
     if _using_cloud:
         conn = libsql.connect(
             LOCAL_DB_PATH,
@@ -1334,15 +1334,30 @@ def _get_connection():
     return conn
 
 
+def _force_reconnect():
+    """Limpa cache e cria nova conexão Turso."""
+    _get_connection.clear()
+    st.session_state.pop("_synced", None)
+    return _get_connection()
+
+
 def get_db():
-    """Retorna conexão pronta (tabelas já criadas no cache)."""
+    """Retorna conexão pronta, reconectando automaticamente se o stream expirou."""
     conn = _get_connection()
-    if _using_cloud and not st.session_state.get("_synced"):
+    if _using_cloud:
+        if not st.session_state.get("_synced"):
+            try:
+                conn.sync()
+                st.session_state["_synced"] = True
+            except Exception as _e:
+                if "stream not found" in str(_e) or "404" in str(_e):
+                    conn = _force_reconnect()
+        # Probe rápido para detectar stream expirado
         try:
-            conn.sync()
-            st.session_state["_synced"] = True
-        except Exception:
-            pass
+            conn.execute("SELECT 1").fetchone()
+        except Exception as _e:
+            if "stream not found" in str(_e) or "404" in str(_e):
+                conn = _force_reconnect()
     return conn
 
 
