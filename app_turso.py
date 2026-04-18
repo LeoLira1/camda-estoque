@@ -10522,6 +10522,16 @@ else:
 
 # ── Tela sem dados ───────────────────────────────────────────────────────────
 if not has_mestre:
+    if _using_cloud:
+        col_sync, _ = st.columns([1, 3])
+        with col_sync:
+            if st.button("🔄 Sincronizar com Turso", key="sync_empty_state"):
+                try:
+                    _get_connection().sync()
+                    st.session_state.pop("_synced", None)
+                    st.rerun()
+                except Exception as _e_sync:
+                    st.error(f"Erro ao sincronizar: {_e_sync}")
     st.markdown(
         '<div style="text-align:center;color:#64748b;padding:60px 20px;font-size:1rem;">'
         "Faça o upload da planilha mestre abaixo para começar 👇</div>",
