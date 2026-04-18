@@ -4010,6 +4010,12 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
         # Remover produtos ignorados antes de inserir no banco
         records = [r for r in records if not _is_produto_ignorado(r.get("produto", ""))]
 
+        # Desduplicar por código (manter última ocorrência)
+        _seen: dict = {}
+        for r in records:
+            _seen[r["codigo"]] = r
+        records = list(_seen.values())
+
         # Buscar códigos existentes (1 query)
         existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
 
@@ -4101,6 +4107,12 @@ def upload_parcial_estoque(records: list) -> tuple:
 
         # Remover produtos ignorados antes de inserir no banco
         records = [r for r in records if not _is_produto_ignorado(r.get("produto", ""))]
+
+        # Desduplicar por código (manter última ocorrência)
+        _seen: dict = {}
+        for r in records:
+            _seen[r["codigo"]] = r
+        records = list(_seen.values())
 
         existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
 
