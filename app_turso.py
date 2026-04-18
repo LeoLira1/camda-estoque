@@ -29,6 +29,7 @@ from db_mapa import (
 )
 from mapa_3d_component import render_rack_3d
 from mural_tab import mural_tab as _render_mural_tab
+from inventario_ciclico_tab import build_inventario_ciclico_tab as _render_ciclico_tab
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
 _BRT = timezone(timedelta(hours=-3))
@@ -1203,6 +1204,24 @@ def _get_connection():
             tag       TEXT    NOT NULL DEFAULT 'aviso',
             cor       INTEGER NOT NULL DEFAULT 0,
             criado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now'))
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS inventario_ciclico (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_contagem   TEXT    NOT NULL,
+            produto_id      TEXT    NOT NULL,
+            produto_nome    TEXT    NOT NULL DEFAULT '',
+            categoria_id    TEXT    NOT NULL DEFAULT '',
+            categoria_label TEXT    NOT NULL DEFAULT '',
+            categoria_cor   TEXT    NOT NULL DEFAULT '#888888',
+            qtd_sistema     REAL    NOT NULL DEFAULT 0,
+            qtd_contada     REAL,
+            divergencia     REAL,
+            score           REAL    NOT NULL DEFAULT 0,
+            contado_em      TEXT    DEFAULT '',
+            observacao      TEXT    DEFAULT '',
+            UNIQUE(data_contagem, produto_id)
         )
     """)
     conn.commit()
@@ -7564,7 +7583,7 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_mural = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "📌 Mural"])
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_mural, t_ciclico = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "📌 Mural", "🔄 Inv. Cíclico"])
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
@@ -10531,6 +10550,9 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                             st.error("Erro ao salvar. Tente novamente.")
                     else:
                         st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
+
+with t_ciclico:
+    _render_ciclico_tab(get_db, _using_cloud)
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
