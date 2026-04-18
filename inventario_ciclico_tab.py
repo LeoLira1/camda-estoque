@@ -265,26 +265,33 @@ def build_inventario_ciclico_tab(get_db, _using_cloud: bool = False):
                 marker = f"cm-{pid}"
 
                 with grid_cols[i]:
-                    # Injeta CSS individual para esta bolinha usando :has()
+                    # CSS individual por bolinha — cobre os diferentes data-testids
+                    # do Streamlit entre versões (stColumn, column, stVerticalBlock)
                     st.markdown(
                         f"""<style>
+                        [data-testid="stVerticalBlock"]:has(> div > #{marker}) > div[data-testid="stButton"] button,
+                        [data-testid="stVerticalBlock"]:has(#{marker}) > [data-testid="stButton"] button,
+                        [data-testid="stColumn"]:has(#{marker}) [data-testid="stButton"] button,
                         [data-testid="column"]:has(#{marker}) [data-testid="stButton"] button {{
                             background:{color}!important;
                             border:none!important;
                             border-radius:50%!important;
-                            width:44px!important;
-                            max-width:44px!important;
-                            height:44px!important;
-                            min-height:44px!important;
+                            width:48px!important;
+                            max-width:48px!important;
+                            height:48px!important;
+                            min-height:48px!important;
                             padding:0!important;
                             color:transparent!important;
                             font-size:1px!important;
+                            line-height:1!important;
                             transition:transform .15s,opacity .15s!important;
                             {ring}
                         }}
+                        [data-testid="stVerticalBlock"]:has(#{marker}) > [data-testid="stButton"] button:hover,
+                        [data-testid="stColumn"]:has(#{marker}) [data-testid="stButton"] button:hover,
                         [data-testid="column"]:has(#{marker}) [data-testid="stButton"] button:hover {{
-                            opacity:.8!important;
-                            transform:scale(1.14)!important;
+                            opacity:.75!important;
+                            transform:scale(1.16)!important;
                         }}
                         </style><div id="{marker}" style="display:none"></div>""",
                         unsafe_allow_html=True,
