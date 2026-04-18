@@ -10079,6 +10079,11 @@ new Chart(document.getElementById('coop-chart'),{
                     )
 
 
+    # ── TAB: MURAL ──────────────────────────────────────────────────────────
+    with t_mural:
+        _mural_rows = get_mural_recados()
+        _render_mural_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, _mural_rows)
+
 
 # ── Upload Section ───────────────────────────────────────────────────────────
 with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
@@ -10507,11 +10512,6 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                             st.error("Erro ao salvar. Tente novamente.")
                     else:
                         st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
-
-    # ── TAB: MURAL ──────────────────────────────────────────────────────────
-    with t_mural:
-        _mural_rows = get_mural_recados()
-        _render_mural_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, _mural_rows)
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
