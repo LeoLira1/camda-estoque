@@ -2855,8 +2855,8 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             for pa, c in zip(pa_list, cores)
         ]
         _y_vals = [
-            v if pd.notna(v) and v > 0 else (k if pd.notna(k) and k > 0 else 0)
-            for v, k in zip(df_plot["total_litros"], df_plot["total_kg"])
+            ((v if pd.notna(v) and v > 0 else 0) + (k if pd.notna(k) and k > 0 else 0)) or u
+            for v, k, u in zip(df_plot["total_litros"], df_plot["total_kg"], df_plot["total"])
         ]
         _text_vals = [
             _fmt_volume(v, k, u)
@@ -2901,7 +2901,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
         pie_line_widths = [3 if pa == pa_sel else 0 for pa in pa_list]
         pie_opacities   = [1.0 if pa_sel is None or pa == pa_sel else 0.3 for pa in pa_list]
         _pie_vals = [
-            v if pd.notna(v) else (k if pd.notna(k) else u)
+            ((v if pd.notna(v) and v > 0 else 0) + (k if pd.notna(k) and k > 0 else 0)) or u
             for v, k, u in zip(df_plot["total_litros"], df_plot["total_kg"], df_plot["total"])
         ]
         _pie_hover = [
