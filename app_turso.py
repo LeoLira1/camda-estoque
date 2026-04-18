@@ -6623,37 +6623,36 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             st.markdown(f"""<div class="stat-card"><div class="stat-value purple">{total_alert}</div>
             <div class="stat-label">⚡ Total Alertas</div></div>""", unsafe_allow_html=True)
 
-        # Combinar e mostrar top 25 (zerados top 15 + críticos top 15, ordenado por urgência)
+        # Combinar e mostrar top 25 ordenado por estoque restante (menor = mais urgente)
         df_alerta = pd.concat([
             df_zero.head(15).assign(nivel="ZERADO", dias_cobertura=0.0),
             df_crit.head(15).assign(nivel="CRÍTICO"),
         ]).sort_values(
-            ["nivel", "dias_cobertura"],
-            ascending=[True, True],  # ZERADO primeiro, depois menor cobertura
-            key=lambda col: col.map({"ZERADO": 0, "CRÍTICO": 1}) if col.name == "nivel" else col
+            ["qtd_estoque", "qtd_vendida"],
+            ascending=[True, False],  # menor estoque primeiro; desempate por maior venda
         ).head(25)
 
         if not df_alerta.empty:
             # Bar chart horizontal com cores de severidade
             colors = ["#ff4757" if n == "ZERADO" else "#ffa502" for n in df_alerta["nivel"]]
             nomes = df_alerta["produto"].apply(lambda p: p[:35] + "…" if len(p) > 35 else p)
+            estoque_x = df_alerta["qtd_estoque"].clip(lower=0)
 
             fig_alert = go.Figure()
             fig_alert.add_trace(go.Bar(
-                y=nomes, x=df_alerta["qtd_vendida"], orientation="h",
+                y=nomes, x=estoque_x, orientation="h",
                 marker=dict(color=colors, cornerradius=3),
-                text=df_alerta.apply(lambda r: f"Est: {int(r['qtd_estoque'])}", axis=1),
+                text=df_alerta.apply(lambda r: f"Vendido: {int(r['qtd_vendida'])}", axis=1),
                 textposition="outside", textfont=dict(size=9, color="#94a3b8"),
-                customdata=df_alerta["dias_cobertura"].fillna(0).round(1),
-                hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br>%{text}<br>Cobertura: %{customdata}d<extra></extra>",
-
+                customdata=df_alerta[["qtd_vendida", "dias_cobertura"]].fillna(0).round(1).values,
+                hovertemplate="<b>%{y}</b><br>Estoque: %{x:,.0f}<br>Vendido: %{customdata[0]:,.0f}<br>Cobertura: %{customdata[1]}d<extra></extra>",
             ))
             fig_alert.update_layout(
                 **_PLOTLY_LAYOUT,
-                title=dict(text="🚨 Produtos com Estoque Crítico vs Vendas", font=dict(size=13)),
+                title=dict(text="🚨 Produtos com Estoque Crítico — Qtd Restante em Estoque", font=dict(size=13)),
                 height=max(400, len(df_alerta) * 28),
                 yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
-                xaxis=dict(title="Qtd Vendida", gridcolor="#1e293b"),
+                xaxis=dict(title="Qtd em Estoque", gridcolor="#1e293b"),
                 showlegend=False,
             )
             st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
