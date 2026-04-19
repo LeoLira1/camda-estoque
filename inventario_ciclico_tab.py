@@ -28,6 +28,7 @@ _CICLO_LAST = frozenset({
     "INOCULANTES", "INOCULANTES P/ SILAGEM",
     "BIOLOGICOS", "BIOLÓGICOS",
     "SUPLEMENTO MINERAL", "SUPLEMENTOS MINERAIS",
+    "RAÇÃO", "RACAO", "RACOES", "RAÇÕES",
 })
 
 # 4 CSS rules estáticos (não crescem com o nº de produtos) — IDs com prefixo de status
