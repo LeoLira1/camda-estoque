@@ -28,3 +28,5 @@ Thumbs.db
 build-tools-*.zip
 platform-*.zip
 android-sdk-downloads/
+# Added by code-review-graph
+.code-review-graph/
