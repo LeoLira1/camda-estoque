@@ -1302,6 +1302,21 @@ def _get_connection():
     except Exception:
         pass
 
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(estoque_mestre)").fetchall()}
+        novas_cols_ciclo = [
+            ("status_ciclo",              "TEXT DEFAULT ''"),
+            ("qtd_contada_ciclo",         "INTEGER DEFAULT NULL"),
+            ("qtd_sistema_na_contagem",   "INTEGER DEFAULT NULL"),
+            ("contado_ciclo_em",          "TEXT DEFAULT ''"),
+        ]
+        for col, definition in novas_cols_ciclo:
+            if col not in cols:
+                conn.execute(f"ALTER TABLE estoque_mestre ADD COLUMN {col} {definition}")
+        conn.commit()
+    except Exception:
+        pass
+
     # migração alertas_disparados já é criada no CREATE TABLE IF NOT EXISTS acima
     # mas garante que a constraint UNIQUE existe para DBs antigos sem ela
     try:
@@ -2050,7 +2065,8 @@ _CAT_PRIORITY_MAP = {cat: i for i, cat in enumerate(CATEGORIA_PRIORITY)}
 # LEITURAS DO BANCO — simples e diretas
 # ══════════════════════════════════════════════════════════════════════════════
 _STOCK_COLS = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
-               "diferenca", "nota", "status", "ultima_contagem", "criado_em", "observacoes"]
+               "diferenca", "nota", "status", "ultima_contagem", "criado_em", "observacoes",
+               "status_ciclo", "qtd_contada_ciclo", "qtd_sistema_na_contagem", "contado_ciclo_em"]
 
 
 @st.cache_data(ttl=60)
@@ -4055,8 +4071,18 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
             _seen[r["codigo"]] = r
         records = list(_seen.values())
 
-        # Buscar códigos existentes (1 query)
-        existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
+        # Buscar códigos existentes com snapshot de ciclo (1 query)
+        existing = {row[0]: (row[1], row[2]) for row in conn.execute(
+            "SELECT codigo, qtd_sistema_na_contagem, status_ciclo FROM estoque_mestre"
+        ).fetchall()}
+
+        # Detecta produtos que tinham conferência e mudaram qtd_sistema
+        invalidar_ciclo = []
+        for r in records:
+            if r["codigo"] in existing:
+                snap, status_c = existing[r["codigo"]]
+                if status_c in ("ok", "divergencia") and snap is not None and snap != r["qtd_sistema"]:
+                    invalidar_ciclo.append(r["codigo"])
 
         # Remover produtos que zeraram o estoque
         if zerados:
@@ -4108,6 +4134,16 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
             # Auto-cachear P.A. para produtos que entraram ou voltaram ao estoque
             _auto_cache_principios_ativos([r[1] for r in novos_data], conn)
 
+        # Invalida ciclo dos produtos que movimentaram
+        if invalidar_ciclo:
+            ph = ",".join(["?" for _ in invalidar_ciclo])
+            conn.execute(f"""
+                UPDATE estoque_mestre
+                SET status_ciclo = '', qtd_contada_ciclo = NULL,
+                    qtd_sistema_na_contagem = NULL, contado_ciclo_em = ''
+                WHERE codigo IN ({ph})
+            """, invalidar_ciclo)
+
         # Reposição loja
         n_repo = _detectar_reposicao_batch(records, conn, now)
 
@@ -4132,6 +4168,8 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
             parts.append(f"{n_div} divergências")
         if n_repo:
             parts.append(f"🏪 {n_repo} para repor na loja")
+        if invalidar_ciclo:
+            parts.append(f"🔄 {len(invalidar_ciclo)} voltaram pra contagem (movimentaram)")
         return (True, " · ".join(parts))
     except Exception as e:
         return (False, f"❌ Erro: {e}")
@@ -5261,7 +5299,7 @@ def render_mapa_visual(conn):
     st.plotly_chart(fig_hm, use_container_width=True)
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None) -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia") -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
@@ -5384,7 +5422,24 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     diff = total_div_delta
 
             # Status → border color, bg, qty color
-            if qtd_av > 0:
+            if color_mode == "ciclico":
+                status_c = str(r.get("status_ciclo", "") or "")
+                if status_c == "ok":
+                    border_color = "#00d68f"
+                    card_bg = "#1a1d2e"
+                    qty_color = "#e8eaf0"
+                    card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #00d68f;"
+                elif status_c == "divergencia":
+                    border_color = "#ff4757"
+                    card_bg = "linear-gradient(135deg, rgba(255,71,87,0.28), rgba(180,20,20,0.18))"
+                    qty_color = "#ffffff"
+                    card_border = "border:2px solid rgba(255,71,87,0.7);"
+                else:
+                    border_color = "#ffa502"
+                    card_bg = "linear-gradient(135deg, rgba(255,165,2,0.12), #1a1d2e)"
+                    qty_color = "#e8eaf0"
+                    card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #ffa502;"
+            elif qtd_av > 0:
                 border_color = "#f97316"
                 card_bg = "linear-gradient(135deg, rgba(249,115,22,0.08), #1a1d2e)"
                 qty_color = "#f97316"
@@ -10552,7 +10607,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
 
 with t_ciclico:
-    _render_ciclico_tab(get_db, _using_cloud)
+    _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock)
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
