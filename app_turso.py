@@ -2053,12 +2053,30 @@ CATEGORIAS_CONTAGEM = frozenset({
     "ADUBOS QUÍMICOS",
 })
 
-CATEGORIA_PRIORITY = [
-    "HERBICIDAS", "FUNGICIDAS", "INSETICIDAS", "NEMATICIDAS",
-    "ADUBOS FOLIARES", "ADUBOS QUÍMICOS", "ADUBOS CORRETIVOS",
-    "ADJUVANTES", "ÓLEOS", "SEMENTES", "MEDICAMENTOS",
-]
-_CAT_PRIORITY_MAP = {cat: i for i, cat in enumerate(CATEGORIA_PRIORITY)}
+_CATS_LAST = frozenset({
+    "HERBICIDAS", "HERBICIDA",
+    "FUNGICIDAS", "FUNGICIDA",
+    "INSETICIDAS", "INSETICIDA",
+    "NEMATICIDAS", "NEMATICIDA",
+    "ADUBOS", "ADUBO",
+    "ADUBOS FOLIARES", "ADUBOS FOLIARES E QUÍMICOS", "ADUBOS QUÍMICOS",
+    "ADUBOS CORRETIVOS", "ADUBOS ORGANICOS", "ADUBOS ORGÂNICOS",
+    "ADUBO FOLIAR", "ADUBO ORGANICO", "ADUBO ORGÂNICO",
+    "FERTILIZANTES", "FERTILIZANTE",
+    "ADJUVANTES", "ADJUVANTES/ESPALHANTES ADESIVO", "ADJUVANTE",
+    "ÓLEOS", "ÓLEOS MINERAIS E VEGETAIS", "OLEOS", "OLEOS MINERAIS E VEGETAIS",
+    "SEMENTES", "SEMENTE",
+    "MATURADORES", "MATURADOR",
+    "REGULADORES DE CRESCIMENTO", "REGULADOR DE CRESCIMENTO",
+    "DEFENSIVOS", "DEFENSIVOS AGRICOLAS", "DEFENSIVOS AGRÍCOLAS",
+    "BIOLOGICOS E INOCULANTES", "BIOLÓGICOS E INOCULANTES",
+    "INOCULANTES", "INOCULANTES P/ SILAGEM",
+    "BIOLOGICOS", "BIOLÓGICOS",
+    "SUPLEMENTO MINERAL", "SUPLEMENTOS MINERAIS",
+    "RAÇÃO", "RACAO", "RACOES", "RAÇÕES",
+})
+CATEGORIA_PRIORITY = list(_CATS_LAST)
+_CAT_PRIORITY_MAP = {cat: 1 for cat in _CATS_LAST}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4557,8 +4575,7 @@ def get_validade_upload_date() -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def sort_categorias(cats):
-    mx = len(CATEGORIA_PRIORITY)
-    return sorted(cats, key=lambda c: (_CAT_PRIORITY_MAP.get(c, mx), c))
+    return sorted(cats, key=lambda c: (1 if c.upper() in _CATS_LAST else 0, c))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
