@@ -338,5 +338,6 @@ def build_inventario_ciclico_tab(
         filter_cat=filtro_cat,
         avarias_map=None,
         color_mode="ciclico",
+        sort_fn=_sort_ciclo,
     )
     st.markdown(html_mapa, unsafe_allow_html=True)
