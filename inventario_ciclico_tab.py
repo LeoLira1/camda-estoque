@@ -39,11 +39,11 @@ _CSS_CARDS = """<style>
 }
 [data-testid="stColumn"]:has([id^="cic-ok-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-ok-"]) [data-testid="stButton"] button {
-    background:rgba(0,214,143,0.18)!important;
-    border:none!important; border-left:3px solid #00d68f!important;
+    background:rgba(0,214,143,0.72)!important;
+    border:2px solid #00d68f!important;
     border-radius:10px!important; padding:10px 8px!important;
     text-align:left!important; min-height:68px!important;
-    width:100%!important; color:#e8eaf0!important;
+    width:100%!important; color:#ffffff!important;
     font-family:'JetBrains Mono',monospace!important;
     font-size:0.63rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
@@ -51,11 +51,11 @@ _CSS_CARDS = """<style>
 }
 [data-testid="stColumn"]:has([id^="cic-div-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-div-"]) [data-testid="stButton"] button {
-    background:rgba(255,71,87,0.22)!important;
-    border:none!important; border-left:3px solid #ff4757!important;
+    background:rgba(255,71,87,0.72)!important;
+    border:2px solid #ff4757!important;
     border-radius:10px!important; padding:10px 8px!important;
     text-align:left!important; min-height:68px!important;
-    width:100%!important; color:#e8eaf0!important;
+    width:100%!important; color:#ffffff!important;
     font-family:'JetBrains Mono',monospace!important;
     font-size:0.63rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
