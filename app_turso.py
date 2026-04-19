@@ -2053,30 +2053,12 @@ CATEGORIAS_CONTAGEM = frozenset({
     "ADUBOS QUÍMICOS",
 })
 
-_CATS_LAST = frozenset({
-    "HERBICIDAS", "HERBICIDA",
-    "FUNGICIDAS", "FUNGICIDA",
-    "INSETICIDAS", "INSETICIDA",
-    "NEMATICIDAS", "NEMATICIDA",
-    "ADUBOS", "ADUBO",
-    "ADUBOS FOLIARES", "ADUBOS FOLIARES E QUÍMICOS", "ADUBOS QUÍMICOS",
-    "ADUBOS CORRETIVOS", "ADUBOS ORGANICOS", "ADUBOS ORGÂNICOS",
-    "ADUBO FOLIAR", "ADUBO ORGANICO", "ADUBO ORGÂNICO",
-    "FERTILIZANTES", "FERTILIZANTE",
-    "ADJUVANTES", "ADJUVANTES/ESPALHANTES ADESIVO", "ADJUVANTE",
-    "ÓLEOS", "ÓLEOS MINERAIS E VEGETAIS", "OLEOS", "OLEOS MINERAIS E VEGETAIS",
-    "SEMENTES", "SEMENTE",
-    "MATURADORES", "MATURADOR",
-    "REGULADORES DE CRESCIMENTO", "REGULADOR DE CRESCIMENTO",
-    "DEFENSIVOS", "DEFENSIVOS AGRICOLAS", "DEFENSIVOS AGRÍCOLAS",
-    "BIOLOGICOS E INOCULANTES", "BIOLÓGICOS E INOCULANTES",
-    "INOCULANTES", "INOCULANTES P/ SILAGEM",
-    "BIOLOGICOS", "BIOLÓGICOS",
-    "SUPLEMENTO MINERAL", "SUPLEMENTOS MINERAIS",
-    "RAÇÃO", "RACAO", "RACOES", "RAÇÕES",
-})
-CATEGORIA_PRIORITY = list(_CATS_LAST)
-_CAT_PRIORITY_MAP = {cat: 1 for cat in _CATS_LAST}
+CATEGORIA_PRIORITY = [
+    "HERBICIDAS", "FUNGICIDAS", "INSETICIDAS", "NEMATICIDAS",
+    "ADUBOS FOLIARES", "ADUBOS QUÍMICOS", "ADUBOS CORRETIVOS",
+    "ADJUVANTES", "ÓLEOS", "SEMENTES", "MEDICAMENTOS",
+]
+_CAT_PRIORITY_MAP = {cat: i for i, cat in enumerate(CATEGORIA_PRIORITY)}
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4575,7 +4557,8 @@ def get_validade_upload_date() -> str:
 # ══════════════════════════════════════════════════════════════════════════════
 
 def sort_categorias(cats):
-    return sorted(cats, key=lambda c: (1 if c.upper() in _CATS_LAST else 0, c))
+    mx = len(CATEGORIA_PRIORITY)
+    return sorted(cats, key=lambda c: (_CAT_PRIORITY_MAP.get(c, mx), c))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -5316,7 +5299,7 @@ def render_mapa_visual(conn):
     st.plotly_chart(fig_hm, use_container_width=True)
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia") -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia", sort_fn=None) -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
@@ -5413,7 +5396,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
     _CAT_DEFAULT = ("rgba(100,116,139,0.12)", "#94a3b8")
 
     parts = []
-    for cat in sort_categorias(list(categories.keys())):
+    _sort = sort_fn if sort_fn is not None else sort_categorias
+    for cat in _sort(list(categories.keys())):
         rows = categories[cat]
         prods = []
 
