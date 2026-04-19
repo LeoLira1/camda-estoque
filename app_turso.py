@@ -5426,19 +5426,19 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 status_c = str(r.get("status_ciclo", "") or "")
                 if status_c == "ok":
                     border_color = "#00d68f"
-                    card_bg = "#1a1d2e"
-                    qty_color = "#e8eaf0"
-                    card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #00d68f;"
+                    card_bg = "linear-gradient(135deg, rgba(0,214,143,0.42), rgba(0,130,75,0.32))"
+                    qty_color = "#ffffff"
+                    card_border = "border:2px solid rgba(0,214,143,0.75);"
                 elif status_c == "divergencia":
                     border_color = "#ff4757"
-                    card_bg = "linear-gradient(135deg, rgba(255,71,87,0.28), rgba(180,20,20,0.18))"
+                    card_bg = "linear-gradient(135deg, rgba(255,71,87,0.48), rgba(160,20,30,0.38))"
                     qty_color = "#ffffff"
-                    card_border = "border:2px solid rgba(255,71,87,0.7);"
+                    card_border = "border:2px solid rgba(255,71,87,0.80);"
                 else:
                     border_color = "#ffa502"
-                    card_bg = "linear-gradient(135deg, rgba(255,165,2,0.12), #1a1d2e)"
+                    card_bg = "linear-gradient(135deg, rgba(255,165,2,0.38), rgba(180,100,0,0.28))"
                     qty_color = "#e8eaf0"
-                    card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #ffa502;"
+                    card_border = "border:2px solid rgba(255,165,2,0.72);"
             elif qtd_av > 0:
                 border_color = "#f97316"
                 card_bg = "linear-gradient(135deg, rgba(249,115,22,0.08), #1a1d2e)"

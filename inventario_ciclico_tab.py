@@ -5,9 +5,9 @@ from datetime import datetime, timedelta, timezone
 import streamlit as st
 
 _BRT = timezone(timedelta(hours=-3))
-_COLS = 5  # cards por linha na grade
+_COLS = 4  # cards por linha na grade de categoria
 
-# Categorias agro-químicas ficam no FIM; tudo mais (loja/ferramentas/outros) vem PRIMEIRO
+# Categorias agro-químicas ficam no FIM; loja/ferramentas/outros vêm PRIMEIRO
 _CICLO_LAST = frozenset({
     "HERBICIDAS", "HERBICIDA",
     "FUNGICIDAS", "FUNGICIDA",
@@ -23,15 +23,15 @@ _CICLO_LAST = frozenset({
     "SUPLEMENTO MINERAL",
 })
 
-# 4 CSS rules estáticos (não crescem com o nº de produtos) — IDs com prefixo de status
+# CSS dos card-botões — 4 regras estáticas por prefixo de status
 _CSS_CARDS = """<style>
 [data-testid="stColumn"]:has([id^="cic-pend-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-pend-"]) [data-testid="stButton"] button {
-    background:rgba(255,165,2,0.20)!important;
-    border:none!important; border-left:3px solid #ffa502!important;
+    background:linear-gradient(135deg,rgba(255,165,2,0.38),rgba(180,100,0,0.28))!important;
+    border:2px solid rgba(255,165,2,0.72)!important;
     border-radius:10px!important; padding:10px 8px!important;
-    text-align:left!important; min-height:68px!important;
-    width:100%!important; color:#e8eaf0!important;
+    text-align:left!important; min-height:72px!important;
+    width:100%!important; color:#fff!important;
     font-family:'JetBrains Mono',monospace!important;
     font-size:0.63rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
@@ -39,11 +39,11 @@ _CSS_CARDS = """<style>
 }
 [data-testid="stColumn"]:has([id^="cic-ok-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-ok-"]) [data-testid="stButton"] button {
-    background:rgba(0,214,143,0.18)!important;
-    border:none!important; border-left:3px solid #00d68f!important;
+    background:linear-gradient(135deg,rgba(0,214,143,0.42),rgba(0,130,75,0.32))!important;
+    border:2px solid rgba(0,214,143,0.75)!important;
     border-radius:10px!important; padding:10px 8px!important;
-    text-align:left!important; min-height:68px!important;
-    width:100%!important; color:#e8eaf0!important;
+    text-align:left!important; min-height:72px!important;
+    width:100%!important; color:#fff!important;
     font-family:'JetBrains Mono',monospace!important;
     font-size:0.63rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
@@ -51,26 +51,24 @@ _CSS_CARDS = """<style>
 }
 [data-testid="stColumn"]:has([id^="cic-div-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-div-"]) [data-testid="stButton"] button {
-    background:rgba(255,71,87,0.22)!important;
-    border:none!important; border-left:3px solid #ff4757!important;
+    background:linear-gradient(135deg,rgba(255,71,87,0.48),rgba(160,20,30,0.38))!important;
+    border:2px solid rgba(255,71,87,0.80)!important;
     border-radius:10px!important; padding:10px 8px!important;
-    text-align:left!important; min-height:68px!important;
-    width:100%!important; color:#e8eaf0!important;
+    text-align:left!important; min-height:72px!important;
+    width:100%!important; color:#fff!important;
     font-family:'JetBrains Mono',monospace!important;
     font-size:0.63rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
     transition:opacity .12s,transform .1s!important;
 }
-/* Anel branco no card selecionado */
 [data-testid="stColumn"]:has([id^="cic-sel-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-sel-"]) [data-testid="stButton"] button {
-    outline:2px solid #ffffff!important; outline-offset:2px!important;
+    outline:3px solid #ffffff!important; outline-offset:2px!important;
 }
-/* Hover para qualquer card cíclico */
 [data-testid="stColumn"]:has([id^="cic-pend-"]) [data-testid="stButton"] button:hover,
 [data-testid="stColumn"]:has([id^="cic-ok-"]) [data-testid="stButton"] button:hover,
 [data-testid="stColumn"]:has([id^="cic-div-"]) [data-testid="stButton"] button:hover {
-    opacity:.82!important; transform:scale(1.025)!important;
+    opacity:.80!important; transform:scale(1.03)!important;
 }
 </style>"""
 
@@ -86,10 +84,8 @@ def _safe(codigo: str) -> str:
 
 
 def _status_prefix(status_c: str) -> str:
-    if status_c == "ok":
-        return "cic-ok-"
-    if status_c == "divergencia":
-        return "cic-div-"
+    if status_c == "ok":          return "cic-ok-"
+    if status_c == "divergencia": return "cic-div-"
     return "cic-pend-"
 
 
@@ -171,10 +167,9 @@ def _get_progresso_ciclo(get_db) -> dict:
         return {"total": 0, "ok": 0, "divergencia": 0, "pendente": 0}
 
 
-# ── Painel inline de conferência ──────────────────────────────────────────────
+# ── Painel de conferência ──────────────────────────────────────────────────────
 
-def _render_conferencia_panel(produto_row, get_db, sync_db):
-    """Renderiza o painel de OK / Divergência para o produto selecionado."""
+def _render_painel(produto_row, get_db, sync_db):
     sel_codigo = str(produto_row["codigo"])
     with st.container(border=True):
         col_info, col_close = st.columns([6, 1])
@@ -183,12 +178,12 @@ def _render_conferencia_panel(produto_row, get_db, sync_db):
             f"Categoria: {produto_row['categoria']} · "
             f"Sistema: **{produto_row['qtd_sistema']}** unidades"
         )
-        if col_close.button("✖", key="ciclo_fechar", help="Fechar"):
+        if col_close.button("✖", key="cic_fechar"):
             st.session_state.pop("ciclo_sel", None)
             st.rerun()
 
         col1, col2 = st.columns(2)
-        if col1.button("✅ Confirmar OK", use_container_width=True, type="primary", key="cic_btn_ok"):
+        if col1.button("✅ Confirmar OK", use_container_width=True, type="primary", key="cic_ok"):
             if _marcar_ciclo_ok(sel_codigo, get_db, sync_db):
                 st.session_state.pop("ciclo_sel", None)
                 st.toast(f"✅ {produto_row['produto']} confirmado OK", icon="🟢")
@@ -200,14 +195,50 @@ def _render_conferencia_panel(produto_row, get_db, sync_db):
                 "Quantidade física real",
                 min_value=0,
                 value=int(produto_row["qtd_sistema"]),
-                key="cic_qtd_real",
+                key="cic_qtd",
             )
             st.caption(f"Sistema diz: {produto_row['qtd_sistema']}")
-            if st.button("Salvar divergência", key="cic_salvar_div", type="primary", use_container_width=True):
+            if st.button("Salvar divergência", key="cic_salvar", type="primary", use_container_width=True):
                 if _marcar_ciclo_divergencia(sel_codigo, int(qtd_real), get_db, sync_db):
                     st.session_state.pop("ciclo_sel", None)
                     st.toast(f"⚠️ {produto_row['produto']}: divergência registrada", icon="🔴")
                     st.cache_data.clear()
+                    st.rerun()
+
+
+# ── Grid de cards por categoria ────────────────────────────────────────────────
+
+def _render_grid(cat_df, df, sel_codigo, short_name, get_db, sync_db):
+    """Renderiza o grid de cards clicáveis para uma categoria."""
+    st.markdown(_CSS_CARDS, unsafe_allow_html=True)
+
+    # Painel de conferência aparece ACIMA dos cards quando algo está selecionado
+    if sel_codigo:
+        sel_rows = df[df["codigo"].astype(str) == sel_codigo]
+        if not sel_rows.empty:
+            _render_painel(sel_rows.iloc[0], get_db, sync_db)
+
+    for row_start in range(0, len(cat_df), _COLS):
+        chunk = cat_df.iloc[row_start : row_start + _COLS]
+        cols = st.columns(_COLS)
+        for i, (_, prod) in enumerate(chunk.iterrows()):
+            status_c = str(prod.get("status_ciclo", "") or "")
+            prefix = _status_prefix(status_c)
+            safe = _safe(str(prod["codigo"]))
+            is_sel = sel_codigo == str(prod["codigo"])
+            label = f"{short_name(str(prod['produto']))}\n{prod['qtd_sistema']}"
+
+            with cols[i]:
+                marker = f'<div id="{prefix}{safe}" style="display:none"></div>'
+                if is_sel:
+                    marker += f'<div id="cic-sel-{safe}" style="display:none"></div>'
+                st.markdown(marker, unsafe_allow_html=True)
+
+                if st.button(label, key=f"cic_{prod['codigo']}"):
+                    if is_sel:
+                        st.session_state.pop("ciclo_sel", None)
+                    else:
+                        st.session_state["ciclo_sel"] = str(prod["codigo"])
                     st.rerun()
 
 
@@ -250,56 +281,56 @@ def build_inventario_ciclico_tab(
         key="inv_ciclico_filtro_cat",
     )
 
-    # ── Grade interativa (apenas quando categoria selecionada) ────────────────
     sel_codigo = st.session_state.get("ciclo_sel")
 
+    # ── TODOS: busca por nome ─────────────────────────────────────────────────
     if filtro_cat == "TODOS":
-        st.caption("Selecione uma categoria acima para conferir produtos clicando nos cards.")
+        busca = st.text_input(
+            "🔍 Buscar produto para conferir",
+            key="cic_busca_todos",
+            placeholder="Digite parte do nome...",
+        )
+        if busca and len(busca) >= 2:
+            matches = df[df["produto"].str.contains(busca, case=False, na=False)].head(30)
+            if not matches.empty:
+                def _lbl(r):
+                    sc = str(r.get("status_ciclo", "") or "")
+                    em = "🟢" if sc == "ok" else "🔴" if sc == "divergencia" else "🟡"
+                    return f"{em} {r['produto']}  ({r['categoria']}) — {r['qtd_sistema']}"
+
+                opts: dict = {"": None}
+                for _, r in matches.iterrows():
+                    opts[_lbl(r)] = str(r["codigo"])
+
+                escolha = st.selectbox("", list(opts.keys()), key="cic_sel_todos")
+                if escolha and opts[escolha]:
+                    sel_codigo = opts[escolha]
+                    st.session_state["ciclo_sel"] = sel_codigo
+
+            else:
+                st.caption("Nenhum produto encontrado.")
+
+        # Painel de conferência para produto buscado
+        if sel_codigo:
+            sel_rows = df[df["codigo"].astype(str) == sel_codigo]
+            if not sel_rows.empty:
+                _render_painel(sel_rows.iloc[0], get_db, sync_db)
+            else:
+                st.session_state.pop("ciclo_sel", None)
+
+    # ── Categoria específica: grid de cards ───────────────────────────────────
     else:
         cat_df = df[df["categoria"] == filtro_cat].sort_values("produto").reset_index(drop=True)
 
         if cat_df.empty:
             st.info(f"Nenhum produto na categoria {filtro_cat}.")
         else:
-            # Se produto selecionado não pertence a esta categoria, limpa seleção
+            # Limpa seleção se pertence a outra categoria
             if sel_codigo and sel_codigo not in set(cat_df["codigo"].astype(str)):
                 st.session_state.pop("ciclo_sel", None)
                 sel_codigo = None
 
-            # CSS estático (4 regras) — injetado 1x por categoria
-            st.markdown(_CSS_CARDS, unsafe_allow_html=True)
-
-            for row_start in range(0, len(cat_df), _COLS):
-                chunk = cat_df.iloc[row_start : row_start + _COLS]
-                cols = st.columns(_COLS)
-
-                for i, (_, prod) in enumerate(chunk.iterrows()):
-                    status_c = str(prod.get("status_ciclo", "") or "")
-                    prefix = _status_prefix(status_c)
-                    safe = _safe(str(prod["codigo"]))
-                    is_sel = sel_codigo == str(prod["codigo"])
-                    label = f"{short_name(str(prod['produto']))}\n{prod['qtd_sistema']}"
-
-                    with cols[i]:
-                        # Marcador de status (para cor) + marcador de seleção (para anel)
-                        marker_html = f'<div id="{prefix}{safe}" style="display:none"></div>'
-                        if is_sel:
-                            marker_html += f'<div id="cic-sel-{safe}" style="display:none"></div>'
-                        st.markdown(marker_html, unsafe_allow_html=True)
-
-                        if st.button(label, key=f"cic_{prod['codigo']}"):
-                            if is_sel:
-                                st.session_state.pop("ciclo_sel", None)
-                            else:
-                                st.session_state["ciclo_sel"] = str(prod["codigo"])
-                            st.rerun()
-
-                # Painel inline: aparece logo abaixo da linha onde o card foi clicado
-                chunk_codes = {str(r["codigo"]) for _, r in chunk.iterrows()}
-                if sel_codigo in chunk_codes:
-                    sel_rows = df[df["codigo"] == sel_codigo]
-                    if not sel_rows.empty:
-                        _render_conferencia_panel(sel_rows.iloc[0], get_db, sync_db)
+            _render_grid(cat_df, df, sel_codigo, short_name, get_db, sync_db)
 
     # ── Desfazer conferência ──────────────────────────────────────────────────
     with st.expander("🔧 Desfazer conferência (caso tenha marcado errado)"):
@@ -324,7 +355,12 @@ def build_inventario_ciclico_tab(
 
     st.divider()
 
-    # ── Treemap visual (visão geral de todo o estoque) ────────────────────────
+    # ── Treemap visual (visão geral — somente leitura) ────────────────────────
+    st.markdown(
+        '<div style="font-size:.7rem;color:#64748b;margin-bottom:4px;">'
+        '🗺️ Mapa visual — para conferir, use o filtro de categoria ou a busca acima</div>',
+        unsafe_allow_html=True,
+    )
     html_mapa = build_css_treemap(
         df,
         filter_cat=filtro_cat,
