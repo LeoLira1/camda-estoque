@@ -82,6 +82,60 @@ _CSS_CARDS = """<style>
 }
 </style>"""
 
+# JS injetado no iframe para tornar os cards do treemap clicáveis
+_JS_TREEMAP_CLICK = """
+<script>
+(function () {
+    var PLACEHOLDER = "ciclo-search-input";
+    var p = window.parent;
+    var pd = p.document;
+    var _timer;
+
+    function findInput() {
+        return pd.querySelector('input[placeholder="' + PLACEHOLDER + '"]');
+    }
+
+    function setReactValue(inp, val) {
+        try {
+            var setter = Object.getOwnPropertyDescriptor(
+                p.HTMLInputElement.prototype, 'value'
+            ).set;
+            setter.call(inp, val);
+            inp.dispatchEvent(new Event('input', { bubbles: true }));
+        } catch (e) { /* cross-origin blocked — no-op */ }
+    }
+
+    function attachClicks() {
+        var tiles = pd.querySelectorAll('.tm-tile[data-codigo]');
+        if (!tiles.length) { setTimeout(attachClicks, 600); return; }
+        tiles.forEach(function (t) {
+            if (t._cicloReady) return;
+            t._cicloReady = true;
+            t.style.cursor = 'pointer';
+            t.addEventListener('click', function (e) {
+                e.stopPropagation();
+                var cod = this.getAttribute('data-codigo');
+                if (!cod) return;
+                var inp = findInput();
+                if (inp) setReactValue(inp, cod);
+            });
+        });
+    }
+
+    attachClicks();
+
+    // Re-attacha após re-renders do Streamlit
+    new p.MutationObserver(function () {
+        clearTimeout(_timer);
+        _timer = setTimeout(attachClicks, 400);
+    }).observe(pd.body, { childList: true, subtree: true });
+})();
+</script>
+"""
+
+# Placeholder único que o JS usa para localizar o input
+_SEARCH_PLACEHOLDER = "ciclo-search-input"
+
 
 def _sort_ciclo(cats: list) -> list:
     first = sorted(c for c in cats if c.upper() not in _CICLO_LAST)
@@ -99,6 +153,17 @@ def _status_prefix(status_c: str) -> str:
     if status_c == "divergencia":
         return "cic-div-"
     return "cic-pend-"
+
+
+# ── Callback do input de busca ──────────────────────────────────────────────────
+
+def _on_busca_treemap():
+    """Chamado ao alterar o input de busca (digitação ou clique JS no treemap)."""
+    val = st.session_state.get("ciclo_busca_treemap", "").strip()
+    if val:
+        st.session_state["_ciclo_code_clicked"] = val
+    # Limpa input para que o mesmo código possa ser clicado novamente
+    st.session_state["ciclo_busca_treemap"] = ""
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
@@ -246,6 +311,27 @@ def build_inventario_ciclico_tab(
     df = get_current_stock()
     progresso = _get_progresso_ciclo(get_db)
 
+    # ── Processa clique no treemap (via JS → input → callback) ───────────────
+    # O callback _on_busca_treemap roda ANTES do corpo do script e seta esta chave.
+    # Usamos pop() para garantir comportamento one-shot: ao fechar o modal com X,
+    # a chave não existe mais e o modal não reabre.
+    _clicked = st.session_state.pop("_ciclo_code_clicked", None)
+    if _clicked:
+        _m = df[df["codigo"].astype(str) == str(_clicked).strip()]
+        if not _m.empty:
+            st.session_state["ciclo_sel"] = str(_m.iloc[0]["codigo"])
+            st.session_state["ciclo_dialog_open"] = True
+        else:
+            st.toast(f"⚠️ Código '{_clicked}' não encontrado.", icon="⚠️")
+
+    # ── Abre modal (one-shot: pop antes de chamar evita reabrir após X) ───────
+    if st.session_state.pop("ciclo_dialog_open", False):
+        _sc = st.session_state.get("ciclo_sel")
+        if _sc:
+            _sr = df[df["codigo"].astype(str) == str(_sc)]
+            if not _sr.empty:
+                _dialog_conferencia(_sr.iloc[0], get_db, sync_db)
+
     conferidos = progresso["ok"] + progresso["divergencia"]
     pct = (conferidos / max(progresso["total"], 1)) * 100
 
@@ -276,7 +362,7 @@ def build_inventario_ciclico_tab(
     sel_codigo = st.session_state.get("ciclo_sel")
 
     if filtro_cat == "TODOS":
-        st.caption("Selecione uma categoria acima para conferir produtos clicando nos cards.")
+        st.caption("Selecione uma categoria acima para conferir produtos clicando nos cards, ou clique diretamente no mapa abaixo.")
     else:
         cat_df = df[df["categoria"] == filtro_cat].sort_values("produto").reset_index(drop=True)
 
@@ -310,13 +396,8 @@ def build_inventario_ciclico_tab(
 
                         if st.button(label, key=f"cic_{prod['codigo']}"):
                             st.session_state["ciclo_sel"] = str(prod["codigo"])
+                            st.session_state["ciclo_dialog_open"] = True
                             st.rerun()
-
-            # Dialog modal: abre para o produto selecionado
-            if sel_codigo:
-                sel_rows = df[df["codigo"] == sel_codigo]
-                if not sel_rows.empty:
-                    _dialog_conferencia(sel_rows.iloc[0], get_db, sync_db)
 
     # ── Desfazer conferência ──────────────────────────────────────────────────
     with st.expander("🔧 Desfazer conferência (caso tenha marcado errado)"):
@@ -341,7 +422,30 @@ def build_inventario_ciclico_tab(
 
     st.divider()
 
-    # ── Treemap visual (visão geral de todo o estoque) ────────────────────────
+    # ── Treemap visual — cards clicáveis ──────────────────────────────────────
+
+    # Highlight do card selecionado no treemap
+    sel_codigo = st.session_state.get("ciclo_sel")
+    highlight_css = ""
+    if sel_codigo:
+        highlight_css = (
+            f'<style>.tm-tile[data-codigo="{sel_codigo}"]'
+            f'{{outline:3px solid rgba(255,255,255,0.85)!important;'
+            f'outline-offset:3px!important;}}</style>'
+        )
+    # Cursor pointer em todos os cards do treemap
+    highlight_css += "<style>.tm-tile{cursor:pointer!important;}</style>"
+    st.markdown(highlight_css, unsafe_allow_html=True)
+
+    st.caption("👆 Clique em qualquer card do mapa para conferir, ou digite o código:")
+    st.text_input(
+        "Busca",
+        key="ciclo_busca_treemap",
+        placeholder=_SEARCH_PLACEHOLDER,
+        on_change=_on_busca_treemap,
+        label_visibility="collapsed",
+    )
+
     html_mapa = build_css_treemap(
         df,
         filter_cat=filtro_cat,
@@ -350,3 +454,6 @@ def build_inventario_ciclico_tab(
         sort_fn=_sort_ciclo,
     )
     st.markdown(html_mapa, unsafe_allow_html=True)
+
+    # JS que faz os cards do treemap dispararem o input de busca ao serem clicados
+    st.components.v1.html(_JS_TREEMAP_CLICK, height=0)
