@@ -7726,7 +7726,7 @@ if has_mestre:
                                 f'<div style="background:#111827;border:1px solid #ff475750;border-left:3px solid #ff4757;border-radius:8px;'
                                 f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
                                 f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
-                                f'<br><span style="color:#64748b;font-size:0.67rem;">{_coop}</span></span>'
+                                f'<br><span style="color:#3b82f6;font-size:0.67rem;">{_coop}</span></span>'
                                 f'<span style="color:#ff4757;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
                         if len(_df_falta_i) > 10:
@@ -7743,7 +7743,7 @@ if has_mestre:
                                 f'<div style="background:#111827;border:1px solid #ffa50250;border-left:3px solid #ffa502;border-radius:8px;'
                                 f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
                                 f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
-                                f'<br><span style="color:#64748b;font-size:0.67rem;">{_coop}</span></span>'
+                                f'<br><span style="color:#3b82f6;font-size:0.67rem;">{_coop}</span></span>'
                                 f'<span style="color:#ffa502;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
                         if len(_df_sobra_i) > 10:
