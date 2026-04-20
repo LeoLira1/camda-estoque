@@ -7719,7 +7719,7 @@ if has_mestre:
                     if _df_falta_i.empty:
                         st.caption("Nenhum")
                     else:
-                        for _, _r in _df_falta_i.head(10).iterrows():
+                        for _, _r in _df_falta_i.iterrows():
                             _coop = str(_r.get("cooperado") or "")
                             _delta = int(_r["delta"])
                             st.markdown(
@@ -7729,14 +7729,12 @@ if has_mestre:
                                 f'<br><span style="color:#3b82f6;font-size:0.67rem;">{_coop}</span></span>'
                                 f'<span style="color:#ff4757;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
-                        if len(_df_falta_i) > 10:
-                            st.caption(f"+ {len(_df_falta_i)-10} itens — ver aba Divergências")
                 with _col_s:
                     st.markdown("**🟡 Sobrando**")
                     if _df_sobra_i.empty:
                         st.caption("Nenhum")
                     else:
-                        for _, _r in _df_sobra_i.head(10).iterrows():
+                        for _, _r in _df_sobra_i.iterrows():
                             _coop = str(_r.get("cooperado") or "")
                             _delta = int(_r["delta"])
                             st.markdown(
@@ -7746,8 +7744,6 @@ if has_mestre:
                                 f'<br><span style="color:#3b82f6;font-size:0.67rem;">{_coop}</span></span>'
                                 f'<span style="color:#ffa502;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
-                        if len(_df_sobra_i) > 10:
-                            st.caption(f"+ {len(_df_sobra_i)-10} itens — ver aba Divergências")
 
         # ── Produtos Vencendo ────────────────────────────────────────────────
         with st.expander(f"📅 Vencendo em 30 dias  —  {len(_df_venc_i)} lote(s)", expanded=True):
