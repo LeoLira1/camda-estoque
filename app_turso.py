@@ -7639,7 +7639,143 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_mural, t_ciclico = st.tabs(["🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "📌 Mural", "🔄 Inv. Cíclico"])
+    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_mural, t_ciclico = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "📌 Mural", "🔄 Inv. Cíclico"])
+
+    with t0:
+        # ── Dados ──────────────────────────────────────────────────────────
+        _df_d = get_divergencias()
+        _df_falta_i = _df_d[_df_d["status"] == "falta"] if not _df_d.empty else pd.DataFrame(columns=["id","codigo","produto","categoria","delta","status","cooperado","criado_em","qtd_sistema"])
+        _df_sobra_i = _df_d[_df_d["status"] == "sobra"] if not _df_d.empty else pd.DataFrame(columns=["id","codigo","produto","categoria","delta","status","cooperado","criado_em","qtd_sistema"])
+
+        _df_val_i = get_validade_lotes()
+        _hoje_i = datetime.now(tz=_BRT).date()
+        _lim30_i = _hoje_i + timedelta(days=30)
+        if not _df_val_i.empty and "VENCIMENTO" in _df_val_i.columns:
+            _df_venc_i = _df_val_i[
+                _df_val_i["VENCIMENTO"].notna() &
+                (_df_val_i["VENCIMENTO"].dt.date >= _hoje_i) &
+                (_df_val_i["VENCIMENTO"].dt.date <= _lim30_i)
+            ].sort_values("VENCIMENTO").copy()
+        else:
+            _df_venc_i = pd.DataFrame()
+
+        _df_par_i = get_produtos_parados(dias_min=90)
+        if _df_par_i is None:
+            _df_par_i = pd.DataFrame()
+
+        try:
+            _crit_rows_i = get_db().execute(
+                "SELECT codigo, produto, categoria, qtd_sistema FROM estoque_mestre "
+                "WHERE qtd_sistema > 0 AND qtd_sistema <= 10 ORDER BY qtd_sistema ASC LIMIT 100"
+            ).fetchall()
+            _df_crit_i = pd.DataFrame(_crit_rows_i, columns=["codigo", "produto", "categoria", "qtd"])
+        except Exception:
+            _df_crit_i = pd.DataFrame()
+
+        # ── Cards resumo ────────────────────────────────────────────────────
+        st.markdown(f"""
+        <div class="stat-row">
+          <div class="stat-card"><div class="stat-value red">{len(_df_falta_i)}</div><div class="stat-label">Faltando</div></div>
+          <div class="stat-card"><div class="stat-value amber">{len(_df_sobra_i)}</div><div class="stat-label">Sobrando</div></div>
+          <div class="stat-card"><div class="stat-value amber">{len(_df_venc_i)}</div><div class="stat-label">Vencendo 30d</div></div>
+          <div class="stat-card"><div class="stat-value" style="color:#94a3b8">{len(_df_par_i)}</div><div class="stat-label">Parados 90d+</div></div>
+          <div class="stat-card"><div class="stat-value blue">{len(_df_crit_i)}</div><div class="stat-label">Crítico ≤10</div></div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # ── Falta & Sobra ────────────────────────────────────────────────────
+        with st.expander(f"⚠️ Falta & Sobra  —  {len(_df_falta_i)} faltando · {len(_df_sobra_i)} sobrando", expanded=True):
+            if _df_falta_i.empty and _df_sobra_i.empty:
+                st.caption("✅ Nenhuma divergência registrada.")
+            else:
+                _col_f, _col_s = st.columns(2)
+                with _col_f:
+                    st.markdown("**🔴 Faltando**")
+                    if _df_falta_i.empty:
+                        st.caption("Nenhum")
+                    else:
+                        for _, _r in _df_falta_i.head(10).iterrows():
+                            _coop = str(_r.get("cooperado") or "")
+                            _sep = "  ·  " if _coop else ""
+                            st.markdown(
+                                f'<div style="background:#ff475712;border:1px solid #ff475730;border-radius:8px;'
+                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;">'
+                                f'<span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span><br>'
+                                f'<span style="color:#64748b;font-size:0.67rem;">{_coop}{_sep}Δ {int(_r["delta"]):+d}</span>'
+                                f'</div>', unsafe_allow_html=True)
+                        if len(_df_falta_i) > 10:
+                            st.caption(f"+ {len(_df_falta_i)-10} itens — ver aba Divergências")
+                with _col_s:
+                    st.markdown("**🟡 Sobrando**")
+                    if _df_sobra_i.empty:
+                        st.caption("Nenhum")
+                    else:
+                        for _, _r in _df_sobra_i.head(10).iterrows():
+                            _coop = str(_r.get("cooperado") or "")
+                            _sep = "  ·  " if _coop else ""
+                            st.markdown(
+                                f'<div style="background:#ffa50212;border:1px solid #ffa50230;border-radius:8px;'
+                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;">'
+                                f'<span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span><br>'
+                                f'<span style="color:#64748b;font-size:0.67rem;">{_coop}{_sep}Δ {int(_r["delta"]):+d}</span>'
+                                f'</div>', unsafe_allow_html=True)
+                        if len(_df_sobra_i) > 10:
+                            st.caption(f"+ {len(_df_sobra_i)-10} itens — ver aba Divergências")
+
+        # ── Produtos Vencendo ────────────────────────────────────────────────
+        with st.expander(f"📅 Vencendo em 30 dias  —  {len(_df_venc_i)} lote(s)", expanded=True):
+            if _df_venc_i.empty:
+                st.caption("✅ Nenhum lote vencendo nos próximos 30 dias.")
+            else:
+                for _, _r in _df_venc_i.head(10).iterrows():
+                    _dias_v = (_r["VENCIMENTO"].date() - _hoje_i).days
+                    _cor_v = "#ff4757" if _dias_v <= 7 else "#ffa502" if _dias_v <= 15 else "#f59e0b"
+                    st.markdown(
+                        f'<div style="background:#ffa50210;border:1px solid #ffa50230;border-radius:8px;'
+                        f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["PRODUTO"]}</span>'
+                        f'<br><span style="color:#64748b;font-size:0.67rem;">Lote: {_r["LOTE"]}  ·  {_r["GRUPO"]}</span></span>'
+                        f'<span style="color:{_cor_v};font-family:monospace;font-weight:700;font-size:0.9rem;">{_dias_v}d</span>'
+                        f'</div>', unsafe_allow_html=True)
+                if len(_df_venc_i) > 10:
+                    st.caption(f"+ {len(_df_venc_i)-10} lotes — ver aba Validade")
+
+        # ── Produtos Parados ─────────────────────────────────────────────────
+        with st.expander(f"⏳ Parados em Estoque (90d+)  —  {len(_df_par_i)} produto(s)", expanded=True):
+            if _df_par_i.empty:
+                st.caption("✅ Nenhum produto parado.")
+            else:
+                for _, _r in _df_par_i.head(10).iterrows():
+                    _dp = int(_r.get("dias_parado", 0))
+                    _uv = str(_r.get("ultima_venda_fmt", "Nunca"))
+                    _qe = int(_r.get("qtd_estoque", 0))
+                    st.markdown(
+                        f'<div style="background:#64748b0d;border:1px solid #64748b30;border-radius:8px;'
+                        f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
+                        f'<br><span style="color:#64748b;font-size:0.67rem;">{_r.get("grupo","")}  ·  Última venda: {_uv}</span></span>'
+                        f'<span style="color:#94a3b8;font-family:monospace;font-weight:700;font-size:0.85rem;">{_dp}d&nbsp;|&nbsp;{_qe}</span>'
+                        f'</div>', unsafe_allow_html=True)
+                if len(_df_par_i) > 10:
+                    st.caption(f"+ {len(_df_par_i)-10} produtos — ver aba Última Venda")
+
+        # ── Estoque Crítico ──────────────────────────────────────────────────
+        with st.expander(f"🚨 Estoque Crítico (≤ 10 un.)  —  {len(_df_crit_i)} produto(s)", expanded=True):
+            if _df_crit_i.empty:
+                st.caption("✅ Nenhum produto em nível crítico.")
+            else:
+                for _, _r in _df_crit_i.head(10).iterrows():
+                    _qc = int(_r["qtd"])
+                    _cor_c = "#ff4757" if _qc <= 3 else "#ffa502" if _qc <= 7 else "#3b82f6"
+                    st.markdown(
+                        f'<div style="background:#3b82f610;border:1px solid #3b82f630;border-radius:8px;'
+                        f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
+                        f'<br><span style="color:#64748b;font-size:0.67rem;">{_r.get("categoria","")}  ·  Cód: {_r["codigo"]}</span></span>'
+                        f'<span style="color:{_cor_c};font-family:monospace;font-weight:700;font-size:1rem;">{_qc}</span>'
+                        f'</div>', unsafe_allow_html=True)
+                if len(_df_crit_i) > 10:
+                    st.caption(f"+ {len(_df_crit_i)-10} produtos — ver aba Vendas → Estoque Crítico")
 
     with t1:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
