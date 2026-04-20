@@ -7698,7 +7698,7 @@ if has_mestre:
                             _coop = str(_r.get("cooperado") or "")
                             _sep = "  ·  " if _coop else ""
                             st.markdown(
-                                f'<div style="background:#ff475712;border:1px solid #ff475730;border-radius:8px;'
+                                f'<div style="background:#111827;border:1px solid #ff475750;border-left:3px solid #ff4757;border-radius:8px;'
                                 f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;">'
                                 f'<span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span><br>'
                                 f'<span style="color:#64748b;font-size:0.67rem;">{_coop}{_sep}Δ {int(_r["delta"]):+d}</span>'
@@ -7714,7 +7714,7 @@ if has_mestre:
                             _coop = str(_r.get("cooperado") or "")
                             _sep = "  ·  " if _coop else ""
                             st.markdown(
-                                f'<div style="background:#ffa50212;border:1px solid #ffa50230;border-radius:8px;'
+                                f'<div style="background:#111827;border:1px solid #ffa50250;border-left:3px solid #ffa502;border-radius:8px;'
                                 f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;">'
                                 f'<span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span><br>'
                                 f'<span style="color:#64748b;font-size:0.67rem;">{_coop}{_sep}Δ {int(_r["delta"]):+d}</span>'
@@ -7731,7 +7731,7 @@ if has_mestre:
                     _dias_v = (_r["VENCIMENTO"].date() - _hoje_i).days
                     _cor_v = "#ff4757" if _dias_v <= 7 else "#ffa502" if _dias_v <= 15 else "#f59e0b"
                     st.markdown(
-                        f'<div style="background:#ffa50210;border:1px solid #ffa50230;border-radius:8px;'
+                        f'<div style="background:#111827;border:1px solid #ffa50250;border-left:3px solid {_cor_v};border-radius:8px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
                         f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["PRODUTO"]}</span>'
                         f'<br><span style="color:#64748b;font-size:0.67rem;">Lote: {_r["LOTE"]}  ·  {_r["GRUPO"]}</span></span>'
@@ -7750,7 +7750,7 @@ if has_mestre:
                     _uv = str(_r.get("ultima_venda_fmt", "Nunca"))
                     _qe = int(_r.get("qtd_estoque", 0))
                     st.markdown(
-                        f'<div style="background:#64748b0d;border:1px solid #64748b30;border-radius:8px;'
+                        f'<div style="background:#111827;border:1px solid #334155;border-left:3px solid #64748b;border-radius:8px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
                         f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
                         f'<br><span style="color:#64748b;font-size:0.67rem;">{_r.get("grupo","")}  ·  Última venda: {_uv}</span></span>'
@@ -7768,7 +7768,7 @@ if has_mestre:
                     _qc = int(_r["qtd"])
                     _cor_c = "#ff4757" if _qc <= 3 else "#ffa502" if _qc <= 7 else "#3b82f6"
                     st.markdown(
-                        f'<div style="background:#3b82f610;border:1px solid #3b82f630;border-radius:8px;'
+                        f'<div style="background:#111827;border:1px solid #1e3a5f;border-left:3px solid {_cor_c};border-radius:8px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
                         f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
                         f'<br><span style="color:#64748b;font-size:0.67rem;">{_r.get("categoria","")}  ·  Cód: {_r["codigo"]}</span></span>'
