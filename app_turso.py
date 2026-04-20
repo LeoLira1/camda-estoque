@@ -7721,12 +7721,13 @@ if has_mestre:
                     else:
                         for _, _r in _df_falta_i.head(10).iterrows():
                             _coop = str(_r.get("cooperado") or "")
-                            _sep = "  ·  " if _coop else ""
+                            _delta = int(_r["delta"])
                             st.markdown(
                                 f'<div style="background:#111827;border:1px solid #ff475750;border-left:3px solid #ff4757;border-radius:8px;'
-                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;">'
-                                f'<span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span><br>'
-                                f'<span style="color:#64748b;font-size:0.67rem;">{_coop}{_sep}Δ {int(_r["delta"]):+d}</span>'
+                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
+                                f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
+                                f'<br><span style="color:#64748b;font-size:0.67rem;">{_coop}</span></span>'
+                                f'<span style="color:#ff4757;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">Δ {_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
                         if len(_df_falta_i) > 10:
                             st.caption(f"+ {len(_df_falta_i)-10} itens — ver aba Divergências")
@@ -7737,12 +7738,13 @@ if has_mestre:
                     else:
                         for _, _r in _df_sobra_i.head(10).iterrows():
                             _coop = str(_r.get("cooperado") or "")
-                            _sep = "  ·  " if _coop else ""
+                            _delta = int(_r["delta"])
                             st.markdown(
                                 f'<div style="background:#111827;border:1px solid #ffa50250;border-left:3px solid #ffa502;border-radius:8px;'
-                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;">'
-                                f'<span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span><br>'
-                                f'<span style="color:#64748b;font-size:0.67rem;">{_coop}{_sep}Δ {int(_r["delta"]):+d}</span>'
+                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
+                                f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
+                                f'<br><span style="color:#64748b;font-size:0.67rem;">{_coop}</span></span>'
+                                f'<span style="color:#ffa502;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">Δ {_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
                         if len(_df_sobra_i) > 10:
                             st.caption(f"+ {len(_df_sobra_i)-10} itens — ver aba Divergências")
