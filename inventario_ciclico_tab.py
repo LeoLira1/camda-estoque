@@ -41,7 +41,7 @@ _CSS_CARDS = """<style>
     text-align:left!important; min-height:68px!important;
     width:100%!important; color:#e8eaf0!important;
     font-family:'JetBrains Mono',monospace!important;
-    font-size:0.63rem!important; line-height:1.35!important;
+    font-size:0.75rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
     transition:opacity .12s,transform .1s!important;
 }
@@ -53,7 +53,7 @@ _CSS_CARDS = """<style>
     text-align:left!important; min-height:68px!important;
     width:100%!important; color:#ffffff!important;
     font-family:'JetBrains Mono',monospace!important;
-    font-size:0.63rem!important; line-height:1.35!important;
+    font-size:0.75rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
     transition:opacity .12s,transform .1s!important;
 }
@@ -65,7 +65,7 @@ _CSS_CARDS = """<style>
     text-align:left!important; min-height:68px!important;
     width:100%!important; color:#ffffff!important;
     font-family:'JetBrains Mono',monospace!important;
-    font-size:0.63rem!important; line-height:1.35!important;
+    font-size:0.75rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
     transition:opacity .12s,transform .1s!important;
 }
@@ -286,7 +286,7 @@ def build_inventario_ciclico_tab(
                     prefix = _status_prefix(status_c)
                     safe = _safe(str(prod["codigo"]))
                     is_sel = sel_codigo == str(prod["codigo"])
-                    label = f"{short_name(str(prod['produto']))}\n{prod['qtd_sistema']}"
+                    label = f"{prod['codigo']}\n{prod['qtd_sistema']}"
 
                     with cols[i]:
                         # Marcador de status (para cor) + marcador de seleção (para anel)
