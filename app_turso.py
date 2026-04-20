@@ -7697,6 +7697,10 @@ if has_mestre:
         except Exception:
             _df_crit_i = pd.DataFrame()
 
+        _df_esq_i = get_esquecidos_com_validade(dias_min=90)
+        if _df_esq_i is None:
+            _df_esq_i = pd.DataFrame()
+
         # ── Cards resumo ────────────────────────────────────────────────────
         st.markdown(f"""
         <div class="stat-row">
@@ -7762,6 +7766,33 @@ if has_mestre:
                         f'</div>', unsafe_allow_html=True)
                 if len(_df_venc_i) > 10:
                     st.caption(f"+ {len(_df_venc_i)-10} lotes — ver aba Validade")
+
+        # ── Produtos Esquecidos ──────────────────────────────────────────────
+        with st.expander(f"🌿 Produtos Esquecidos (sem venda 90d+)  —  {len(_df_esq_i)} produto(s)", expanded=False):
+            if _df_esq_i.empty:
+                st.caption("✅ Nenhum produto esquecido.")
+            else:
+                for _, _r in _df_esq_i.iterrows():
+                    _dp_e = int(_r.get("dias_parado", 0))
+                    _uv_e = str(_r.get("ultima_venda_fmt", "Nunca"))
+                    _qe_e = int(_r.get("qtd_estoque", 0))
+                    _gr_e = str(_r.get("grupo", ""))
+                    _dp_e_disp = "Nunca vendido" if _dp_e >= 9999 else f"{_dp_e}d"
+                    _cor_e = "#ff4757" if _dp_e >= 365 else "#ffa502" if _dp_e >= 180 else "#f59e0b"
+                    _venc_e = _r.get("vencimento")
+                    _venc_str = ""
+                    if pd.notna(_venc_e):
+                        try:
+                            _venc_str = f"  ·  Venc: {pd.Timestamp(_venc_e).strftime('%d/%m/%Y')}"
+                        except Exception:
+                            pass
+                    st.markdown(
+                        f'<div style="background:#111827;border:1px solid #22c55e30;border-left:3px solid {_cor_e};border-radius:8px;'
+                        f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
+                        f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
+                        f'<br><span style="color:#64748b;font-size:0.67rem;">{_gr_e}  ·  Última venda: {_uv_e}{_venc_str}</span></span>'
+                        f'<span style="color:{_cor_e};font-family:monospace;font-weight:700;font-size:0.85rem;">{_dp_e_disp}&nbsp;|&nbsp;{_qe_e}</span>'
+                        f'</div>', unsafe_allow_html=True)
 
         # ── Produtos Parados ─────────────────────────────────────────────────
         with st.expander(f"⏳ Parados em Estoque (90d+)  —  {len(_df_par_i)} produto(s)", expanded=True):
