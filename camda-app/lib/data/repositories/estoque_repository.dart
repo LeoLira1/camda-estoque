@@ -169,6 +169,48 @@ class EstoqueRepository {
     );
   }
 
+  /// Produtos sem contagem há mais de [diasSemContagem] dias (parados em estoque).
+  Future<List<Produto>> getParados({int diasSemContagem = 90}) async {
+    final limiteData = DateTime.now()
+        .subtract(Duration(days: diasSemContagem))
+        .toIso8601String()
+        .substring(0, 10);
+    final ph = _produtosIgnorados.isNotEmpty
+        ? 'AND UPPER(TRIM(produto)) NOT IN (${_produtosIgnorados.map((_) => '?').join(', ')})'
+        : '';
+    final result = await _client.query('''
+      SELECT codigo, produto, categoria, qtd_sistema, qtd_fisica,
+             diferenca, nota, status, ultima_contagem, criado_em,
+             COALESCE(observacoes, '') as observacoes
+      FROM estoque_mestre
+      WHERE (ultima_contagem IS NULL OR ultima_contagem = ''
+             OR DATE(ultima_contagem) < DATE(?))
+      $ph
+      ORDER BY ultima_contagem ASC
+      LIMIT 100
+    ''', [limiteData, ..._produtosIgnorados]);
+    if (result.hasError) throw TursoException(result.error!);
+    return result.toMaps().map(Produto.fromMap).toList();
+  }
+
+  /// Produtos com qtd_sistema entre 1 e [limiteQtd] (estoque crítico).
+  Future<List<Produto>> getCriticos({int limiteQtd = 10}) async {
+    final ph = _produtosIgnorados.isNotEmpty
+        ? 'AND UPPER(TRIM(produto)) NOT IN (${_produtosIgnorados.map((_) => '?').join(', ')})'
+        : '';
+    final result = await _client.query('''
+      SELECT codigo, produto, categoria, qtd_sistema, qtd_fisica,
+             diferenca, nota, status, ultima_contagem, criado_em,
+             COALESCE(observacoes, '') as observacoes
+      FROM estoque_mestre
+      WHERE qtd_sistema > 0 AND qtd_sistema <= ? $ph
+      ORDER BY qtd_sistema ASC
+      LIMIT 100
+    ''', [limiteQtd, ..._produtosIgnorados]);
+    if (result.hasError) throw TursoException(result.error!);
+    return result.toMaps().map(Produto.fromMap).toList();
+  }
+
   static int _toInt(dynamic v) {
     if (v == null) return 0;
     if (v is int) return v;
