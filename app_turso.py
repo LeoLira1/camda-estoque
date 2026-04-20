@@ -575,6 +575,31 @@ st.markdown("""
         font-weight: 700; margin-bottom: 8px;
     }
     .tm-av { font-size: 0.5rem; font-weight: 700; margin-top: 2px; }
+    /* ── Expander: fundo escuro e texto legível ─────────────────────────── */
+    [data-testid="stExpander"] {
+        background: #111827 !important;
+        border: 1px solid #1e293b !important;
+        border-radius: 10px !important;
+    }
+    [data-testid="stExpander"] summary {
+        background: #111827 !important;
+        color: #e0e6ed !important;
+    }
+    [data-testid="stExpander"] summary:hover {
+        background: #1a2332 !important;
+        color: #ffffff !important;
+    }
+    [data-testid="stExpander"] summary p,
+    [data-testid="stExpander"] summary span {
+        color: #e0e6ed !important;
+    }
+    .stat-value-lg {
+        font-family: 'JetBrains Mono', monospace; font-size: 2rem;
+        font-weight: 700; color: #00d68f;
+    }
+    .stat-value-lg.red { color: #ff4757; }
+    .stat-value-lg.amber { color: #ffa502; }
+    .stat-value-lg.blue { color: #3b82f6; }
     /* ── Streamlit tabs: sempre scrollável ─────────────────────────────── */
     .stTabs [data-baseweb="tab-list"] {
         flex-wrap: nowrap !important;
@@ -7675,11 +7700,11 @@ if has_mestre:
         # ── Cards resumo ────────────────────────────────────────────────────
         st.markdown(f"""
         <div class="stat-row">
-          <div class="stat-card"><div class="stat-value red">{len(_df_falta_i)}</div><div class="stat-label">Faltando</div></div>
-          <div class="stat-card"><div class="stat-value amber">{len(_df_sobra_i)}</div><div class="stat-label">Sobrando</div></div>
-          <div class="stat-card"><div class="stat-value amber">{len(_df_venc_i)}</div><div class="stat-label">Vencendo 30d</div></div>
-          <div class="stat-card"><div class="stat-value" style="color:#94a3b8">{len(_df_par_i)}</div><div class="stat-label">Parados 90d+</div></div>
-          <div class="stat-card"><div class="stat-value blue">{len(_df_crit_i)}</div><div class="stat-label">Crítico ≤10</div></div>
+          <div class="stat-card"><div class="stat-value-lg red">{len(_df_falta_i)}</div><div class="stat-label">Faltando</div></div>
+          <div class="stat-card"><div class="stat-value-lg amber">{len(_df_sobra_i)}</div><div class="stat-label">Sobrando</div></div>
+          <div class="stat-card"><div class="stat-value-lg amber">{len(_df_venc_i)}</div><div class="stat-label">Vencendo 30d</div></div>
+          <div class="stat-card"><div class="stat-value-lg" style="color:#94a3b8">{len(_df_par_i)}</div><div class="stat-label">Parados 90d+</div></div>
+          <div class="stat-card"><div class="stat-value-lg blue">{len(_df_crit_i)}</div><div class="stat-label">Crítico ≤10</div></div>
         </div>
         """, unsafe_allow_html=True)
 
