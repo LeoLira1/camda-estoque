@@ -5486,17 +5486,27 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 qty_color = "#ffffff"
                 card_border = "border:2px solid rgba(6,182,212,0.7);"
 
-            # Category badge
+            # Category badge (ou código do produto no modo cíclico)
             cat_upper = str(r["categoria"]).strip().upper()
             cat_bg_c, cat_fg_c = _CAT_STYLES.get(cat_upper, _CAT_DEFAULT)
-            cat_badge = (
-                f'<div style="display:inline-flex;align-items:center;gap:5px;'
-                f'font-size:9px;text-transform:uppercase;letter-spacing:1.2px;'
-                f'font-weight:600;padding:3px 8px;border-radius:6px;'
-                f'background:{cat_bg_c};color:{cat_fg_c};margin-bottom:10px;flex-shrink:0;">'
-                f'<span style="width:6px;height:6px;border-radius:50%;background:{border_color};flex-shrink:0;"></span>'
-                f'{cat_upper}</div>'
-            )
+            if color_mode == "ciclico":
+                cat_badge = (
+                    f'<div style="display:inline-flex;align-items:center;gap:5px;'
+                    f'font-size:11px;font-family:\'JetBrains Mono\',monospace;font-weight:600;'
+                    f'padding:3px 8px;border-radius:6px;'
+                    f'background:rgba(255,255,255,0.07);color:#e8eaf0;margin-bottom:10px;flex-shrink:0;">'
+                    f'<span style="width:6px;height:6px;border-radius:50%;background:{border_color};flex-shrink:0;"></span>'
+                    f'{cod_str}</div>'
+                )
+            else:
+                cat_badge = (
+                    f'<div style="display:inline-flex;align-items:center;gap:5px;'
+                    f'font-size:9px;text-transform:uppercase;letter-spacing:1.2px;'
+                    f'font-weight:600;padding:3px 8px;border-radius:6px;'
+                    f'background:{cat_bg_c};color:{cat_fg_c};margin-bottom:10px;flex-shrink:0;">'
+                    f'<span style="width:6px;height:6px;border-radius:50%;background:{border_color};flex-shrink:0;"></span>'
+                    f'{cat_upper}</div>'
+                )
 
             # Diff / avaria badge (top-right)
             if qtd_av > 0:
