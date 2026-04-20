@@ -2,8 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/constants/app_constants.dart';
+import '../../core/utils/date_utils.dart';
 import '../../data/models/mapa_posicao.dart';
+import '../../data/models/produto.dart';
+import '../../data/models/validade_lote.dart';
 import '../../data/repositories/mapa_repository.dart';
+import '../../data/repositories/estoque_repository.dart';
+import '../../data/repositories/validade_repository.dart';
 import '../../shared/widgets/loading_widget.dart' as lw;
 import '../../shared/widgets/glass_card.dart';
 
@@ -17,13 +22,14 @@ class MapaScreen extends StatefulWidget {
 class _MapaScreenState extends State<MapaScreen>
     with SingleTickerProviderStateMixin {
   final _repo = MapaRepository();
+  final _estoqueRepo = EstoqueRepository();
+  final _validadeRepo = ValidadeRepository();
   late TabController _tabController;
 
+  // Mapa data
   List<Rack> _racks = [];
   List<MapaPosicao> _todosPaletes = [];
   Map<String, int> _ocupacao = {};
-  bool _loading = true;
-  String? _error;
   String? _selectedRack;
   String _selectedFace = 'A';
   String _searchQuery = '';
@@ -31,10 +37,20 @@ class _MapaScreenState extends State<MapaScreen>
   bool _searching = false;
   final _searchCtrl = TextEditingController();
 
+  // Info tab data
+  List<Produto> _produtosFalta = [];
+  List<Produto> _produtosSobra = [];
+  List<ValidadeLote> _loteVencendo = [];
+  List<Produto> _produtosParados = [];
+  List<Produto> _estoqueCritico = [];
+
+  bool _loading = true;
+  String? _error;
+
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     _loadData();
   }
 
@@ -52,12 +68,22 @@ class _MapaScreenState extends State<MapaScreen>
         _repo.getRacks(),
         _repo.getTodosPaletes(),
         _repo.getOcupacao(),
+        _estoqueRepo.getAll(status: 'falta'),
+        _estoqueRepo.getAll(status: 'sobra'),
+        _validadeRepo.getProximosAoVencer(dias: 30),
+        _estoqueRepo.getParados(),
+        _estoqueRepo.getCriticos(),
       ]);
       if (!mounted) return;
       setState(() {
         _racks = results[0] as List<Rack>;
         _todosPaletes = results[1] as List<MapaPosicao>;
         _ocupacao = results[2] as Map<String, int>;
+        _produtosFalta = results[3] as List<Produto>;
+        _produtosSobra = results[4] as List<Produto>;
+        _loteVencendo = results[5] as List<ValidadeLote>;
+        _produtosParados = results[6] as List<Produto>;
+        _estoqueCritico = results[7] as List<Produto>;
         _selectedRack = _racks.isNotEmpty ? _racks.first.rackId : null;
         _loading = false;
       });
@@ -94,7 +120,9 @@ class _MapaScreenState extends State<MapaScreen>
         ],
         bottom: TabBar(
           controller: _tabController,
+          isScrollable: true,
           tabs: const [
+            Tab(text: 'Info'),
             Tab(text: 'Racks'),
             Tab(text: 'Buscar'),
             Tab(text: 'Ocupação'),
@@ -109,11 +137,261 @@ class _MapaScreenState extends State<MapaScreen>
               : TabBarView(
                   controller: _tabController,
                   children: [
+                    _buildInfoTab(),
                     _buildRacksTab(),
                     _buildBuscarTab(),
                     _buildOcupacaoTab(),
                   ],
                 ),
+    );
+  }
+
+  // ── Aba Info ─────────────────────────────────────────────────────────────────
+
+  Widget _buildInfoTab() {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _infoCard(
+            title: 'Falta & Sobra',
+            icon: Icons.swap_vert_circle_outlined,
+            color: AppColors.red,
+            badge: '${_produtosFalta.length + _produtosSobra.length}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_produtosFalta.isNotEmpty) ...[
+                  _infoSubHeader('Faltando', _produtosFalta.length, AppColors.red),
+                  ..._produtosFalta.take(8).map((p) => _produtoRow(p, AppColors.red)),
+                ],
+                if (_produtosFalta.isNotEmpty && _produtosSobra.isNotEmpty)
+                  const Divider(height: 16, color: AppColors.surfaceBorder),
+                if (_produtosSobra.isNotEmpty) ...[
+                  _infoSubHeader('Sobrando', _produtosSobra.length, AppColors.amber),
+                  ..._produtosSobra.take(8).map((p) => _produtoRow(p, AppColors.amber)),
+                ],
+                if (_produtosFalta.isEmpty && _produtosSobra.isEmpty)
+                  _emptyHint('Sem divergências de estoque'),
+                _maisItens(_produtosFalta.length + _produtosSobra.length, 16),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _infoCard(
+            title: 'Vencendo em 30 dias',
+            icon: Icons.event_busy_outlined,
+            color: AppColors.statusAvaria,
+            badge: '${_loteVencendo.length}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_loteVencendo.isEmpty)
+                  _emptyHint('Nenhum lote vencendo nos próximos 30 dias'),
+                ..._loteVencendo.take(8).map((l) => _loteRow(l)),
+                _maisItens(_loteVencendo.length, 8),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _infoCard(
+            title: 'Parados em Estoque',
+            icon: Icons.hourglass_empty_outlined,
+            color: AppColors.textMuted,
+            badge: '${_produtosParados.length}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_produtosParados.isEmpty)
+                  _emptyHint('Nenhum produto parado'),
+                ..._produtosParados.take(8).map((p) => _paradoRow(p)),
+                _maisItens(_produtosParados.length, 8),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _infoCard(
+            title: 'Estoque Crítico',
+            icon: Icons.warning_amber_outlined,
+            color: AppColors.blue,
+            badge: '${_estoqueCritico.length}',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_estoqueCritico.isEmpty)
+                  _emptyHint('Nenhum produto em nível crítico'),
+                ..._estoqueCritico.take(8).map((p) => _criticoRow(p)),
+                _maisItens(_estoqueCritico.length, 8),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoCard({
+    required String title,
+    required IconData icon,
+    required Color color,
+    required String badge,
+    required Widget child,
+  }) {
+    return GlassCard(
+      borderRadius: 14,
+      enableBlur: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontFamily: 'Outfit',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(badge, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          child,
+        ],
+      ),
+    ).animate().fadeIn(duration: 350.ms);
+  }
+
+  Widget _infoSubHeader(String label, int count, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(children: [
+        Container(width: 3, height: 14, color: color, margin: const EdgeInsets.only(right: 6)),
+        Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color)),
+        const SizedBox(width: 6),
+        Text('($count)', style: const TextStyle(fontSize: 10, color: AppColors.textDisabled)),
+      ]),
+    );
+  }
+
+  Widget _emptyHint(String msg) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Text(msg, style: const TextStyle(fontSize: 12, color: AppColors.textMuted, fontStyle: FontStyle.italic)),
+  );
+
+  Widget _maisItens(int total, int shown) {
+    if (total <= shown) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Text(
+        '+ ${total - shown} itens. Acesse a tela correspondente para ver todos.',
+        style: const TextStyle(fontSize: 10, color: AppColors.textDisabled, fontStyle: FontStyle.italic),
+      ),
+    );
+  }
+
+  Widget _produtoRow(Produto p, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        Container(
+          width: 30, height: 30,
+          decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(7)),
+          child: Icon(Icons.inventory_2_outlined, color: color, size: 15),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.produto, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text('${p.codigo}  ·  ${p.categoria}', style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+          ]),
+        ),
+        Text('${p.qtdSistema}', style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 14, fontWeight: FontWeight.w700, color: color)),
+      ]),
+    );
+  }
+
+  Widget _loteRow(ValidadeLote l) {
+    final dias = l.diasParaVencer;
+    final color = l.isVencido ? AppColors.red : l.isCritico ? AppColors.statusAvaria : AppColors.amber;
+    final diasLabel = l.isVencido ? 'Vencido há ${dias.abs()}d' : 'Vence em ${dias}d';
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        Container(
+          width: 30, height: 30,
+          decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(7)),
+          child: Icon(Icons.event_outlined, color: color, size: 15),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(l.produto, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text('Lote: ${l.lote}  ·  ${l.grupo}', style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+          ]),
+        ),
+        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          Text(diasLabel, style: TextStyle(fontFamily: 'JetBrainsMono', fontSize: 10, fontWeight: FontWeight.w600, color: color)),
+          Text(CamdaDateUtils.formatDateStr(l.vencimento), style: const TextStyle(fontSize: 9, color: AppColors.textDisabled)),
+        ]),
+      ]),
+    );
+  }
+
+  Widget _paradoRow(Produto p) {
+    final ultimaContagem = p.ultimaContagem.isEmpty ? 'Nunca contado' : CamdaDateUtils.formatDateStr(p.ultimaContagem);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        Container(
+          width: 30, height: 30,
+          decoration: BoxDecoration(color: AppColors.textMuted.withOpacity(0.1), borderRadius: BorderRadius.circular(7)),
+          child: const Icon(Icons.hourglass_empty_outlined, color: AppColors.textMuted, size: 15),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.produto, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(p.categoria, style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+          ]),
+        ),
+        Text(ultimaContagem, style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 9, color: AppColors.textDisabled)),
+      ]),
+    );
+  }
+
+  Widget _criticoRow(Produto p) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(children: [
+        Container(
+          width: 30, height: 30,
+          decoration: BoxDecoration(color: AppColors.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(7)),
+          child: const Icon(Icons.warning_amber_outlined, color: AppColors.blue, size: 15),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.produto, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(p.categoria, style: const TextStyle(fontSize: 10, color: AppColors.textMuted)),
+          ]),
+        ),
+        Text('${p.qtdSistema}', style: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 14, fontWeight: FontWeight.w700, color: AppColors.blue)),
+      ]),
     );
   }
 

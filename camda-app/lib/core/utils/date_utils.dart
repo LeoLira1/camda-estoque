@@ -44,6 +44,12 @@ class CamdaDateUtils {
     return vencDate.difference(hojeDate).inDays;
   }
 
+  /// Formata uma string de data (ISO 8601 ou dd/MM/yyyy) para dd/MM/yyyy.
+  static String formatDateStr(String? s) {
+    final dt = parseFlexible(s);
+    return dt != null ? formatDate(dt) : (s ?? '');
+  }
+
   /// Parseia string ISO 8601 ou dd/MM/yyyy retornando DateTime ou null.
   static DateTime? parseFlexible(String? s) {
     if (s == null || s.isEmpty) return null;
