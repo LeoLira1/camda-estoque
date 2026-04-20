@@ -179,44 +179,58 @@ def _get_progresso_ciclo(get_db) -> dict:
         return {"total": 0, "ok": 0, "divergencia": 0, "pendente": 0}
 
 
-# ── Painel inline de conferência ──────────────────────────────────────────────
+# ── Modal de conferência ──────────────────────────────────────────────────────
 
-def _render_conferencia_panel(produto_row, get_db, sync_db):
-    """Renderiza o painel de OK / Divergência para o produto selecionado."""
+@st.dialog("Conferência de Estoque", width="small")
+def _dialog_conferencia(produto_row, get_db, sync_db):
+    """Modal para confirmar quantidade OK ou registrar divergência."""
     sel_codigo = str(produto_row["codigo"])
-    with st.container(border=True):
-        col_info, col_close = st.columns([6, 1])
-        col_info.markdown(f"**{produto_row['produto']}**")
-        col_info.caption(
-            f"Categoria: {produto_row['categoria']} · "
-            f"Sistema: **{produto_row['qtd_sistema']}** unidades"
+    qtd_sistema = int(produto_row["qtd_sistema"])
+
+    st.markdown(f"**{produto_row['produto']}**")
+    st.caption(f"Categoria: {produto_row['categoria']} · Código: {sel_codigo}")
+    st.divider()
+
+    col_lbl, col_val = st.columns([3, 1])
+    col_lbl.markdown("Quantidade no sistema")
+    col_val.markdown(f"**{qtd_sistema}**")
+
+    qtd_real = st.number_input(
+        "Quantidade física contada",
+        min_value=0,
+        value=qtd_sistema,
+        key="cic_qtd_real",
+    )
+
+    diferenca = int(qtd_real) - qtd_sistema
+    if diferenca == 0:
+        st.markdown(
+            "<span style='color:#00d68f;font-size:0.85rem'>✓ Sem diferença</span>",
+            unsafe_allow_html=True,
         )
-        if col_close.button("✖", key="ciclo_fechar", help="Fechar"):
+    else:
+        cor = "#ff4757" if diferenca < 0 else "#ffa502"
+        st.markdown(
+            f"<span style='color:{cor};font-size:0.85rem'>Diferença: {diferenca:+d} unidades</span>",
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+    col1, col2 = st.columns(2)
+
+    if col1.button("✅ Quantidade OK", use_container_width=True, type="primary", key="cic_dialog_ok"):
+        if _marcar_ciclo_ok(sel_codigo, get_db, sync_db):
             st.session_state.pop("ciclo_sel", None)
+            st.toast(f"✅ {produto_row['produto']} confirmado OK", icon="🟢")
+            st.cache_data.clear()
             st.rerun()
 
-        col1, col2 = st.columns(2)
-        if col1.button("✅ Confirmar OK", use_container_width=True, type="primary", key="cic_btn_ok"):
-            if _marcar_ciclo_ok(sel_codigo, get_db, sync_db):
-                st.session_state.pop("ciclo_sel", None)
-                st.toast(f"✅ {produto_row['produto']} confirmado OK", icon="🟢")
-                st.cache_data.clear()
-                st.rerun()
-
-        with col2.popover("⚠️ Divergência", use_container_width=True):
-            qtd_real = st.number_input(
-                "Quantidade física real",
-                min_value=0,
-                value=int(produto_row["qtd_sistema"]),
-                key="cic_qtd_real",
-            )
-            st.caption(f"Sistema diz: {produto_row['qtd_sistema']}")
-            if st.button("Salvar divergência", key="cic_salvar_div", type="primary", use_container_width=True):
-                if _marcar_ciclo_divergencia(sel_codigo, int(qtd_real), get_db, sync_db):
-                    st.session_state.pop("ciclo_sel", None)
-                    st.toast(f"⚠️ {produto_row['produto']}: divergência registrada", icon="🔴")
-                    st.cache_data.clear()
-                    st.rerun()
+    if col2.button("⚠️ Divergência", use_container_width=True, key="cic_dialog_div"):
+        if _marcar_ciclo_divergencia(sel_codigo, int(qtd_real), get_db, sync_db):
+            st.session_state.pop("ciclo_sel", None)
+            st.toast(f"⚠️ {produto_row['produto']}: divergência registrada", icon="🔴")
+            st.cache_data.clear()
+            st.rerun()
 
 
 # ── Main tab ──────────────────────────────────────────────────────────────────
@@ -289,25 +303,20 @@ def build_inventario_ciclico_tab(
                     label = f"{prod['codigo']}\n{prod['qtd_sistema']}"
 
                     with cols[i]:
-                        # Marcador de status (para cor) + marcador de seleção (para anel)
                         marker_html = f'<div id="{prefix}{safe}" style="display:none"></div>'
                         if is_sel:
                             marker_html += f'<div id="cic-sel-{safe}" style="display:none"></div>'
                         st.markdown(marker_html, unsafe_allow_html=True)
 
                         if st.button(label, key=f"cic_{prod['codigo']}"):
-                            if is_sel:
-                                st.session_state.pop("ciclo_sel", None)
-                            else:
-                                st.session_state["ciclo_sel"] = str(prod["codigo"])
+                            st.session_state["ciclo_sel"] = str(prod["codigo"])
                             st.rerun()
 
-                # Painel inline: aparece logo abaixo da linha onde o card foi clicado
-                chunk_codes = {str(r["codigo"]) for _, r in chunk.iterrows()}
-                if sel_codigo in chunk_codes:
-                    sel_rows = df[df["codigo"] == sel_codigo]
-                    if not sel_rows.empty:
-                        _render_conferencia_panel(sel_rows.iloc[0], get_db, sync_db)
+            # Dialog modal: abre para o produto selecionado
+            if sel_codigo:
+                sel_rows = df[df["codigo"] == sel_codigo]
+                if not sel_rows.empty:
+                    _dialog_conferencia(sel_rows.iloc[0], get_db, sync_db)
 
     # ── Desfazer conferência ──────────────────────────────────────────────────
     with st.expander("🔧 Desfazer conferência (caso tenha marcado errado)"):
