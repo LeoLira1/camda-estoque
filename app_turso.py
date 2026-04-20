@@ -7727,7 +7727,7 @@ if has_mestre:
                                 f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
                                 f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
                                 f'<br><span style="color:#64748b;font-size:0.67rem;">{_coop}</span></span>'
-                                f'<span style="color:#ff4757;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">Δ {_delta:+d}</span>'
+                                f'<span style="color:#ff4757;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
                         if len(_df_falta_i) > 10:
                             st.caption(f"+ {len(_df_falta_i)-10} itens — ver aba Divergências")
@@ -7744,7 +7744,7 @@ if has_mestre:
                                 f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
                                 f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
                                 f'<br><span style="color:#64748b;font-size:0.67rem;">{_coop}</span></span>'
-                                f'<span style="color:#ffa502;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">Δ {_delta:+d}</span>'
+                                f'<span style="color:#ffa502;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
                         if len(_df_sobra_i) > 10:
                             st.caption(f"+ {len(_df_sobra_i)-10} itens — ver aba Divergências")
