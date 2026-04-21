@@ -1961,7 +1961,7 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
   <div style="font-size:10px;font-weight:700;letter-spacing:2px;color:{c['glow']};opacity:0.85;">
     Nº {index + 1}
   </div>
-  <svg viewBox="0 0 300 235" width="138" height="112" xmlns="http://www.w3.org/2000/svg">
+  <svg viewBox="0 0 300 235" width="138" height="112" xmlns="http://www.w3.org/2000/svg" style="overflow:hidden;display:block;">
     <defs>
       <style>@keyframes wave_{bid}{{0%{{transform:translateX(0)}}100%{{transform:translateX(-256px)}}}}</style>
       <linearGradient id="lq_{bid}" x1="0%" y1="0%" x2="0%" y2="100%">
@@ -8967,7 +8967,7 @@ new Chart(document.getElementById('coop-chart'),{
                         + _foto_cards_html
                         + '</div>'
                     )
-                    _cv1.html(_galoes_container, height=220 if _has_foto else 180, scrolling=False)
+                    _cv1.html(_galoes_container, height=210 if _has_foto else 150, scrolling=False)
 
                 # Chave versionada: incrementar após salvar reseta o widget,
                 # evitando que o Streamlit reinsira a mesma foto a cada rerun.
