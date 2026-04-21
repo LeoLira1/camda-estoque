@@ -8929,10 +8929,6 @@ new Chart(document.getElementById('coop-chart'),{
                     f'{tempo_av}</span>'
                     f'<div style="color:#e0e6ed;font-weight:800;font-size:1.15rem;margin-top:4px;">'
                     f'{av["produto"]}</div>'
-                    f'<div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:2px;">'
-                    f'<span style="color:{accent}99;">'
-                    f'{len(unidades)} {"unidade" if len(unidades)==1 else "unidades"} danificadas</span>'
-                    f'</div>'
                     + "</div>",
                     unsafe_allow_html=True
                 )
