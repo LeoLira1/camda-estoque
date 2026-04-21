@@ -1937,7 +1937,6 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
     pts += [f"{22 + body_w * 2},{BY}", f"22,{BY}"]
     wave_d = "M " + " L ".join(pts) + " Z"
 
-    status_txt = "✓ OK" if pct > 60 else ("⚠ Baixo" if pct > 25 else "● Crítico")
     liq_block = ""
     if pct > 0.1:
         liq_block = f"""
@@ -2014,10 +2013,6 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
     <text x="150" y="163" font-family="monospace" font-size="14" font-weight="700"
           fill="{c['glow']}" text-anchor="middle" filter="url(#txt_{bid})">{pct:.0f}%</text>
   </svg>
-  <div style="font-size:9px;font-weight:700;padding:2px 10px;border-radius:999px;
-              background:{c['glow']}18;border:1px solid {c['glow']}35;color:{c['glow']};">
-    {status_txt}
-  </div>
 </div>"""
 
 
@@ -8935,12 +8930,9 @@ new Chart(document.getElementById('coop-chart'),{
                     f'<div style="color:#e0e6ed;font-weight:800;font-size:1.15rem;margin-top:4px;">'
                     f'{av["produto"]}</div>'
                     f'<div style="color:rgba(255,255,255,0.4);font-size:11px;margin-top:2px;">'
-                    f'Cod: {av["codigo"]} &nbsp;·&nbsp; '
                     f'<span style="color:{accent}99;">'
                     f'{len(unidades)} {"unidade" if len(unidades)==1 else "unidades"} danificadas</span>'
                     f'</div>'
-                    + (f'<div style="color:rgba(255,255,255,0.35);font-size:11px;margin-top:2px;">'
-                       f'🪣 {av["motivo"]}</div>' if av.get("motivo") else "")
                     + "</div>",
                     unsafe_allow_html=True
                 )
@@ -9090,7 +9082,7 @@ new Chart(document.getElementById('coop-chart'),{
                             st.session_state[_edit_key] = False
                             st.rerun()
                 else:
-                    with st.expander("🔒 Editar / Resolver / Excluir"):
+                    with st.expander("🔒"):
                         _foto_up = st.file_uploader(
                             "Foto da avaria",
                             type=["jpg", "jpeg", "png", "webp"],
