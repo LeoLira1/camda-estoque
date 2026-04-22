@@ -5319,7 +5319,7 @@ def render_mapa_visual(conn):
     st.plotly_chart(fig_hm, use_container_width=True)
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia", sort_fn=None) -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia", sort_fn=None, ctx: str = "") -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
@@ -5414,6 +5414,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
         "OUTROS":       ("rgba(100,116,139,0.12)",  "#94a3b8"),
     }
     _CAT_DEFAULT = ("rgba(100,116,139,0.12)", "#94a3b8")
+
+    ctx_attr = f' data-ctx="{ctx}"' if ctx else ''
 
     parts = []
     _sort = sort_fn if sort_fn is not None else sort_categorias
@@ -5533,6 +5535,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             prods.append(
                 f'<div class="tm-tile{blink_cls}" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
                 f' data-codigo="{cod_str}"'
+                f'{ctx_attr}'
                 f' style="background:{card_bg};{card_border}'
                 f'border-radius:12px;padding:14px;position:relative;{opacity_style}">'
                 f'{cat_badge}'
@@ -7865,7 +7868,7 @@ if has_mestre:
                     _val_map_mapa[_vk] = _vv
         except Exception:
             pass
-        st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map, divergencias_map=divs_map, validade_map=_val_map_mapa), unsafe_allow_html=True)
+        st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map, divergencias_map=divs_map, validade_map=_val_map_mapa, ctx="mapa"), unsafe_allow_html=True)
 
         # Injeta modal de cooperados via components.v1.html (st.markdown bloqueia <script>)
         import json as _json
@@ -7937,13 +7940,21 @@ if has_mestre:
     overlay.style.display = 'flex';
   }}
 
-  // Remove listener anterior se existir
-  if (doc._tmClickHandler) doc.removeEventListener('click', doc._tmClickHandler);
-  doc._tmClickHandler = function(ev) {{
-    var tile = ev.target.closest ? ev.target.closest('.tm-tile[data-codigo]') : null;
-    if (tile) {{ openModal(tile); return; }}
-  }};
-  doc.addEventListener('click', doc._tmClickHandler);
+  var _mapaTimer;
+  function attachMapaClicks() {{
+    var tiles = doc.querySelectorAll('.tm-tile[data-ctx="mapa"][data-codigo]');
+    if (!tiles.length) {{ setTimeout(attachMapaClicks, 600); return; }}
+    tiles.forEach(function(t) {{
+      if (t._mapaReady) return;
+      t._mapaReady = true;
+      t.addEventListener('click', function() {{ openModal(this); }});
+    }});
+  }}
+  attachMapaClicks();
+  new window.parent.MutationObserver(function() {{
+    clearTimeout(_mapaTimer);
+    _mapaTimer = setTimeout(attachMapaClicks, 400);
+  }}).observe(doc.body, {{ childList: true, subtree: true }});
 }})();
 </script>
 """, height=0)
