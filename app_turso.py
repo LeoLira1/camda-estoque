@@ -5437,9 +5437,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Aviso de avarias abertas
             qtd_av = avarias_map.get(cod_str, 0)
 
-            # Se estoque_mestre não registrou divergência mas há registros em divergencias_map,
-            # usa o delta total das divergências para colorir o card corretamente
-            if diff == 0 and cod_str in divergencias_map:
+            # divergencias_map é a fonte de verdade das divergências ativas: sobrepõe estoque_mestre
+            if cod_str in divergencias_map:
                 total_div_delta = sum(e["delta"] for e in divergencias_map[cod_str])
                 if total_div_delta != 0:
                     diff = total_div_delta
