@@ -910,6 +910,18 @@ def _pstrip(s: str) -> str:
     return re.sub(r'\s+', ' ', _RE_PA_SIZE.sub('', s)).strip()
 
 
+def _codigo_key(value) -> str:
+    """Normaliza código de produto para comparações entre telas/tabelas."""
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() == "nan":
+        return ""
+    if re.fullmatch(r"\d+\.0+", s):
+        s = s.split(".", 1)[0]
+    return s.upper()
+
+
 def _build_pa_lookup(mapa: dict) -> tuple:
     """Constrói índices para busca multi-etapa de princípio ativo por nome de produto."""
     cat_n = {_pnorm(k): v for k, v in mapa.items()}
@@ -5334,6 +5346,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
         divergencias_map = {}
     if validade_map is None:
         validade_map = {}
+    avarias_map_norm = {_codigo_key(k): v for k, v in avarias_map.items()}
+    divergencias_map_norm = {_codigo_key(k): v for k, v in divergencias_map.items()}
 
     from datetime import date as _vdate, datetime as _vdatetime
 
@@ -5432,14 +5446,14 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             contagem = str(r.get("ultima_contagem", ""))
             sem_contagem = not contagem or contagem in ("", "nan", "None")
 
-            cod_str = str(r["codigo"])
+            cod_str = _codigo_key(r["codigo"])
 
             # Aviso de avarias abertas
-            qtd_av = avarias_map.get(cod_str, 0)
+            qtd_av = avarias_map_norm.get(cod_str, 0)
 
             # divergencias_map é a fonte de verdade das divergências ativas: sobrepõe estoque_mestre
-            if cod_str in divergencias_map:
-                total_div_delta = sum(e["delta"] for e in divergencias_map[cod_str])
+            if cod_str in divergencias_map_norm:
+                total_div_delta = sum(e["delta"] for e in divergencias_map_norm[cod_str])
                 if total_div_delta != 0:
                     diff = total_div_delta
 
@@ -7847,7 +7861,9 @@ if has_mestre:
         divs_map = {}
         if not df_divs_mapa.empty:
             for _, drow in df_divs_mapa.iterrows():
-                cod = str(drow["codigo"])
+                cod = _codigo_key(drow["codigo"])
+                if not cod:
+                    continue
                 entry = {
                     "cooperado": str(drow["cooperado"]) if drow["cooperado"] else "—",
                     "delta": int(drow["delta"]),
@@ -7911,11 +7927,16 @@ if has_mestre:
   }});
 
   function esc(s) {{ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }}
+  function normCode(v) {{
+    var s = String(v || '').trim().toUpperCase();
+    if (/^\\d+\\.0+$/.test(s)) s = s.split('.', 1)[0];
+    return s;
+  }}
 
   function openModal(tile) {{
     var cod  = tile.getAttribute('data-codigo');
     var nome = (tile.querySelector('.tm-name') || {{}}).innerText || cod;
-    var entries = DIVS[cod];
+    var entries = DIVS[normCode(cod)] || DIVS[cod];
     if (!entries || entries.length === 0) return;
     doc.getElementById('tm-div-produto').innerHTML =
       esc(nome) + ' <span style="font-size:0.65rem;color:#64748b;font-family:monospace;">' + esc(cod) + '</span>';
