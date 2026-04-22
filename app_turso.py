@@ -9910,12 +9910,12 @@ new Chart(document.getElementById('coop-chart'),{
                 grupos = ["Todos"] + sorted(df_val_db["GRUPO"].dropna().unique().tolist())
                 grupo_sel = st.selectbox("Grupo", grupos, key="val_grupo")
             with fc2:
-                status_opts = ["Todos", "VENCIDO", "≤30 dias", "≤60 dias", "≤90 dias", "OK"]
+                status_opts = ["Todos", "≤30 dias", "≤60 dias", "≤90 dias", "OK"]
                 status_sel = st.selectbox("Status", status_opts, key="val_status", index=0)
             with fc3:
                 mostrar_ok = st.checkbox("Mostrar OK", value=False, key="val_show_ok")
 
-            df_show = df_val_db.copy()
+            df_show = df_val_db[df_val_db["STATUS"] != "VENCIDO"].copy()
             if grupo_sel != "Todos":
                 df_show = df_show[df_show["GRUPO"] == grupo_sel]
             if status_sel != "Todos":
@@ -9923,33 +9923,6 @@ new Chart(document.getElementById('coop-chart'),{
             elif not mostrar_ok:
                 df_show = df_show[df_show["STATUS"] != "OK"]
             df_show = df_show.sort_values("DIAS")
-
-            # ── Gráfico por grupo (valor em risco) ────────────────────────────
-            df_risco_grp = (
-                df_val_db[df_val_db["STATUS"].isin(["VENCIDO","≤30 dias","≤60 dias","≤90 dias"])]
-                .groupby("GRUPO")["VALOR"].sum()
-                .sort_values(ascending=True)
-                .reset_index()
-            )
-            if not df_risco_grp.empty:
-                fig_bar = go.Figure(go.Bar(
-                    x=df_risco_grp["VALOR"],
-                    y=df_risco_grp["GRUPO"],
-                    orientation="h",
-                    marker_color="#ff4757",
-                    text=df_risco_grp["VALOR"].apply(lambda v: f"R$ {v:,.0f}"),
-                    textposition="outside",
-                ))
-                fig_bar.update_layout(
-                    title="💰 Valor em risco por grupo (≤90 dias + vencidos)",
-                    paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                    font=dict(color="#94a3b8", size=11),
-                    height=max(200, len(df_risco_grp)*32 + 60),
-                    margin=dict(l=10, r=80, t=40, b=10),
-                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
-                    yaxis=dict(tickfont=dict(size=10)),
-                )
-                st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
             # ── Lista de lotes ─────────────────────────────────────────────────
             badge_map = {
