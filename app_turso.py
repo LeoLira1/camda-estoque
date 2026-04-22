@@ -31,6 +31,43 @@ from mapa_3d_component import render_rack_3d
 from mural_tab import mural_tab as _render_mural_tab
 from inventario_ciclico_tab import build_inventario_ciclico_tab as _render_ciclico_tab
 
+st.markdown("""
+<style>
+header[data-testid="stHeader"] { display: none; }
+.block-container { padding-top: 0 !important; }
+</style>
+<div style="
+    position: relative;
+    background: linear-gradient(135deg, #0d1b2a 0%, #0a1628 75%, #0d2a3a 100%);
+    border-radius: 0 0 20px 20px;
+    overflow: hidden;
+    padding: 22px 26px 18px 26px;
+    margin-bottom: 12px;
+">
+    <div style="
+        position: absolute;
+        top: -60px;
+        right: -60px;
+        width: 280px;
+        height: 280px;
+        background: radial-gradient(circle, rgba(0,200,255,0.18) 0%, transparent 65%);
+        pointer-events: none;
+    "></div>
+    <div style="display: flex; align-items: center; gap: 14px; position: relative; z-index: 1;">
+        <svg width="42" height="42" viewBox="0 0 100 100" aria-hidden="true">
+            <polygon points="50,8 84,28 84,72 50,92 16,72 16,28" fill="none" stroke="#00bcd4" stroke-width="6" />
+            <text x="50" y="58" text-anchor="middle" fill="#00bcd4" font-size="38" font-weight="800" font-family="Arial, sans-serif">C</text>
+        </svg>
+        <div>
+            <div style="color: #00e5ff; font-size: 26px; font-weight: 900; letter-spacing: 3px; line-height: 1;">CAMDA</div>
+            <div style="margin-top: 6px; font-size: 11px; color: #4a9abb; letter-spacing: .6px;">
+                <span style="color: #00bcd4;">●</span> Controle de Estoque Inteligente
+            </div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
 _BRT = timezone(timedelta(hours=-3))
 
