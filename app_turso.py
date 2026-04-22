@@ -7527,17 +7527,6 @@ if has_mestre:
 
     _agora_hdr = datetime.now(tz=_BRT)
     _meta_data = _agora_hdr.strftime("%d/%m/%Y · %H:%M")
-    st.markdown(
-        """
-        <div class="dash-top">
-          <div class="dash-brand">
-            <div class="dash-brand-title">CAMDA</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
     search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
     search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed", key="search_mestre")
     import streamlit.components.v1 as _stc_ac
