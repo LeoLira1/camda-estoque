@@ -106,7 +106,7 @@ _JS_TREEMAP_CLICK = """
     }
 
     function attachClicks() {
-        var tiles = pd.querySelectorAll('.tm-tile[data-codigo]');
+        var tiles = pd.querySelectorAll('.tm-tile[data-codigo]:not([data-ctx="mapa"])');
         if (!tiles.length) { setTimeout(attachClicks, 600); return; }
         tiles.forEach(function (t) {
             if (t._cicloReady) return;
