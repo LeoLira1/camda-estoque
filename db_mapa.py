@@ -18,7 +18,7 @@ _BRT = timezone(timedelta(hours=-3))
 
 
 def _install_camda_header_spacing_patch():
-    """Aplica CSS do topo via st.markdown em todo render do app.
+    """Aplica CSS do topo via st.markdown uma única vez.
 
     app_turso.py importa este módulo antes de renderizar o dashboard. Por isso,
     este patch é mais confiável que sitecustomize no Streamlit Cloud.
@@ -32,6 +32,7 @@ def _install_camda_header_spacing_patch():
         return
 
     original_markdown = st.markdown
+    injected = {"done": False}
     css = """
 <style id="camda-header-spacing-patch">
 html, body, .stApp,
@@ -53,9 +54,17 @@ div[data-testid="stElementContainer"]:first-child {
 
 .camda-header {
     margin-top: -3.5rem !important;
+    margin-bottom: 0 !important;
 }
 
 div[data-testid="stElementContainer"]:has(.camda-header) {
+    margin-top: 0 !important;
+    margin-bottom: -1.25rem !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+div[data-testid="stElementContainer"]:has(.camda-header) + div {
     margin-top: 0 !important;
     padding-top: 0 !important;
 }
@@ -64,12 +73,16 @@ div[data-testid="stElementContainer"]:has(.camda-header) {
     .camda-header {
         margin-top: -3.25rem !important;
     }
+    div[data-testid="stElementContainer"]:has(.camda-header) {
+        margin-bottom: -1rem !important;
+    }
 }
 </style>
 """
 
     def markdown_with_camda_spacing_patch(body, *args, **kwargs):
-        if isinstance(body, str) and "camda-header-spacing-patch" not in body:
+        if not injected["done"] and isinstance(body, str):
+            injected["done"] = True
             body = css + "\n" + body
         return original_markdown(body, *args, **kwargs)
 
@@ -537,4 +550,4 @@ def sync_quantidades_from_estoque(conn) -> dict:
             atualizadas += 1
 
     conn.commit()
-    return {"atualizadas": atualizadas, "sem_match": []}
+    return {"atualizadas": atualizadas, "sem_match": sem_match}
