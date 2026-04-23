@@ -18,10 +18,10 @@ _BRT = timezone(timedelta(hours=-3))
 
 
 def _install_camda_header_spacing_patch():
-    """Aplica CSS do topo via st.markdown uma única vez.
+    """Aplica ajustes de topo e preserva renderização HTML do dashboard.
 
-    Importante: o CSS é renderizado como um markdown separado. O conteúdo
-    original de cada st.markdown fica intacto para preservar unsafe_allow_html.
+    Alguns blocos do dashboard usam HTML em st.markdown. Este wrapper garante
+    que strings com tags HTML/CSS sejam renderizadas com unsafe_allow_html=True.
     """
     try:
         import streamlit as st
@@ -80,10 +80,23 @@ div[data-testid="stElementContainer"]:has(.camda-header) + div {
 </style>
 """
 
+    def _looks_like_html(value: str) -> bool:
+        text = value.lstrip().lower()
+        html_tokens = (
+            "<div", "<style", "<span", "<section", "<article", "<svg",
+            "<table", "<p", "<ul", "<ol", "<li", "<br", "<hr",
+        )
+        return text.startswith(html_tokens) or "<div class=" in text or "<style" in text
+
     def markdown_with_camda_spacing_patch(body, *args, **kwargs):
         if not injected["done"]:
             injected["done"] = True
             original_markdown(css, unsafe_allow_html=True)
+
+        if isinstance(body, str) and _looks_like_html(body):
+            kwargs = dict(kwargs)
+            kwargs["unsafe_allow_html"] = True
+
         return original_markdown(body, *args, **kwargs)
 
     st.markdown = markdown_with_camda_spacing_patch
