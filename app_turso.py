@@ -7505,7 +7505,7 @@ st.markdown("""
         <div>
             <div style="color: #00e5ff; font-size: 26px; font-weight: 900; letter-spacing: 3px; line-height: 1;">CAMDA</div>
             <div style="margin-top: 6px; font-size: 11px; color: #4a9abb; letter-spacing: .6px;">
-                <span style="color: #00bcd4;">●</span> Controle de Estoque Inteligente
+                <span style="color: #00bcd4;">●</span> Controle de Estoque
             </div>
         </div>
     </div>
