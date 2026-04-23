@@ -65,7 +65,7 @@ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer
     def markdown_with_top_gap_fix(body, *args, **kwargs):
         if not injected["done"] and isinstance(body, str):
             injected["done"] = True
-            body = top_gap_fix_css + "\n" + body
+            original_markdown(top_gap_fix_css, unsafe_allow_html=True)
         return original_markdown(body, *args, **kwargs)
 
     st.markdown = markdown_with_top_gap_fix
