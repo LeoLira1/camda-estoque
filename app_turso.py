@@ -3540,7 +3540,9 @@ def get_divergencias() -> pd.DataFrame:
     try:
         conn = get_db()
         rows = conn.execute("""
-            SELECT d.id, d.codigo, d.produto, d.categoria, d.delta, d.status, d.cooperado, d.criado_em,
+            SELECT d.id, d.codigo, d.produto, d.categoria, d.delta, d.status,
+                   COALESCE(NULLIF(TRIM(d.cooperado), ''), NULLIF(TRIM(e.nota), ''), NULLIF(TRIM(e.observacoes), ''), '') AS cooperado,
+                   d.criado_em,
                    e.qtd_sistema
             FROM divergencias d
             LEFT JOIN estoque_mestre e ON d.codigo = e.codigo
@@ -5551,6 +5553,20 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Classe de piscado por validade + label de data (somente para alertas)
             blink_cls, venc_label_html = _venc_info(r["produto"])
 
+            # Cooperado(s) com divergência para exibir no popup CSS do card
+            cooperado_popup_html = ""
+            if cod_str in divergencias_map_norm:
+                coops = sorted(set(
+                    e["cooperado"] for e in divergencias_map_norm[cod_str]
+                    if e.get("cooperado") and e["cooperado"] not in ("—", "")
+                ))
+                if coops:
+                    cooperado_popup_html = (
+                        f'<div style="font-size:0.62rem;color:#94a3b8;margin-top:5px;'
+                        f'border-top:1px solid rgba(255,255,255,0.08);padding-top:5px;">'
+                        f'&#x1F464; {", ".join(coops)}</div>'
+                    )
+
             prods.append(
                 f'<div class="tm-tile{blink_cls}" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
                 f' data-codigo="{cod_str}"'
@@ -5563,7 +5579,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 f'<div class="tm-info" style="color:{qty_color};">{info}</div>'
                 f'{venc_label_html}'
                 f'<div class="tm-cod">{r["codigo"]}</div>'
-                f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}</div>'
+                f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}{cooperado_popup_html}</div>'
                 f'</div>'
             )
 
