@@ -42,7 +42,7 @@ header[data-testid="stHeader"] { display: none; }
     border-radius: 0 0 20px 20px;
     overflow: hidden;
     padding: 22px 26px 18px 26px;
-    margin-bottom: 0;
+    margin-bottom: 12px;
 ">
     <div style="
         position: absolute;
