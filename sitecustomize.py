@@ -1,9 +1,4 @@
-"""Ajustes globais de layout para o app Streamlit.
-
-Este módulo é carregado automaticamente pelo Python quando está no PYTHONPATH.
-Ele injeta um pequeno CSS extra no primeiro st.markdown do app para remover
-wrappers invisíveis que o Streamlit pode deixar acima do header customizado.
-"""
+"""Ajustes globais de layout para o app Streamlit."""
 
 from __future__ import annotations
 
@@ -22,12 +17,7 @@ def _install_streamlit_top_gap_fix() -> None:
 
     top_gap_fix_css = """
 <style id="camda-top-gap-fix">
-/* Remove espaço fantasma acima do header CAMDA em versões recentes do Streamlit */
-html, body, .stApp {
-    margin-top: 0 !important;
-    padding-top: 0 !important;
-}
-
+html, body, .stApp,
 section[data-testid="stMain"],
 [data-testid="stMain"],
 div[data-testid="stMainBlockContainer"],
@@ -44,7 +34,15 @@ div[data-testid="stElementContainer"]:first-child {
     padding-top: 0 !important;
 }
 
-/* Esconde wrappers vazios ou wrappers usados apenas para carregar <style>. */
+.camda-header {
+    margin-top: -3.5rem !important;
+}
+
+div[data-testid="stElementContainer"]:has(.camda-header) {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
 div[data-testid="stMarkdownContainer"]:empty,
 div[data-testid="stElementContainer"]:has(style),
 div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] style) {
@@ -56,15 +54,9 @@ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer
     overflow: hidden !important;
 }
 
-/* Quando o header aparece, força o wrapper dele a encostar no topo do app. */
-div[data-testid="stElementContainer"]:has(.camda-header) {
-    margin-top: 0 !important;
-    padding-top: 0 !important;
-}
-
 @media (max-width: 768px) {
-    .block-container {
-        padding-top: 0 !important;
+    .camda-header {
+        margin-top: -3.25rem !important;
     }
 }
 </style>
