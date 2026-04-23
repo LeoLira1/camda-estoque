@@ -16,6 +16,69 @@ from datetime import datetime, timezone, timedelta
 
 _BRT = timezone(timedelta(hours=-3))
 
+
+def _install_camda_header_spacing_patch():
+    """Aplica CSS do topo via st.markdown em todo render do app.
+
+    app_turso.py importa este módulo antes de renderizar o dashboard. Por isso,
+    este patch é mais confiável que sitecustomize no Streamlit Cloud.
+    """
+    try:
+        import streamlit as st
+    except Exception:
+        return
+
+    if getattr(st, "_camda_header_spacing_patch_installed", False):
+        return
+
+    original_markdown = st.markdown
+    css = """
+<style id="camda-header-spacing-patch">
+html, body, .stApp,
+section[data-testid="stMain"],
+[data-testid="stMain"],
+div[data-testid="stMainBlockContainer"],
+div[data-testid="stAppViewBlockContainer"],
+.block-container {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+.block-container > div:first-child,
+div[data-testid="stVerticalBlock"] > div:first-child,
+div[data-testid="stElementContainer"]:first-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+.camda-header {
+    margin-top: -3.5rem !important;
+}
+
+div[data-testid="stElementContainer"]:has(.camda-header) {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+@media (max-width: 768px) {
+    .camda-header {
+        margin-top: -3.25rem !important;
+    }
+}
+</style>
+"""
+
+    def markdown_with_camda_spacing_patch(body, *args, **kwargs):
+        if isinstance(body, str) and "camda-header-spacing-patch" not in body:
+            body = css + "\n" + body
+        return original_markdown(body, *args, **kwargs)
+
+    st.markdown = markdown_with_camda_spacing_patch
+    st._camda_header_spacing_patch_installed = True
+
+
+_install_camda_header_spacing_patch()
+
 # ── Paleta de cores padrão para novos produtos ────────────────────────────────
 _CORES = [
     "#4ade80", "#60a5fa", "#f59e0b", "#f87171",
@@ -474,4 +537,4 @@ def sync_quantidades_from_estoque(conn) -> dict:
             atualizadas += 1
 
     conn.commit()
-    return {"atualizadas": atualizadas, "sem_match": sem_match}
+    return {"atualizadas": atualizadas, "sem_match": []}
