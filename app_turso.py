@@ -5562,8 +5562,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 ))
                 if coops:
                     cooperado_popup_html = (
-                        f'<div style="font-size:0.62rem;color:#94a3b8;margin-top:5px;'
-                        f'border-top:1px solid rgba(255,255,255,0.08);padding-top:5px;">'
+                        f'<div style="font-size:0.82rem;font-weight:600;color:#e2e8f0;margin-top:6px;'
+                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
                         f'&#x1F464; {", ".join(coops)}</div>'
                     )
 
