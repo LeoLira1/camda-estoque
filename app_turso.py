@@ -485,6 +485,20 @@ st.markdown("""
     [data-testid="stAppViewBlockContainer"] > div > [data-testid="stVerticalBlock"] {
         gap: 0 !important;
     }
+    /* Oculta containers de injeção de CSS/script e iframes invisíveis.
+       sitecustomize.py só injeta esse CSS no primeiro load; aqui garante em todos os reruns. */
+    div[data-testid="stMarkdownContainer"]:empty,
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"]:empty),
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > style:only-child),
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > script:only-child),
+    div[data-testid="stElementContainer"]:has(iframe[height="0"]) {
+        display: none !important;
+        height: 0 !important;
+        min-height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
+    }
     .main-title {
         font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 1.6rem;
         background: linear-gradient(135deg, #00d68f, #00b887);
