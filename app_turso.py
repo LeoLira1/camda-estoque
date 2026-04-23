@@ -475,8 +475,9 @@ st.markdown("""
     div[data-testid="stToolbar"] { display: none !important; }
     div[data-testid="stStatusWidget"] { display: none !important; }
     .stApp > div:first-child { margin-top: 0 !important; padding-top: 0 !important; }
-    section.main, [data-testid="stMain"] { padding-top: 0 !important; }
+    section.main, [data-testid="stMain"] { padding-top: 0 !important; margin-top: 0 !important; }
     .block-container { padding: 0 0.8rem !important; max-width: 100% !important; }
+    div[data-testid="stMainBlockContainer"] { padding-top: 0 !important; margin-top: 0 !important; }
     div[data-testid="stAppViewBlockContainer"] { padding-top: 0 !important; margin-top: 0 !important; }
     div[data-testid="stVerticalBlock"] > div:first-child { padding-top: 0 !important; margin-top: 0 !important; }
     /* Remove o gap do flex container principal para eliminar espaço entre elementos do topo */
@@ -7558,7 +7559,8 @@ if has_mestre:
                 'header[data-testid="stHeader"]{display:none!important;height:0!important;min-height:0!important;}',
                 '[data-testid="stDecoration"]{display:none!important;height:0!important;min-height:0!important;overflow:hidden!important;}',
                 'div[data-testid="stToolbar"]{display:none!important;}',
-                'section[data-testid="stMain"]{padding-top:0!important;}',
+                'section[data-testid="stMain"]{padding-top:0!important;margin-top:0!important;}',
+                'div[data-testid="stMainBlockContainer"]{padding-top:0!important;margin-top:0!important;}',
                 '.block-container{padding-top:0!important;}',
                 'div[data-testid="stAppViewBlockContainer"]{padding-top:0!important;margin-top:0!important;}'
             ].join('');
@@ -7581,6 +7583,8 @@ if has_mestre:
             var obs = new MutationObserver(function() {
                 var main = d.querySelector('section[data-testid="stMain"]');
                 if (main && main.style.paddingTop !== '0px') main.style.paddingTop = '0px';
+                var mbc = d.querySelector('div[data-testid="stMainBlockContainer"]');
+                if (mbc && mbc.style.paddingTop !== '0px') mbc.style.paddingTop = '0px';
                 var bc = d.querySelector('.block-container');
                 if (bc && bc.style.paddingTop !== '0px') bc.style.paddingTop = '0px';
             });
