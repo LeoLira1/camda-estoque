@@ -38,6 +38,11 @@ div[data-testid="stElementContainer"]:first-child {
     margin-top: -3.5rem !important;
 }
 
+/* Ajuste fino: seletor mais específico para vencer patches antigos e puxar o header ao topo. */
+html body .stApp .camda-header {
+    margin-top: -5rem !important;
+}
+
 div[data-testid="stElementContainer"]:has(.camda-header) {
     margin-top: 0 !important;
     padding-top: 0 !important;
@@ -57,6 +62,10 @@ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer
 @media (max-width: 768px) {
     .camda-header {
         margin-top: -3.25rem !important;
+    }
+
+    html body .stApp .camda-header {
+        margin-top: -4.5rem !important;
     }
 }
 </style>
