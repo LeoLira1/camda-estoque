@@ -20,8 +20,8 @@ _BRT = timezone(timedelta(hours=-3))
 def _install_camda_header_spacing_patch():
     """Aplica CSS do topo via st.markdown uma única vez.
 
-    app_turso.py importa este módulo antes de renderizar o dashboard. Por isso,
-    este patch é mais confiável que sitecustomize no Streamlit Cloud.
+    Importante: o CSS é renderizado como um markdown separado. O conteúdo
+    original de cada st.markdown fica intacto para preservar unsafe_allow_html.
     """
     try:
         import streamlit as st
@@ -81,9 +81,9 @@ div[data-testid="stElementContainer"]:has(.camda-header) + div {
 """
 
     def markdown_with_camda_spacing_patch(body, *args, **kwargs):
-        if not injected["done"] and isinstance(body, str):
+        if not injected["done"]:
             injected["done"] = True
-            body = css + "\n" + body
+            original_markdown(css, unsafe_allow_html=True)
         return original_markdown(body, *args, **kwargs)
 
     st.markdown = markdown_with_camda_spacing_patch
