@@ -38,12 +38,24 @@ div[data-testid="stElementContainer"]:first-child {
     margin-top: -3.5rem !important;
 }
 
-/* Ajuste fino: seletor mais específico para vencer patches antigos e puxar o header ao topo. */
 html body .stApp .camda-header {
     margin-top: -5rem !important;
 }
 
+/* Move o wrapper real do header, não só o bloco interno. */
 div[data-testid="stElementContainer"]:has(.camda-header) {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+    transform: translateY(-4rem) !important;
+    margin-bottom: -4rem !important;
+}
+
+div[data-testid="stElementContainer"]:has(.camda-header) + div {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+div[data-testid="stMarkdownContainer"]:has(.camda-header) {
     margin-top: 0 !important;
     padding-top: 0 !important;
 }
@@ -66,6 +78,11 @@ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer
 
     html body .stApp .camda-header {
         margin-top: -4.5rem !important;
+    }
+
+    div[data-testid="stElementContainer"]:has(.camda-header) {
+        transform: translateY(-3.5rem) !important;
+        margin-bottom: -3.5rem !important;
     }
 }
 </style>
