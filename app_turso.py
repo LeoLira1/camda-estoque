@@ -825,15 +825,24 @@ st.markdown("""
 import streamlit.components.v1 as _stc_global
 _stc_global.html("""<script>
 (function() {
-  // Colapsa o próprio iframe e seus containers pai para não gerar espaço visual
+  // Colapsa o próprio iframe e até 3 containers pai imediatos (sem subir ao stVerticalBlock)
   try {
     var _fe = window.frameElement;
     if (_fe) {
       _fe.style.cssText = 'display:none!important;height:0!important;width:0!important;border:none!important;position:absolute!important;';
       var _p = _fe.parentElement;
-      for (var _i = 0; _i < 8; _i++) {
+      var _STOP = /stVerticalBlock|stMain|stApp|block-container|stAppView/;
+      for (var _i = 0; _i < 3; _i++) {
         if (!_p || _p === document.body) break;
-        _p.style.cssText = (_p.style.cssText||'') + ';height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;line-height:0!important;';
+        var _tid = (_p.getAttribute && _p.getAttribute('data-testid')) || '';
+        var _cls = _p.className || '';
+        if (_STOP.test(_tid) || _STOP.test(_cls)) break;
+        _p.style.height = '0';
+        _p.style.minHeight = '0';
+        _p.style.margin = '0';
+        _p.style.padding = '0';
+        _p.style.overflow = 'hidden';
+        _p.style.lineHeight = '0';
         _p = _p.parentElement;
       }
     }
@@ -895,9 +904,18 @@ _stc_global.html("""
     if (_fe2) {
       _fe2.style.cssText = 'display:none!important;height:0!important;width:0!important;border:none!important;position:absolute!important;';
       var _p2 = _fe2.parentElement;
-      for (var _i2 = 0; _i2 < 8; _i2++) {
+      var _STOP2 = /stVerticalBlock|stMain|stApp|block-container|stAppView/;
+      for (var _i2 = 0; _i2 < 3; _i2++) {
         if (!_p2 || _p2 === document.body) break;
-        _p2.style.cssText = (_p2.style.cssText||'') + ';height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;line-height:0!important;';
+        var _tid2 = (_p2.getAttribute && _p2.getAttribute('data-testid')) || '';
+        var _cls2 = _p2.className || '';
+        if (_STOP2.test(_tid2) || _STOP2.test(_cls2)) break;
+        _p2.style.height = '0';
+        _p2.style.minHeight = '0';
+        _p2.style.margin = '0';
+        _p2.style.padding = '0';
+        _p2.style.overflow = 'hidden';
+        _p2.style.lineHeight = '0';
         _p2 = _p2.parentElement;
       }
     }
@@ -7602,15 +7620,24 @@ if has_mestre:
     import streamlit.components.v1 as _stc_ac
     _stc_ac.html("""<script>
     (function() {
-        // Colapsa o próprio iframe e seus containers pai
+        // Colapsa o próprio iframe e até 3 containers pai imediatos
         try {
             var _feAc = window.frameElement;
             if (_feAc) {
                 _feAc.style.cssText = 'display:none!important;height:0!important;width:0!important;border:none!important;position:absolute!important;';
                 var _pAc = _feAc.parentElement;
-                for (var _iAc = 0; _iAc < 8; _iAc++) {
+                var _STOPAc = /stVerticalBlock|stMain|stApp|block-container|stAppView/;
+                for (var _iAc = 0; _iAc < 3; _iAc++) {
                     if (!_pAc || _pAc === document.body) break;
-                    _pAc.style.cssText = (_pAc.style.cssText||'') + ';height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;line-height:0!important;';
+                    var _tidAc = (_pAc.getAttribute && _pAc.getAttribute('data-testid')) || '';
+                    var _clsAc = _pAc.className || '';
+                    if (_STOPAc.test(_tidAc) || _STOPAc.test(_clsAc)) break;
+                    _pAc.style.height = '0';
+                    _pAc.style.minHeight = '0';
+                    _pAc.style.margin = '0';
+                    _pAc.style.padding = '0';
+                    _pAc.style.overflow = 'hidden';
+                    _pAc.style.lineHeight = '0';
                     _pAc = _pAc.parentElement;
                 }
             }
