@@ -475,6 +475,11 @@ st.markdown("""
     div[data-testid="stToolbar"] { display: none !important; }
     div[data-testid="stStatusWidget"] { display: none !important; }
     .stApp > div:first-child { margin-top: 0 !important; padding-top: 0 !important; }
+    /* Streamlit mantém padding no AppViewContainer para reservar espaço do header */
+    div[data-testid="stAppViewContainer"], .stAppViewContainer {
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
     section.main, [data-testid="stMain"] { padding-top: 0 !important; margin-top: 0 !important; }
     .block-container { padding: 0 0.8rem !important; max-width: 100% !important; }
     div[data-testid="stMainBlockContainer"] { padding-top: 0 !important; margin-top: 0 !important; }
