@@ -475,6 +475,12 @@ st.markdown("""
     div[data-testid="stToolbar"] { display: none !important; }
     div[data-testid="stStatusWidget"] { display: none !important; }
     .stApp > div:first-child { margin-top: 0 !important; padding-top: 0 !important; }
+    /* Streamlit mantém padding no AppViewContainer para reservar espaço do header */
+    div[data-testid="stAppViewContainer"], .stAppViewContainer {
+        top: 0 !important;
+        padding-top: 0 !important;
+        margin-top: 0 !important;
+    }
     section.main, [data-testid="stMain"] { padding-top: 0 !important; margin-top: 0 !important; }
     .block-container { padding: 0 0.8rem !important; max-width: 100% !important; }
     div[data-testid="stMainBlockContainer"] { padding-top: 0 !important; margin-top: 0 !important; }
@@ -485,19 +491,24 @@ st.markdown("""
     [data-testid="stAppViewBlockContainer"] > div > [data-testid="stVerticalBlock"] {
         gap: 0 !important;
     }
-    /* Oculta containers de injeção de CSS/script e iframes invisíveis.
-       sitecustomize.py só injeta esse CSS no primeiro load; aqui garante em todos os reruns. */
+    /* Normaliza containers invisíveis de injeção (sem remover o <style> global). */
     div[data-testid="stMarkdownContainer"]:empty,
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"]:empty),
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > style:only-child),
-    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > script:only-child),
-    div[data-testid="stElementContainer"]:has(iframe[height="0"]) {
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"]:empty) {
         display: none !important;
         height: 0 !important;
         min-height: 0 !important;
         margin: 0 !important;
         padding: 0 !important;
         overflow: hidden !important;
+    }
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > style),
+    div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > script),
+    div[data-testid="stElementContainer"]:has(iframe[height="0"]) {
+        margin: 0 !important;
+        padding: 0 !important;
+        min-height: 0 !important;
+        height: 0 !important;
+        line-height: 0 !important;
     }
     .main-title {
         font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 1.6rem;
@@ -860,7 +871,8 @@ _stc_global.html("""<script>
 </script>""", height=0)
 
 # ── Injetar JS: contadores animados nos KPI metrics ──────────────────────────
-st.markdown("""
+# Evita criar um container Markdown vazio antes do header no topo.
+_stc_global.html("""
 <script>
 (function() {
   function animateCounters() {
@@ -891,7 +903,7 @@ st.markdown("""
   observer.observe(document.body, { childList: true, subtree: true });
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
