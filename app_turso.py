@@ -5628,15 +5628,21 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Cooperado(s) com divergência para exibir no popup CSS do card
             cooperado_popup_html = ""
             if cod_str in divergencias_map_norm:
-                coops = sorted(set(
-                    e["cooperado"] for e in divergencias_map_norm[cod_str]
-                    if e.get("cooperado") and e["cooperado"] not in ("—", "")
-                ))
-                if coops:
+                _coops = []
+                for e in divergencias_map_norm[cod_str]:
+                    _coop = str(e.get("cooperado") or "").strip()
+                    if not _coop or _coop == "—":
+                        continue
+                    _delta = int(e.get("delta") or 0)
+                    _sinal = "▲" if _delta > 0 else "▼" if _delta < 0 else "•"
+                    _qtd = abs(_delta)
+                    _coops.append((_coop, _qtd, _sinal))
+                if _coops:
+                    _coops_txt = ", ".join(f"{_n} ({_s}{_q})" for _n, _q, _s in _coops)
                     cooperado_popup_html = (
                         f'<div style="font-size:0.82rem;font-weight:600;color:#e2e8f0;margin-top:6px;'
                         f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
-                        f'&#x1F464; {", ".join(coops)}</div>'
+                        f'&#x1F464; {_coops_txt}</div>'
                     )
 
             prods.append(
@@ -8111,21 +8117,19 @@ if has_mestre:
     overlay.style.display = 'flex';
   }}
 
-  var _mapaTimer;
-  function attachMapaClicks() {{
-    var tiles = doc.querySelectorAll('.tm-tile[data-ctx="mapa"][data-codigo]');
-    if (!tiles.length) {{ setTimeout(attachMapaClicks, 600); return; }}
-    tiles.forEach(function(t) {{
-      if (t._mapaReady) return;
-      t._mapaReady = true;
-      t.addEventListener('click', function() {{ openModal(this); }});
-    }});
+  function _closestTile(el) {{
+    if (!el || !el.closest) return null;
+    return el.closest('.tm-tile[data-ctx="mapa"][data-codigo]');
   }}
-  attachMapaClicks();
-  new window.parent.MutationObserver(function() {{
-    clearTimeout(_mapaTimer);
-    _mapaTimer = setTimeout(attachMapaClicks, 400);
-  }}).observe(doc.body, {{ childList: true, subtree: true }});
+
+  if (!doc._mapaDivDelegated) {{
+    doc._mapaDivDelegated = true;
+    doc.addEventListener('click', function(ev) {{
+      var tile = _closestTile(ev.target);
+      if (!tile) return;
+      openModal(tile);
+    }}, true);
+  }}
 }})();
 </script>
 """, height=0)
