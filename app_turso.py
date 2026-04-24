@@ -502,12 +502,14 @@ st.markdown("""
     }
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > style),
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > script),
-    div[data-testid="stElementContainer"]:has(iframe[height="0"]) {
+    div[data-testid="stElementContainer"]:has(iframe[height="0"]),
+    div[data-testid="stElementContainer"]:has(iframe[style*="height: 0"]) {
         margin: 0 !important;
         padding: 0 !important;
         min-height: 0 !important;
         height: 0 !important;
         line-height: 0 !important;
+        overflow: hidden !important;
     }
     .main-title {
         font-family: 'Outfit', sans-serif; font-weight: 900; font-size: 1.6rem;
@@ -823,6 +825,19 @@ st.markdown("""
 import streamlit.components.v1 as _stc_global
 _stc_global.html("""<script>
 (function() {
+  // Colapsa o próprio iframe e seus containers pai para não gerar espaço visual
+  try {
+    var _fe = window.frameElement;
+    if (_fe) {
+      _fe.style.cssText = 'display:none!important;height:0!important;width:0!important;border:none!important;position:absolute!important;';
+      var _p = _fe.parentElement;
+      for (var _i = 0; _i < 8; _i++) {
+        if (!_p || _p === document.body) break;
+        _p.style.cssText = (_p.style.cssText||'') + ';height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;line-height:0!important;';
+        _p = _p.parentElement;
+      }
+    }
+  } catch(_e) {}
   // Tenta acessar tanto window.parent quanto window.top
   var _docs = [];
   try { if (window.parent && window.parent.document) _docs.push(window.parent.document); } catch(e) {}
@@ -874,6 +889,19 @@ _stc_global.html("""<script>
 _stc_global.html("""
 <script>
 (function() {
+  // Colapsa o próprio iframe e seus containers pai
+  try {
+    var _fe2 = window.frameElement;
+    if (_fe2) {
+      _fe2.style.cssText = 'display:none!important;height:0!important;width:0!important;border:none!important;position:absolute!important;';
+      var _p2 = _fe2.parentElement;
+      for (var _i2 = 0; _i2 < 8; _i2++) {
+        if (!_p2 || _p2 === document.body) break;
+        _p2.style.cssText = (_p2.style.cssText||'') + ';height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;line-height:0!important;';
+        _p2 = _p2.parentElement;
+      }
+    }
+  } catch(_e2) {}
   function animateCounters() {
     var metrics = document.querySelectorAll('[data-testid="metric-value"]');
     metrics.forEach(function(el) {
@@ -7574,6 +7602,19 @@ if has_mestre:
     import streamlit.components.v1 as _stc_ac
     _stc_ac.html("""<script>
     (function() {
+        // Colapsa o próprio iframe e seus containers pai
+        try {
+            var _feAc = window.frameElement;
+            if (_feAc) {
+                _feAc.style.cssText = 'display:none!important;height:0!important;width:0!important;border:none!important;position:absolute!important;';
+                var _pAc = _feAc.parentElement;
+                for (var _iAc = 0; _iAc < 8; _iAc++) {
+                    if (!_pAc || _pAc === document.body) break;
+                    _pAc.style.cssText = (_pAc.style.cssText||'') + ';height:0!important;min-height:0!important;margin:0!important;padding:0!important;overflow:hidden!important;line-height:0!important;';
+                    _pAc = _pAc.parentElement;
+                }
+            }
+        } catch(_eAc) {}
         var d = window.parent.document;
 
         // Injeta CSS persistente no <head> com MutationObserver p/ sobreviver re-renders
