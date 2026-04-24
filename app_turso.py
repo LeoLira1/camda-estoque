@@ -3,6 +3,7 @@ import pandas as pd
 import libsql
 import re
 import os
+import random
 import base64
 import io
 import unicodedata
@@ -7977,7 +7978,13 @@ if has_mestre:
             if _df_par_i.empty:
                 st.caption("✅ Nenhum produto parado.")
             else:
-                for _, _r in _df_par_i.head(10).iterrows():
+                _n_par = len(_df_par_i)
+                if "_parados_offset" not in st.session_state:
+                    st.session_state["_parados_offset"] = random.randint(0, max(0, _n_par - 1))
+                _offset = st.session_state["_parados_offset"] % _n_par
+                _indices = [i % _n_par for i in range(_offset, _offset + min(10, _n_par))]
+                _par_sample = _df_par_i.iloc[_indices]
+                for _, _r in _par_sample.iterrows():
                     _dp = int(_r.get("dias_parado", 0))
                     _uv = str(_r.get("ultima_venda_fmt", "Nunca"))
                     _qe = int(_r.get("qtd_estoque", 0))
@@ -7988,8 +7995,14 @@ if has_mestre:
                         f'<br><span style="color:#64748b;font-size:0.67rem;">{_r.get("grupo","")}  ·  Última venda: {_uv}</span></span>'
                         f'<span style="color:#94a3b8;font-family:monospace;font-weight:700;font-size:0.85rem;">{_dp}d&nbsp;|&nbsp;{_qe}</span>'
                         f'</div>', unsafe_allow_html=True)
-                if len(_df_par_i) > 10:
-                    st.caption(f"+ {len(_df_par_i)-10} produtos — ver aba Última Venda")
+                if _n_par > 10:
+                    _pc1, _pc2 = st.columns([4, 1])
+                    with _pc1:
+                        st.caption(f"+ {_n_par - 10} produtos — ver aba Última Venda")
+                    with _pc2:
+                        if st.button("🔀 Ver outros", key="_btn_parados_next"):
+                            st.session_state["_parados_offset"] = (_offset + 10) % _n_par
+                            st.rerun()
 
         # ── Estoque Crítico ──────────────────────────────────────────────────
         with st.expander(f"🚨 Estoque Crítico (≤ 10 un.)  —  {len(_df_crit_i)} produto(s)", expanded=True):
