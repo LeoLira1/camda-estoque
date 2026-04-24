@@ -860,7 +860,8 @@ _stc_global.html("""<script>
 </script>""", height=0)
 
 # ── Injetar JS: contadores animados nos KPI metrics ──────────────────────────
-st.markdown("""
+# Evita criar um container Markdown vazio antes do header no topo.
+_stc_global.html("""
 <script>
 (function() {
   function animateCounters() {
@@ -891,7 +892,7 @@ st.markdown("""
   observer.observe(document.body, { childList: true, subtree: true });
 })();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
