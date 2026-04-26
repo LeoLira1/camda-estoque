@@ -10034,6 +10034,9 @@ new Chart(document.getElementById('coop-chart'),{
                 st.plotly_chart(fig_top_h, use_container_width=True,
                                 config={"displayModeBar": False, "editable": False, "scrollZoom": False})
 
+            st.markdown("---")
+            build_infograficos_tab()
+
             # ── Botão para zerar histórico ────────────────────────────────
             if st.button("🗑️ Zerar histórico de vendas", key="hist_zerar", type="secondary"):
                 st.session_state["hist_confirmar_zerar"] = True
