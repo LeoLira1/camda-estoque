@@ -6939,6 +6939,30 @@ def build_infograficos_tab():
         st.markdown("<hr style='margin:8px 0 4px;border-color:#1e293b'>", unsafe_allow_html=True)
         st.selectbox("Infográfico", _INF_OPTS, key="inf_selector", label_visibility="collapsed")
 
+    def _render_lista_zerados_info():
+        """Renderiza no fim da aba Info a mesma lista de zerados da aba Vendas."""
+        df_vendas_info = get_vendas_historico()
+        if df_vendas_info.empty:
+            return
+
+        df_zero_info = _build_df_zerados(df_vendas_info)
+        with st.expander(
+            f"💀 Lista Completa — Estoque Zerado ({len(df_zero_info)} produtos)",
+            expanded=False,
+        ):
+            if df_zero_info.empty:
+                st.info("Nenhum produto zerado com vendas no momento.")
+                return
+
+            df_zero_show = df_zero_info[["codigo", "produto", "grupo", "qtd_vendida"]].copy()
+            df_zero_show.columns = ["Código", "Produto", "Grupo", "Vendido"]
+            st.dataframe(
+                df_zero_show.reset_index(drop=True),
+                hide_index=True,
+                use_container_width=True,
+                height=400,
+            )
+
     # ════════════════════════════════════════════════════════════════════════
     # INFOGRÁFICO 1 — MAPA DE CALOR
     # ════════════════════════════════════════════════════════════════════════
@@ -6949,6 +6973,8 @@ def build_infograficos_tab():
         if df_heat.empty:
             st.info("Nenhuma venda encontrada no período selecionado.")
             _render_seletor_inf()
+            st.markdown("")
+            _render_lista_zerados_info()
             return
 
         dias_labels = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -7012,6 +7038,8 @@ def build_infograficos_tab():
         if df_mv.empty:
             st.info("Nenhuma venda encontrada no período selecionado.")
             _render_seletor_inf()
+            st.markdown("")
+            _render_lista_zerados_info()
             return
 
         def _short(s: str, n: int = 35) -> str:
@@ -7098,6 +7126,8 @@ def build_infograficos_tab():
         if df_parado.empty:
             st.success(f"✅ Nenhum produto parado há mais de {dias_parado} dias com estoque positivo!")
             _render_seletor_inf()
+            st.markdown("")
+            _render_lista_zerados_info()
             return
 
         total_parados = len(df_parado)
@@ -7150,6 +7180,8 @@ def build_infograficos_tab():
         if df_gr.empty:
             st.info("Nenhum dado disponível para o período selecionado.")
             _render_seletor_inf()
+            st.markdown("")
+            _render_lista_zerados_info()
             return
 
         med_giro = df_gr["taxa_giro"].median()
@@ -7242,22 +7274,7 @@ def build_infograficos_tab():
     _render_seletor_inf()
 
     st.markdown("")
-    df_vendas_info = get_vendas_historico()
-    if not df_vendas_info.empty:
-        df_zero_info = _build_df_zerados(df_vendas_info)
-        if not df_zero_info.empty:
-            with st.expander(
-                f"💀 Lista Completa — Estoque Zerado ({len(df_zero_info)} produtos)",
-                expanded=False,
-            ):
-                df_zero_show = df_zero_info[["codigo", "produto", "grupo", "qtd_vendida"]].copy()
-                df_zero_show.columns = ["Código", "Produto", "Grupo", "Vendido"]
-                st.dataframe(
-                    df_zero_show.reset_index(drop=True),
-                    hide_index=True,
-                    use_container_width=True,
-                    height=400,
-                )
+    _render_lista_zerados_info()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
