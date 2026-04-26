@@ -14,6 +14,8 @@ O pos_key no banco NÃO muda, apenas o campo nome.
 import uuid
 from datetime import datetime, timezone, timedelta
 
+import streamlit as st
+
 _BRT = timezone(timedelta(hours=-3))
 
 
@@ -192,13 +194,13 @@ def _parse_pos_key(pos_key: str):
 
 # ── Leitura ───────────────────────────────────────────────────────────────────
 
-def get_paletes_rack(conn, rua: str, face: str) -> dict:
+@st.cache_data(ttl=300)
+def get_paletes_rack(_conn, rua: str, face: str) -> dict:
     """
     Retorna dict {pos_key: {produto, quantidade, unidade, cor}}
     para todas as células ocupadas de um rack (rua × face).
     """
-    ensure_mapa_tables(conn)
-    rows = conn.execute(
+    rows = _conn.execute(
         """
         SELECT p.pos_key, mp.nome, p.quantidade, p.unidade, mp.cor_hex
         FROM   mapa_posicoes p
@@ -218,10 +220,10 @@ def get_paletes_rack(conn, rua: str, face: str) -> dict:
     }
 
 
-def get_todos_paletes(conn) -> dict:
+@st.cache_data(ttl=300)
+def get_todos_paletes(_conn) -> dict:
     """Retorna todos os paletes do armazém (todas as ruas/faces)."""
-    ensure_mapa_tables(conn)
-    rows = conn.execute(
+    rows = _conn.execute(
         """
         SELECT p.pos_key, p.rua, p.face, mp.nome, p.quantidade, p.unidade, mp.cor_hex
         FROM   mapa_posicoes p
@@ -242,10 +244,10 @@ def get_todos_paletes(conn) -> dict:
     }
 
 
-def get_produtos_mapa(conn) -> list:
+@st.cache_data(ttl=300)
+def get_produtos_mapa(_conn) -> list:
     """Retorna lista de {produto_id, nome, unidade_pad, cor_hex} ordenada por nome."""
-    ensure_mapa_tables(conn)
-    rows = conn.execute(
+    rows = _conn.execute(
         "SELECT produto_id, nome, unidade_pad, cor_hex FROM mapa_produtos ORDER BY nome"
     ).fetchall()
     return [
@@ -254,10 +256,10 @@ def get_produtos_mapa(conn) -> list:
     ]
 
 
-def buscar_produto_no_mapa(conn, nome_parcial: str) -> list:
+@st.cache_data(ttl=300)
+def buscar_produto_no_mapa(_conn, nome_parcial: str) -> list:
     """Retorna lista de pos_keys que contêm o produto (busca por substring)."""
-    ensure_mapa_tables(conn)
-    rows = conn.execute(
+    rows = _conn.execute(
         """
         SELECT p.pos_key
         FROM   mapa_posicoes p
@@ -269,13 +271,13 @@ def buscar_produto_no_mapa(conn, nome_parcial: str) -> list:
     return [r[0] for r in rows]
 
 
-def buscar_produto_todas_ruas(conn, nome_parcial: str) -> list:
+@st.cache_data(ttl=300)
+def buscar_produto_todas_ruas(_conn, nome_parcial: str) -> list:
     """
     Busca produto em TODOS os racks e retorna lista de localizações completas.
     Retorna [{pos_key, rua, face, coluna, nivel, produto, quantidade, unidade}]
     """
-    ensure_mapa_tables(conn)
-    rows = conn.execute(
+    rows = _conn.execute(
         """
         SELECT p.pos_key, p.rua, p.face, p.coluna, p.nivel,
                mp.nome, p.quantidade, p.unidade
@@ -296,39 +298,39 @@ def buscar_produto_todas_ruas(conn, nome_parcial: str) -> list:
     ]
 
 
-def get_ocupacao_geral(conn) -> dict:
+@st.cache_data(ttl=300)
+def get_ocupacao_geral(_conn) -> dict:
     """
     Retorna {(rack_id, face): (ocupadas, total)} para todos os racks ativos.
     Total fixo = 13 colunas × 4 níveis = 52 células por rack.
     """
-    ensure_mapa_tables(conn)
     TOTAL = 52
     # Uma única query GROUP BY substitui 20 queries individuais
-    rows = conn.execute(
+    rows = _conn.execute(
         "SELECT rua, face, COUNT(*) FROM mapa_posicoes WHERE produto_id IS NOT NULL GROUP BY rua, face"
     ).fetchall()
     ocupacao_map = {(r[0], r[1]): r[2] for r in rows}
     result = {}
-    for rua in _get_rack_list(conn):
+    for rua in _get_rack_list(_conn):
         for face in ["A", "B"]:
             result[(rua, face)] = (ocupacao_map.get((rua, face), 0), TOTAL)
     return result
 
 
-def get_posicoes_vazias(conn) -> list:
+@st.cache_data(ttl=300)
+def get_posicoes_vazias(_conn) -> list:
     """
     Retorna lista de pos_key de todas as posições vazias do armazém,
     em ordem lógica (R1→R10, A→B, C1→C13, N1→N4).
     """
-    ensure_mapa_tables(conn)
     ocupadas = {
         r[0]
-        for r in conn.execute(
+        for r in _conn.execute(
             "SELECT pos_key FROM mapa_posicoes WHERE produto_id IS NOT NULL"
         ).fetchall()
     }
     vazias = []
-    for rua in _get_rack_list(conn):
+    for rua in _get_rack_list(_conn):
         for face in ["A", "B"]:
             for col in range(1, 14):
                 for niv in range(1, 5):
@@ -339,6 +341,17 @@ def get_posicoes_vazias(conn) -> list:
 
 
 # ── Escrita ───────────────────────────────────────────────────────────────────
+
+def _clear_mapa_caches():
+    """Invalida caches das funções de leitura do mapa."""
+    get_paletes_rack.clear()
+    get_todos_paletes.clear()
+    get_produtos_mapa.clear()
+    get_ocupacao_geral.clear()
+    get_posicoes_vazias.clear()
+    buscar_produto_no_mapa.clear()
+    buscar_produto_todas_ruas.clear()
+
 
 def upsert_palete(conn, pos_key: str, produto_id: str, quantidade: float, unidade: str):
     """Insere ou atualiza um palete numa posição."""
@@ -358,6 +371,7 @@ def upsert_palete(conn, pos_key: str, produto_id: str, quantidade: float, unidad
         (pos_key, rua, face, coluna, nivel, produto_id, quantidade, unidade, now),
     )
     conn.commit()
+    _clear_mapa_caches()
 
 
 def delete_palete(conn, pos_key: str):
@@ -365,6 +379,7 @@ def delete_palete(conn, pos_key: str):
     ensure_mapa_tables(conn)
     conn.execute("DELETE FROM mapa_posicoes WHERE pos_key = ?", (pos_key,))
     conn.commit()
+    _clear_mapa_caches()
 
 
 def mover_palete(conn, pos_key_origem: str, pos_key_destino: str):
@@ -421,6 +436,7 @@ def mover_palete(conn, pos_key_origem: str, pos_key_destino: str):
              origem_row[0], origem_row[1], origem_row[2], now),
         )
         conn.commit()
+        _clear_mapa_caches()
     except Exception:
         try:
             conn.execute("ROLLBACK")
@@ -451,6 +467,7 @@ def add_produto_mapa(conn, nome: str, unidade: str) -> str:
         (pid, nome, unidade, cor),
     )
     conn.commit()
+    _clear_mapa_caches()
 
     row = conn.execute("SELECT produto_id FROM mapa_produtos WHERE LOWER(nome) = LOWER(?)", (nome,)).fetchone()
     return row[0] if row else pid
@@ -462,6 +479,7 @@ def delete_produto_mapa(conn, produto_id: str):
     conn.execute("DELETE FROM mapa_posicoes WHERE produto_id = ?", (produto_id,))
     conn.execute("DELETE FROM mapa_produtos WHERE produto_id = ?", (produto_id,))
     conn.commit()
+    _clear_mapa_caches()
 
 
 def _distribuir_proporcional(total: float, qtd_atuais: list) -> list:
@@ -563,4 +581,5 @@ def sync_quantidades_from_estoque(conn) -> dict:
             atualizadas += 1
 
     conn.commit()
+    _clear_mapa_caches()
     return {"atualizadas": atualizadas, "sem_match": sem_match}

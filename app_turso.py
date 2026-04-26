@@ -1343,6 +1343,27 @@ def _get_connection():
     """)
     conn.commit()
 
+    # ── Índices para reduzir full-table scans ──
+    _indices = [
+        "CREATE INDEX IF NOT EXISTS idx_vh_codigo       ON vendas_historico(codigo)",
+        "CREATE INDEX IF NOT EXISTS idx_vh_data         ON vendas_historico(data_upload)",
+        "CREATE INDEX IF NOT EXISTS idx_vh_codigo_data  ON vendas_historico(codigo, data_upload)",
+        "CREATE INDEX IF NOT EXISTS idx_div_codigo      ON divergencias(codigo)",
+        "CREATE INDEX IF NOT EXISTS idx_div_criado      ON divergencias(criado_em)",
+        "CREATE INDEX IF NOT EXISTS idx_vl_produto      ON validade_lotes(produto)",
+        "CREATE INDEX IF NOT EXISTS idx_vl_vencimento   ON validade_lotes(vencimento)",
+        "CREATE INDEX IF NOT EXISTS idx_reposto         ON reposicao_loja(reposto)",
+        "CREATE INDEX IF NOT EXISTS idx_av_status       ON avarias(status)",
+        "CREATE INDEX IF NOT EXISTS idx_ci_codigo       ON contagem_itens(codigo)",
+        "CREATE INDEX IF NOT EXISTS idx_mapa_pos_rua    ON mapa_posicoes(rua, face)",
+    ]
+    for _idx_sql in _indices:
+        try:
+            conn.execute(_idx_sql)
+        except Exception:
+            pass
+    conn.commit()
+
     # ── Migração: remove UNIQUE antigo de materiais_terceiros se existir ──
     try:
         _mat_sql = (conn.execute(
@@ -1739,6 +1760,7 @@ def checar_e_registrar_alertas() -> dict:
 # MURAL — funções CRUD
 # ══════════════════════════════════════════════════════════════════════════════
 
+@st.cache_data(ttl=60)
 def get_mural_recados(tag: str | None = None) -> list:
     """Retorna lista de recados do mural (mais recentes primeiro)."""
     conn = get_db()
@@ -1763,6 +1785,7 @@ def get_mural_recados(tag: str | None = None) -> list:
 # AVARIAS — funções CRUD
 # ══════════════════════════════════════════════════════════════════════════════
 
+@st.cache_data(ttl=120)
 def listar_avarias(apenas_abertas: bool = False) -> pd.DataFrame:
     cols = ["id", "codigo", "produto", "qtd_avariada", "motivo", "status",
             "registrado_em", "resolvido_em", "capacidade_litros", "foto_base64"]
@@ -1790,6 +1813,8 @@ def resolver_avaria(avaria_id: int):
         )
         conn.commit()
         sync_db()
+        listar_avarias.clear()
+        get_avarias_count_abertas.clear()
     except Exception as e:
         st.error(f"❌ Erro ao resolver avaria: {e}")
 
@@ -1800,6 +1825,8 @@ def deletar_avaria(avaria_id: int):
         conn.execute("DELETE FROM avarias WHERE id = ?", (avaria_id,))
         conn.commit()
         sync_db()
+        listar_avarias.clear()
+        get_avarias_count_abertas.clear()
     except Exception as e:
         st.error(f"❌ Erro ao deletar avaria: {e}")
 
@@ -1853,6 +1880,7 @@ def excluir_produto_mestre(codigo: str) -> tuple:
         return (False, f"❌ Erro ao excluir: {e}")
 
 
+@st.cache_data(ttl=60)
 def get_avarias_count_abertas() -> int:
     try:
         row = get_db().execute("SELECT COUNT(*) FROM avarias WHERE status = 'aberto'").fetchone()
@@ -1942,6 +1970,8 @@ def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str,
         # Um único commit para os dois inserts
         conn.commit()
         sync_db()
+        listar_avarias.clear()
+        get_avarias_count_abertas.clear()
         return True
     except Exception as e:
         st.error(f"❌ Erro ao registrar avaria: {e}")
@@ -2476,6 +2506,7 @@ def delete_fabricante(fabricante: str) -> bool:
 
 # ── Estocados de Cooperados ───────────────────────────────────────────────────
 
+@st.cache_data(ttl=120)
 def get_estocados_ativos() -> pd.DataFrame:
     cols = ["id", "produto", "cooperado", "quantidade", "data_entrada", "observacao"]
     try:
@@ -2502,6 +2533,8 @@ def inserir_estocado(produto: str, cooperado: str, quantidade: int,
               datetime.now().strftime("%Y-%m-%d"), observacao))
         conn.commit()
         sync_db()
+        get_estocados_ativos.clear()
+        get_estocados_count_ativos.clear()
         return True
     except Exception as e:
         st.error(f"❌ Erro ao inserir estocado: {e}")
@@ -2517,12 +2550,15 @@ def baixar_estocado(estocado_id: int) -> bool:
         )
         conn.commit()
         sync_db()
+        get_estocados_ativos.clear()
+        get_estocados_count_ativos.clear()
         return True
     except Exception as e:
         st.error(f"❌ Erro ao dar baixa: {e}")
         return False
 
 
+@st.cache_data(ttl=120)
 def get_estocados_count_ativos() -> int:
     try:
         row = get_db().execute(
@@ -2534,19 +2570,19 @@ def get_estocados_count_ativos() -> int:
 
 
 def get_estocados_por_produto(produto: str) -> list:
-    """Retorna estocados ativos cujo nome tem relação de substring bidirecional com o produto buscado (case-insensitive)."""
+    """Retorna estocados ativos cujo nome tem relação de substring bidirecional com o produto buscado (case-insensitive).
+    Usa get_estocados_ativos() cacheado para evitar N+1 queries ao chamar em loop.
+    """
     try:
-        all_rows = get_db().execute("""
-            SELECT cooperado, quantidade, observacao, produto
-            FROM estocados_cooperados
-            WHERE ativo = 1
-        """).fetchall()
+        df = get_estocados_ativos()
+        if df.empty:
+            return []
         busca = produto.strip().upper()
         resultado = []
-        for cooperado, quantidade, observacao, nome_estocado in all_rows:
-            nome = (nome_estocado or "").strip().upper()
+        for _, row in df.iterrows():
+            nome = str(row["produto"] or "").strip().upper()
             if nome and (busca in nome or nome in busca):
-                resultado.append((cooperado, quantidade, observacao))
+                resultado.append((row["cooperado"], row["quantidade"], row["observacao"]))
         return resultado
     except Exception as e:
         import logging
@@ -2588,9 +2624,13 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
         ))
     conn.commit()
     sync_db()
+    get_materiais_terceiros.clear()
+    get_materiais_cooperados.clear()
+    get_materiais_resumo.clear()
     return len(records), removidos
 
 
+@st.cache_data(ttl=120)
 def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None, cooperado: str | None = None) -> pd.DataFrame:
     """Retorna DataFrame de materiais em poder de terceiros, com filtros opcionais."""
     cols = [
@@ -2623,6 +2663,7 @@ def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None,
         return pd.DataFrame(columns=cols)
 
 
+@st.cache_data(ttl=120)
 def get_materiais_cooperados() -> list:
     """Retorna lista ordenada de razões sociais distintas em materiais_terceiros."""
     try:
@@ -2636,6 +2677,7 @@ def get_materiais_cooperados() -> list:
         return []
 
 
+@st.cache_data(ttl=120)
 def get_materiais_resumo() -> dict:
     """Retorna dict com totalizadores: parceiros, itens, saldo_total."""
     try:
@@ -4326,12 +4368,18 @@ def save_validade_lotes(df: pd.DataFrame) -> bool:
         """, rows)
         conn.commit()
         sync_db()
+        get_validade_lotes.clear()
+        get_validade_upload_date.clear()
+        get_produtos_parados.clear()
+        get_esquecidos_com_validade.clear()
+        get_giro_ruptura_grupos.clear()
         return True
     except Exception as e:
         st.error(f"❌ Erro ao salvar validade: {e}")
         return False
 
 
+@st.cache_data(ttl=120)
 def get_validade_lotes() -> pd.DataFrame:
     """Carrega todos os lotes de validade do banco."""
     cols = ["id", "filial", "grupo", "produto", "lote", "fabricacao", "vencimento",
@@ -4355,6 +4403,7 @@ def get_validade_lotes() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=120)
 def get_validade_upload_date() -> str:
     """Retorna a data do último upload de validade, ou string vazia."""
     try:
@@ -5453,6 +5502,17 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
 
         conn.commit()
         sync_db()
+        # Invalida caches que dependem de vendas_historico
+        get_vendas_historico.clear()
+        get_ultima_venda_por_produto.clear()
+        get_vendas_por_dia.clear()
+        get_top_produtos_historico.clear()
+        get_periodo_vendas.clear()
+        get_datas_vendas_range.clear()
+        get_mais_menos_movimentados.clear()
+        get_produtos_parados.clear()
+        get_esquecidos_com_validade.clear()
+        get_giro_ruptura_grupos.clear()
     except Exception:
         pass
 
@@ -5486,11 +5546,16 @@ def save_faturamento_gv(records: list, data_ref: str):
             )
         conn.commit()
         sync_db()
+        get_faturamento_gv.clear()
+        get_data_ref_faturamento_gv.clear()
+        checar_reconciliacao_gv.clear()
+        get_resumo_reconciliacao_gv.clear()
         return True, f"{len(rows)} registros de faturamento GV salvos para {data_ref}."
     except Exception as e:
         return False, f"Erro ao salvar faturamento GV: {e}"
 
 
+@st.cache_data(ttl=300)
 def get_faturamento_gv(data_ref: str = None) -> pd.DataFrame:
     """Retorna dados de faturamento GV. Se data_ref for None, usa o mais recente."""
     cols = ["id", "codigo", "produto", "cooperado", "qtd_faturada", "data_ref", "uploaded_em"]
@@ -5592,6 +5657,7 @@ _NOMES_INVALIDOS_COOP = {
 }
 
 
+@st.cache_data(ttl=300)
 def checar_reconciliacao_gv() -> list:
     """
     Dois checks independentes retornam alertas por cooperado:
@@ -5749,6 +5815,7 @@ def checar_reconciliacao_gv() -> list:
         return []
 
 
+@st.cache_data(ttl=300)
 def get_resumo_reconciliacao_gv() -> pd.DataFrame:
     """
     Retorna DataFrame completo da reconciliação GV vs Vendas
@@ -5798,6 +5865,7 @@ def get_resumo_reconciliacao_gv() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=300)
 def get_data_ref_faturamento_gv() -> str:
     """Retorna o data_ref mais recente do faturamento GV, ou '' se não houver."""
     try:
@@ -5807,22 +5875,30 @@ def get_data_ref_faturamento_gv() -> str:
         return ""
 
 
+@st.cache_data(ttl=300)
 def get_vendas_historico() -> pd.DataFrame:
     """Retorna vendas ACUMULADAS por produto (soma de todos os dias)."""
     try:
         rows = get_db().execute("""
+            WITH last_upload AS (
+                SELECT codigo, MAX(data_upload) AS max_date
+                  FROM vendas_historico
+                 GROUP BY codigo
+            ),
+            last_estoque AS (
+                SELECT v.codigo, v.qtd_estoque
+                  FROM vendas_historico v
+                  JOIN last_upload lu ON lu.codigo = v.codigo
+                                    AND lu.max_date = v.data_upload
+                 GROUP BY v.codigo
+            )
             SELECT v.codigo, v.produto, v.grupo,
-                   SUM(v.qtd_vendida)  AS qtd_vendida,
-                   COALESCE(
-                       (SELECT em.qtd_sistema FROM estoque_mestre em WHERE em.codigo = v.codigo),
-                       (SELECT v2.qtd_estoque
-                          FROM vendas_historico v2
-                         WHERE v2.codigo = v.codigo
-                         ORDER BY v2.data_upload DESC
-                         LIMIT 1)
-                   )                   AS qtd_estoque,
-                   MAX(v.data_upload)  AS data_upload
+                   SUM(v.qtd_vendida)                       AS qtd_vendida,
+                   COALESCE(em.qtd_sistema, le.qtd_estoque) AS qtd_estoque,
+                   MAX(v.data_upload)                       AS data_upload
               FROM vendas_historico v
+              LEFT JOIN estoque_mestre em ON em.codigo = v.codigo
+              LEFT JOIN last_estoque le   ON le.codigo = v.codigo
              GROUP BY v.codigo
              ORDER BY SUM(v.qtd_vendida) DESC
         """).fetchall()
@@ -5833,25 +5909,35 @@ def get_vendas_historico() -> pd.DataFrame:
     return pd.DataFrame()
 
 
+@st.cache_data(ttl=300)
 def get_ultima_venda_por_produto() -> pd.DataFrame:
     """Retorna, para cada produto, a data da última venda registrada e a quantidade vendida naquele dia."""
     try:
         rows = get_db().execute("""
-            SELECT v.codigo,
-                   v.produto,
-                   v.grupo,
-                   v.data_upload          AS ultima_data,
-                   v.qtd_vendida          AS qtd_ultimo_dia,
-                   SUM(v2.qtd_vendida)    AS qtd_total
-              FROM vendas_historico v
-              JOIN vendas_historico v2 ON v2.codigo = v.codigo
-             WHERE v.data_upload = (
-                   SELECT MAX(v3.data_upload)
-                     FROM vendas_historico v3
-                    WHERE v3.codigo = v.codigo
-             )
-             GROUP BY v.codigo
-             ORDER BY v.data_upload DESC, v.produto ASC
+            WITH max_dates AS (
+                SELECT codigo, MAX(data_upload) AS ultima_data
+                  FROM vendas_historico
+                 GROUP BY codigo
+            ),
+            last_day AS (
+                SELECT v.codigo, v.produto, v.grupo,
+                       v.data_upload          AS ultima_data,
+                       SUM(v.qtd_vendida)     AS qtd_ultimo_dia
+                  FROM vendas_historico v
+                  JOIN max_dates md ON md.codigo = v.codigo
+                                  AND md.ultima_data = v.data_upload
+                 GROUP BY v.codigo
+            ),
+            totals AS (
+                SELECT codigo, SUM(qtd_vendida) AS qtd_total
+                  FROM vendas_historico
+                 GROUP BY codigo
+            )
+            SELECT ld.codigo, ld.produto, ld.grupo,
+                   ld.ultima_data, ld.qtd_ultimo_dia, t.qtd_total
+              FROM last_day ld
+              JOIN totals t ON t.codigo = ld.codigo
+             ORDER BY ld.ultima_data DESC, ld.produto ASC
         """).fetchall()
         if rows:
             return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "ultima_data", "qtd_ultimo_dia", "qtd_total"])
@@ -5860,6 +5946,7 @@ def get_ultima_venda_por_produto() -> pd.DataFrame:
     return pd.DataFrame()
 
 
+@st.cache_data(ttl=300)
 def get_periodo_vendas() -> int:
     """Retorna o número de dias distintos com vendas registradas."""
     try:
@@ -5873,6 +5960,7 @@ def get_periodo_vendas() -> int:
     return 1
 
 
+@st.cache_data(ttl=300)
 def get_vendas_por_dia() -> pd.DataFrame:
     """Retorna total de unidades vendidas por dia (para o gráfico de histórico).
 
@@ -5918,6 +6006,7 @@ def get_vendas_por_dia() -> pd.DataFrame:
 _RE_LONA_DIM = re.compile(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)')
 
 
+@st.cache_data(ttl=300)
 def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
     """Retorna os top N produtos mais vendidos no período acumulado.
 
@@ -6045,6 +6134,7 @@ def get_mais_menos_movimentados(data_inicio: str, data_fim: str, grupo: str = "T
     return pd.DataFrame()
 
 
+@st.cache_data(ttl=300)
 def get_produtos_sem_principio_ativo() -> list:
     """Retorna defensivos do estoque que não têm princípio ativo resolvível,
     usando o mesmo matching fuzzy multi-etapa da aba P. Ativos."""
@@ -10720,7 +10810,8 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
 
 with t_ciclico:
-    _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name)
+    _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name,
+                        get_divergencias=get_divergencias, get_historico_divergencias=get_historico_divergencias)
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
