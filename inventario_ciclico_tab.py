@@ -247,7 +247,7 @@ def _get_progresso_ciclo(get_db) -> dict:
 # ── Modal de conferência ──────────────────────────────────────────────────────
 
 @st.dialog("Conferência de Estoque", width="small")
-def _dialog_conferencia(produto_row, get_db, sync_db, clear_caches=None):
+def _dialog_conferencia(produto_row, get_db, sync_db):
     """Modal para confirmar quantidade OK ou registrar divergência."""
     sel_codigo = str(produto_row["codigo"])
     qtd_sistema = int(produto_row["qtd_sistema"])
@@ -287,20 +287,14 @@ def _dialog_conferencia(produto_row, get_db, sync_db, clear_caches=None):
         if _marcar_ciclo_ok(sel_codigo, get_db, sync_db):
             st.session_state.pop("ciclo_sel", None)
             st.toast(f"✅ {produto_row['produto']} confirmado OK", icon="🟢")
-            if clear_caches:
-                clear_caches()
-            else:
-                st.cache_data.clear()
+            st.session_state["_ciclo_cache_clear_needed"] = True
             st.rerun()
 
     if col2.button("⚠️ Divergência", use_container_width=True, key="cic_dialog_div"):
         if _marcar_ciclo_divergencia(sel_codigo, int(qtd_real), get_db, sync_db):
             st.session_state.pop("ciclo_sel", None)
             st.toast(f"⚠️ {produto_row['produto']}: divergência registrada", icon="🔴")
-            if clear_caches:
-                clear_caches()
-            else:
-                st.cache_data.clear()
+            st.session_state["_ciclo_cache_clear_needed"] = True
             st.rerun()
 
 
@@ -332,20 +326,21 @@ def build_inventario_ciclico_tab(
         else:
             st.toast(f"⚠️ Código '{_clicked}' não encontrado.", icon="⚠️")
 
-    # ── Abre modal (one-shot: pop antes de chamar evita reabrir após X) ───────
-    def _ciclo_clear_caches():
+    # ── Drena flag de clear de caches setado pelo dialog ────────────────────
+    if st.session_state.pop("_ciclo_cache_clear_needed", False):
         get_current_stock.clear()
         if get_divergencias is not None:
             get_divergencias.clear()
         if get_historico_divergencias is not None:
             get_historico_divergencias.clear()
 
+    # ── Abre modal (one-shot: pop antes de chamar evita reabrir após X) ───────
     if st.session_state.pop("ciclo_dialog_open", False):
         _sc = st.session_state.get("ciclo_sel")
         if _sc:
             _sr = df[df["codigo"].astype(str) == str(_sc)]
             if not _sr.empty:
-                _dialog_conferencia(_sr.iloc[0], get_db, sync_db, clear_caches=_ciclo_clear_caches)
+                _dialog_conferencia(_sr.iloc[0], get_db, sync_db)
 
     conferidos = progresso["ok"] + progresso["divergencia"]
     pct = (conferidos / max(progresso["total"], 1)) * 100
@@ -430,7 +425,7 @@ def build_inventario_ciclico_tab(
             if escolha_def and st.button("Desfazer", key="cic_btn_desfazer"):
                 if _desfazer_conferencia(opts_def[escolha_def], get_db, sync_db):
                     st.toast("🔄 Conferência desfeita", icon="↩️")
-                    _ciclo_clear_caches()
+                    st.session_state["_ciclo_cache_clear_needed"] = True
                     st.rerun()
         else:
             st.caption("Nenhum produto conferido ainda.")
