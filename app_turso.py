@@ -6360,6 +6360,54 @@ def _get_color(grupo: str) -> str:
     return _GROUP_COLORS.get(grupo, "#64748b")
 
 
+def _build_df_zerados(df_vendas: pd.DataFrame) -> pd.DataFrame:
+    """Retorna DataFrame com produtos zerados que venderam, sem duplicatas por nome equivalente."""
+    df_zero = df_vendas[
+        (df_vendas["qtd_estoque"] <= 0) & (df_vendas["qtd_vendida"] > 0)
+    ].sort_values("qtd_vendida", ascending=False)
+
+    if df_zero.empty:
+        return df_zero
+
+    # Remover duplicatas: produtos zerados que têm equivalente com estoque
+    # (mesmo produto cadastrado com código diferente que ainda tem estoque)
+    _PREFIXOS_CATEGORIA = {
+        "HERBICIDA", "FUNGICIDA", "INSETICIDA", "ACARICIDA", "NEMATICIDA",
+        "ADJUVANTE", "FERTILIZANTE", "REGULADOR", "ESTIMULANTE", "INOCULANTE",
+        "SEMENTE", "SEM", "BIOLOGICO", "BIOLÓGICO", "ADUBO", "DEFENSIVO",
+        "MICRONUTRIENTE", "ENXOFRE", "CALCARIO", "CALCÁRIO",
+    }
+
+    def _core_nome(nome: str) -> str:
+        palavras = nome.upper().strip().split()
+        while palavras and palavras[0] in _PREFIXOS_CATEGORIA:
+            palavras = palavras[1:]
+        return " ".join(palavras)
+
+    try:
+        _em_rows = get_db().execute(
+            "SELECT produto FROM estoque_mestre WHERE qtd_sistema > 0"
+        ).fetchall()
+        _em_cores = {_core_nome(r[0]) for r in _em_rows if r[0]}
+        if _em_cores:
+            def _tem_duplicata_com_estoque(nome: str) -> bool:
+                core = _core_nome(nome)
+                if not core or len(core) < 6:
+                    return False
+                if core in _em_cores:
+                    return True
+                for em_core in _em_cores:
+                    if len(em_core) >= 6 and (core in em_core or em_core in core):
+                        return True
+                return False
+
+            df_zero = df_zero[~df_zero["produto"].apply(_tem_duplicata_com_estoque)]
+    except Exception:
+        pass
+
+    return df_zero
+
+
 def build_vendas_tab(df_vendas: pd.DataFrame):
     """Renderiza a aba completa de gráficos de vendas."""
     if df_vendas.empty:
@@ -6488,42 +6536,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
     # ══════════════════════════════════════════════════════════════════════
     with vt2:
         # Produtos com estoque zerado que venderam
-        df_zero = df_vendas[(df_vendas["qtd_estoque"] <= 0) & (df_vendas["qtd_vendida"] > 0)].sort_values("qtd_vendida", ascending=False)
-
-        # Remover duplicatas: produtos zerados que têm equivalente com estoque
-        # (mesmo produto cadastrado com código diferente que ainda tem estoque)
-        _PREFIXOS_CATEGORIA = {
-            "HERBICIDA", "FUNGICIDA", "INSETICIDA", "ACARICIDA", "NEMATICIDA",
-            "ADJUVANTE", "FERTILIZANTE", "REGULADOR", "ESTIMULANTE", "INOCULANTE",
-            "SEMENTE", "SEM", "BIOLOGICO", "BIOLÓGICO", "ADUBO", "DEFENSIVO",
-            "MICRONUTRIENTE", "ENXOFRE", "CALCARIO", "CALCÁRIO",
-        }
-
-        def _core_nome(nome: str) -> str:
-            palavras = nome.upper().strip().split()
-            while palavras and palavras[0] in _PREFIXOS_CATEGORIA:
-                palavras = palavras[1:]
-            return " ".join(palavras)
-
-        try:
-            _em_rows = get_db().execute(
-                "SELECT produto FROM estoque_mestre WHERE qtd_sistema > 0"
-            ).fetchall()
-            _em_cores = {_core_nome(r[0]) for r in _em_rows if r[0]}
-            if _em_cores:
-                def _tem_duplicata_com_estoque(nome: str) -> bool:
-                    core = _core_nome(nome)
-                    if not core or len(core) < 6:
-                        return False
-                    if core in _em_cores:
-                        return True
-                    for em_core in _em_cores:
-                        if len(em_core) >= 6 and (core in em_core or em_core in core):
-                            return True
-                    return False
-                df_zero = df_zero[~df_zero["produto"].apply(_tem_duplicata_com_estoque)]
-        except Exception:
-            pass
+        df_zero = _build_df_zerados(df_vendas)
         # Produtos com estoque < 50% do vendido
         df_crit = df_vendas[
             (df_vendas["qtd_estoque"] > 0) &
@@ -7227,6 +7240,24 @@ def build_infograficos_tab():
 
     # ── Seletor de infográfico (posicionado após o gráfico) ───────────────
     _render_seletor_inf()
+
+    st.markdown("")
+    df_vendas_info = get_vendas_historico()
+    if not df_vendas_info.empty:
+        df_zero_info = _build_df_zerados(df_vendas_info)
+        if not df_zero_info.empty:
+            with st.expander(
+                f"💀 Lista Completa — Estoque Zerado ({len(df_zero_info)} produtos)",
+                expanded=False,
+            ):
+                df_zero_show = df_zero_info[["codigo", "produto", "grupo", "qtd_vendida"]].copy()
+                df_zero_show.columns = ["Código", "Produto", "Grupo", "Vendido"]
+                st.dataframe(
+                    df_zero_show.reset_index(drop=True),
+                    hide_index=True,
+                    use_container_width=True,
+                    height=400,
+                )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
