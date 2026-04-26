@@ -656,7 +656,8 @@ st.markdown("""
     .stTabs [data-baseweb="tab"][aria-selected="true"] {
         color: #cde8f8 !important;
         background: rgba(123,175,212,0.16) !important;
-        border: 1px solid rgba(123,175,212,0.35) !important;
+        border: 1px solid rgba(123,175,212,0.5) !important;
+        box-shadow: 0 0 6px rgba(123,175,212,0.45), 0 0 14px rgba(123,175,212,0.18) !important;
     }
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
     .stTabs [data-baseweb="tab-border"] { display: none !important; }
