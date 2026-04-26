@@ -3042,6 +3042,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             showlegend=False,
             bargap=0.3,
             clickmode="event+select",
+            dragmode=False,
         )
     else:  # Pizza / donut
         pie_line_colors = ["#FFD166" if pa == pa_sel else "rgba(0,0,0,0)" for pa in pa_list]
@@ -3076,6 +3077,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             margin=dict(l=10, r=10, t=30, b=30),
             legend=dict(bgcolor="#111827", bordercolor="#1F2937", font=dict(size=10, color="#6B7280")),
             clickmode="event+select",
+            dragmode=False,
         )
 
     # ── 10. Renderizar gráfico (com suporte a click via on_select) ────────────
@@ -3084,7 +3086,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     try:
         event = st.plotly_chart(
             fig, use_container_width=True,
-            config={"displayModeBar": False},
+            config={"displayModeBar": False, "scrollZoom": False},
             on_select="rerun",
             key=_chart_key,
         )
