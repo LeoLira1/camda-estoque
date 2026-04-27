@@ -7998,7 +7998,9 @@ if has_mestre:
             # Agrega produtos com mesmo código dentro de cada cooperado
             _chart_groups: dict = {}
             for _, _cr in df_div.iterrows():
-                _coop = str(_cr.get("cooperado") or "").strip() or "Sem cooperado"
+                _coop = str(_cr.get("cooperado") or "").strip()
+                if not _coop or _coop.upper() == "SEM COOPERADO":
+                    _coop = "Sem cooperado"
                 _delta = int(_cr["delta"]) if pd.notnull(_cr.get("delta")) else 0
                 _sis = int(_cr["qtd_sistema"]) if pd.notnull(_cr.get("qtd_sistema")) else 0
                 _cod = str(_cr.get("codigo", ""))
