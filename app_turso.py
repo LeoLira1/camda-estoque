@@ -5801,7 +5801,7 @@ def checar_reconciliacao_gv() -> list:
                             "cooperado": coop,
                             "qtd_vendida": sum(m["qtd_vendida"] for m in matches_qtd),
                             "qtd_faturada": 0,
-                            "delta_abs": len(matches_qtd),
+                            "delta_abs": sum(abs(m["delta"]) for m in matches_qtd),
                             "delta_pct": 0.0,
                             "data_ref": data_ref_vend,
                             "status": "possivel_faturamento",
