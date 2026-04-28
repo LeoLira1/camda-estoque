@@ -168,21 +168,82 @@ def _on_busca_treemap():
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
+def _ensure_inventario_cicli(conn) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS inventario_cicli (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_contagem   TEXT NOT NULL,
+            produto_id      TEXT NOT NULL,
+            produto_nome    TEXT NOT NULL DEFAULT '',
+            categoria_id    TEXT NOT NULL DEFAULT '',
+            categoria_label TEXT NOT NULL DEFAULT '',
+            categoria_cor   TEXT NOT NULL DEFAULT '#888888',
+            qtd_sistema     REAL NOT NULL DEFAULT 0,
+            qtd_contada     REAL,
+            divergencia     REAL,
+            score           REAL NOT NULL DEFAULT 0,
+            contado_em      TEXT DEFAULT '',
+            observacao      TEXT DEFAULT ''
+        )
+    """)
+
+
+def _upsert_inventario_cicli(
+    conn,
+    data_contagem: str,
+    produto_id: str,
+    produto_nome: str,
+    categoria: str,
+    qtd_sistema: float,
+    qtd_contada: float,
+    contado_em: str,
+    observacao: str = "",
+) -> None:
+    _ensure_inventario_cicli(conn)
+    divergencia = float(qtd_contada) - float(qtd_sistema)
+    existing = conn.execute(
+        "SELECT id FROM inventario_cicli WHERE data_contagem = ? AND produto_id = ?",
+        (data_contagem, produto_id),
+    ).fetchone()
+    if existing:
+        conn.execute("""
+            UPDATE inventario_cicli
+            SET qtd_contada=?, divergencia=?, contado_em=?, observacao=?,
+                produto_nome=?, qtd_sistema=?
+            WHERE data_contagem=? AND produto_id=?
+        """, (qtd_contada, divergencia, contado_em, observacao,
+              produto_nome, qtd_sistema, data_contagem, produto_id))
+    else:
+        conn.execute("""
+            INSERT INTO inventario_cicli
+                (data_contagem, produto_id, produto_nome, categoria_id, categoria_label,
+                 categoria_cor, qtd_sistema, qtd_contada, divergencia, contado_em, observacao)
+            VALUES (?, ?, ?, ?, ?, '#888888', ?, ?, ?, ?, ?)
+        """, (data_contagem, produto_id, produto_nome, categoria, categoria,
+              qtd_sistema, qtd_contada, divergencia, contado_em, observacao))
+
+
 def _marcar_ciclo_ok(codigo: str, get_db, sync_db) -> bool:
     try:
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         row = conn.execute(
-            "SELECT qtd_sistema FROM estoque_mestre WHERE codigo = ?", (codigo,)
+            "SELECT qtd_sistema, produto, categoria FROM estoque_mestre WHERE codigo = ?",
+            (codigo,),
         ).fetchone()
         if not row:
             return False
-        q = row[0]
+        qtd_sistema, produto_nome, categoria = row[0], row[1], row[2]
         conn.execute("""
             UPDATE estoque_mestre
             SET status_ciclo='ok', qtd_contada_ciclo=?, qtd_sistema_na_contagem=?, contado_ciclo_em=?
             WHERE codigo=?
-        """, (q, q, now, codigo))
+        """, (qtd_sistema, qtd_sistema, now, codigo))
+        data_hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
+        _upsert_inventario_cicli(
+            conn, data_hoje, codigo, produto_nome, categoria,
+            qtd_sistema, qtd_sistema, now,
+        )
         conn.commit()
         sync_db()
         return True
@@ -196,16 +257,22 @@ def _marcar_ciclo_divergencia(codigo: str, qtd_real: int, get_db, sync_db) -> bo
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         row = conn.execute(
-            "SELECT qtd_sistema FROM estoque_mestre WHERE codigo = ?", (codigo,)
+            "SELECT qtd_sistema, produto, categoria FROM estoque_mestre WHERE codigo = ?",
+            (codigo,),
         ).fetchone()
         if not row:
             return False
-        q = row[0]
+        qtd_sistema, produto_nome, categoria = row[0], row[1], row[2]
         conn.execute("""
             UPDATE estoque_mestre
             SET status_ciclo='divergencia', qtd_contada_ciclo=?, qtd_sistema_na_contagem=?, contado_ciclo_em=?
             WHERE codigo=?
-        """, (qtd_real, q, now, codigo))
+        """, (qtd_real, qtd_sistema, now, codigo))
+        data_hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
+        _upsert_inventario_cicli(
+            conn, data_hoje, codigo, produto_nome, categoria,
+            qtd_sistema, float(qtd_real), now,
+        )
         conn.commit()
         sync_db()
         return True
@@ -222,6 +289,14 @@ def _desfazer_conferencia(codigo: str, get_db, sync_db) -> bool:
             SET status_ciclo='', qtd_contada_ciclo=NULL, qtd_sistema_na_contagem=NULL, contado_ciclo_em=''
             WHERE codigo=?
         """, (codigo,))
+        data_hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
+        try:
+            conn.execute(
+                "DELETE FROM inventario_cicli WHERE data_contagem=? AND produto_id=?",
+                (data_hoje, codigo),
+            )
+        except Exception:
+            pass
         conn.commit()
         sync_db()
         return True
