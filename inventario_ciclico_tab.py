@@ -82,49 +82,48 @@ _CSS_CARDS = """<style>
 }
 </style>"""
 
-# CSS: oculta visualmente os controles de conferência (feita externamente)
+# CSS: oculta o wrapper do campo de busca — o input ainda existe no DOM para o JS
 _CSS_HIDE_CONFERENCIA = """<style>
-/* Campo de busca do treemap — oculto; o input ainda existe no DOM para o JS */
-[data-testid="stTextInput"]:has(input[placeholder="ciclo-search-input"]) {
+[data-testid="element-container"]:has(input[placeholder="ciclo-search-input"]) {
     display: none !important;
 }
 </style>"""
 
-# JS: oculta seletivamente os demais controles de conferência via MutationObserver
+# JS: oculta os demais controles subindo até o element-container pai para colapsar espaço
 _JS_HIDE_CONFERENCIA = """
 <script>
 (function () {
     var pd = window.parent.document;
     var _t;
 
+    function up(el) {
+        var c = el.closest('[data-testid="element-container"]') ||
+                el.closest('.element-container') ||
+                el.parentElement;
+        if (c) c.style.display = 'none';
+        else el.style.display = 'none';
+    }
+
     function hideConferenciaUI() {
         // Selectbox "Categoria para conferir"
         pd.querySelectorAll('[data-testid="stSelectbox"]').forEach(function (el) {
             var lbl = el.querySelector('label');
-            if (lbl && lbl.textContent.trim() === 'Categoria para conferir') {
-                el.style.display = 'none';
-            }
+            if (lbl && lbl.textContent.trim() === 'Categoria para conferir') { up(el); }
         });
 
-        // Captions de instrução da conferência
+        // Captions de instrução
         pd.querySelectorAll('[data-testid="stCaptionContainer"]').forEach(function (el) {
             var txt = el.textContent || '';
-            if (txt.includes('Selecione uma categoria') || txt.includes('Clique em qualquer card')) {
-                el.style.display = 'none';
-            }
+            if (txt.includes('Selecione uma categoria') || txt.includes('Clique em qualquer card')) { up(el); }
         });
 
         // Expander "Desfazer conferência"
         pd.querySelectorAll('[data-testid="stExpander"]').forEach(function (el) {
-            if ((el.textContent || '').includes('Desfazer conferência')) {
-                el.style.display = 'none';
-            }
+            if ((el.textContent || '').includes('Desfazer conferência')) { up(el); }
         });
 
-        // Divisor (hr) imediatamente anterior ao bloco de busca
-        pd.querySelectorAll('[data-testid="stDivider"]').forEach(function (el) {
-            el.style.display = 'none';
-        });
+        // Divisor horizontal
+        pd.querySelectorAll('[data-testid="stDivider"]').forEach(function (el) { up(el); });
     }
 
     hideConferenciaUI();
