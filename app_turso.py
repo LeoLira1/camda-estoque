@@ -7744,37 +7744,50 @@ if has_mestre:
             if _df_falta_i.empty and _df_sobra_i.empty:
                 st.caption("✅ Nenhuma divergência registrada.")
             else:
+                def _render_grouped(_df, _accent, _border_alpha, _label_sem):
+                    if _df.empty:
+                        st.caption("Nenhum")
+                        return
+                    _df_g = _df.copy()
+                    _df_g["_coop_key"] = _df_g["cooperado"].fillna("").astype(str).str.strip()
+                    _df_g["_coop_label"] = _df_g["_coop_key"].replace("", _label_sem)
+                    _grupos = (
+                        _df_g.groupby("_coop_label", sort=False)
+                             .apply(lambda g: g.assign(_abs=g["delta"].abs().sum()))
+                    )
+                    _ordem = (
+                        _df_g.groupby("_coop_label")["delta"].apply(lambda s: s.abs().sum())
+                             .sort_values(ascending=False).index.tolist()
+                    )
+                    for _coop_nome in _ordem:
+                        _bloco = _df_g[_df_g["_coop_label"] == _coop_nome]
+                        _tot = int(_bloco["delta"].abs().sum())
+                        st.markdown(
+                            f'<div style="margin:8px 0 4px 0;padding:4px 10px;border-radius:6px;'
+                            f'background:#0b1220;border-left:3px solid {_accent};'
+                            f'display:flex;justify-content:space-between;align-items:center;">'
+                            f'<span style="color:#3b82f6;font-weight:700;font-size:0.78rem;'
+                            f'text-transform:uppercase;letter-spacing:0.3px;">{_coop_nome}</span>'
+                            f'<span style="color:#94a3b8;font-size:0.7rem;">'
+                            f'{len(_bloco)} item(ns) · Σ {_tot}</span></div>',
+                            unsafe_allow_html=True,
+                        )
+                        for _, _r in _bloco.iterrows():
+                            _delta = int(_r["delta"])
+                            st.markdown(
+                                f'<div style="background:#111827;border:1px solid {_accent}{_border_alpha};border-left:3px solid {_accent};border-radius:8px;'
+                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
+                                f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span></span>'
+                                f'<span style="color:{_accent};font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
+                                f'</div>', unsafe_allow_html=True)
+
                 _col_f, _col_s = st.columns(2)
                 with _col_f:
                     st.markdown("**🔴 Faltando**")
-                    if _df_falta_i.empty:
-                        st.caption("Nenhum")
-                    else:
-                        for _, _r in _df_falta_i.iterrows():
-                            _coop = str(_r.get("cooperado") or "")
-                            _delta = int(_r["delta"])
-                            st.markdown(
-                                f'<div style="background:#111827;border:1px solid #ff475750;border-left:3px solid #ff4757;border-radius:8px;'
-                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
-                                f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
-                                f'<br><span style="color:#3b82f6;font-size:0.67rem;">{_coop}</span></span>'
-                                f'<span style="color:#ff4757;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
-                                f'</div>', unsafe_allow_html=True)
+                    _render_grouped(_df_falta_i, "#ff4757", "50", "Sem cooperado")
                 with _col_s:
                     st.markdown("**🟡 Sobrando**")
-                    if _df_sobra_i.empty:
-                        st.caption("Nenhum")
-                    else:
-                        for _, _r in _df_sobra_i.iterrows():
-                            _coop = str(_r.get("cooperado") or "")
-                            _delta = int(_r["delta"])
-                            st.markdown(
-                                f'<div style="background:#111827;border:1px solid #ffa50250;border-left:3px solid #ffa502;border-radius:8px;'
-                                f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
-                                f'<span><span style="color:#e0e6ed;font-weight:600;">{_r["produto"]}</span>'
-                                f'<br><span style="color:#3b82f6;font-size:0.67rem;">{_coop}</span></span>'
-                                f'<span style="color:#ffa502;font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
-                                f'</div>', unsafe_allow_html=True)
+                    _render_grouped(_df_sobra_i, "#ffa502", "50", "Sem cooperado")
 
         # ── Produtos Vencendo ────────────────────────────────────────────────
         with st.expander(f"📅 Vencendo em 30 dias  —  {len(_df_venc_i)} lote(s)", expanded=True):
