@@ -332,6 +332,96 @@ button { -webkit-tap-highlight-color: transparent; }
 .card-del:hover { background: rgba(0,0,0,0.26) !important; }
 .card.loading { opacity: 0.45; pointer-events: none; }
 
+/* IMAGEM no card */
+.card-img {
+  display: block;
+  width: calc(100% + 38px);
+  margin: 12px -19px 0;
+  max-height: 220px;
+  object-fit: cover;
+  cursor: zoom-in;
+}
+
+/* Botão + / × discreto no rodapé do card */
+.card-img-btn {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid rgba(0,0,0,0.22);
+  background: rgba(255,255,255,0.5);
+  color: rgba(0,0,0,0.55);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  flex-shrink: 0;
+  transition: background 0.12s ease, color 0.12s ease, transform 0.12s ease;
+}
+.card-img-btn:hover {
+  background: rgba(255,255,255,0.85);
+  color: rgba(0,0,0,0.8);
+  transform: scale(1.10);
+}
+.card-img-btn input[type="file"] { display: none; }
+
+.card-time-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+/* Lightbox simples */
+.lightbox {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.86);
+  z-index: 150;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  cursor: zoom-out;
+}
+.lightbox.open { display: flex; }
+.lightbox img {
+  max-width: 95%;
+  max-height: 95%;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+}
+
+/* Preview no modal */
+.modal-img-preview {
+  width: 100%;
+  max-height: 160px;
+  object-fit: cover;
+  border-radius: 12px;
+  display: none;
+}
+.modal-img-preview.show { display: block; }
+
+.btn-attach {
+  padding: 9px 12px;
+  border-radius: 12px;
+  border: 1px dashed rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.04);
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.btn-attach:hover {
+  background: rgba(255,255,255,0.08);
+  color: #cbd5e1;
+  border-color: rgba(255,255,255,0.26);
+}
+.btn-attach input[type="file"] { display: none; }
+
 .card.urgent-note {
   box-shadow:
     0 24px 50px rgba(244, 168, 106, 0.18),
@@ -551,12 +641,19 @@ button { -webkit-tap-highlight-color: transparent; }
     </select>
     <div class="label-sm">Cor do post-it</div>
     <div class="color-row" id="color-row"></div>
+    <img class="modal-img-preview" id="f-img-preview" alt="" />
+    <label class="btn-attach" id="f-img-label">
+      📎 Anexar foto (opcional)
+      <input type="file" id="f-img" accept="image/*" onchange="onModalImagePicked(event)" />
+    </label>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal()">Cancelar</button>
       <button class="btn-save" id="btn-save" onclick="saveNote()">📌 Publicar</button>
     </div>
   </div>
 </div>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()"><img id="lightbox-img" alt="" /></div>
 
 <div class="toast" id="toast"></div>
 
@@ -669,6 +766,15 @@ function renderGrid() {
     var meta = TAG_META[n.tag] || { label: n.tag || 'Aviso', icon: '●' };
     var urgentClass = n.tag === 'urgente' ? ' urgent-note' : '';
     var timeClass = isOldTimeLabel(n.tempo) ? ' old' : '';
+    var hasImg = !!n.imagem;
+    var imgHtml = hasImg
+      ? '<img class="card-img" src="data:image/jpeg;base64,' + n.imagem + '" onclick="openLightbox(\'' + n.id + '\')" alt="" />'
+      : '';
+    var imgBtn = hasImg
+      ? '<button class="card-img-btn" onclick="removeImage(' + n.id + ')" title="Remover foto">×</button>'
+      : '<label class="card-img-btn" title="Adicionar foto">+' +
+          '<input type="file" accept="image/*" onchange="uploadImage(event,' + n.id + ')" />' +
+        '</label>';
     return (
       '<div class="card ' + cKey + urgentClass + '" id="card-' + n.id + '" data-tag="' + esc(n.tag) + '"' +
       ' style="animation-delay:' + (idx * 0.045) + 's">' +
@@ -677,16 +783,119 @@ function renderGrid() {
         '<div class="card-tag"><span class="card-tag-dot"></span>' + esc(meta.label) + '</div>' +
       '</div>' +
       '<div class="card-text">'   + esc(n.texto) + '</div>' +
+      imgHtml +
       '<div class="card-footer">' +
         '<div class="card-author-wrap">' +
           '<span class="avatar">' + esc(authorInitial(n.autor)) + '</span>' +
           '<span class="card-author">' + esc(n.autor) + '</span>' +
         '</div>' +
-        '<span class="card-time' + timeClass + '">' + esc(n.tempo) + '</span>' +
+        '<span class="card-time-wrap">' +
+          '<span class="card-time' + timeClass + '">' + esc(n.tempo) + '</span>' +
+          imgBtn +
+        '</span>' +
       '</div>' +
       '</div>'
     );
   }).join('');
+}
+
+/* ── IMAGE COMPRESSION (browser, via Canvas) ─────────────────── */
+function compressImageFile(file, maxSize, quality) {
+  maxSize = maxSize || 800;
+  quality = quality || 0.6;
+  return new Promise(function(resolve, reject) {
+    if (!file) return resolve(null);
+    var reader = new FileReader();
+    reader.onerror = function() { reject(new Error('Falha ao ler arquivo')); };
+    reader.onload = function(e) {
+      var img = new Image();
+      img.onerror = function() { reject(new Error('Imagem inválida')); };
+      img.onload = function() {
+        var w = img.width, h = img.height;
+        if (w > h && w > maxSize) { h = Math.round(h * maxSize / w); w = maxSize; }
+        else if (h > maxSize)     { w = Math.round(w * maxSize / h); h = maxSize; }
+        var canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        var dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl.split(',')[1] || '');
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ── UPLOAD / REMOVE IMAGE ───────────────────────────────────── */
+async function uploadImage(ev, id) {
+  var file = ev.target.files && ev.target.files[0];
+  if (!file) return;
+  var card = document.getElementById('card-' + id);
+  if (card) card.classList.add('loading');
+  try {
+    var b64 = await compressImageFile(file, 800, 0.6);
+    await tursoExec('UPDATE mural_recados SET imagem=? WHERE id=?', [b64, id]);
+    var n = notes.find(function(x) { return x.id === id; });
+    if (n) n.imagem = b64;
+    renderGrid();
+    showToast('🖼️ Foto anexada!');
+  } catch (e) {
+    if (card) card.classList.remove('loading');
+    showToast('Erro ao anexar: ' + e.message, 3500);
+  }
+}
+
+async function removeImage(id) {
+  var card = document.getElementById('card-' + id);
+  if (card) card.classList.add('loading');
+  try {
+    await tursoExec('UPDATE mural_recados SET imagem=NULL WHERE id=?', [id]);
+    var n = notes.find(function(x) { return x.id === id; });
+    if (n) n.imagem = null;
+    renderGrid();
+    showToast('🗑️ Foto removida.');
+  } catch (e) {
+    if (card) card.classList.remove('loading');
+    showToast('Erro ao remover foto: ' + e.message, 3500);
+  }
+}
+
+/* ── LIGHTBOX ───────────────────────────────────────────────── */
+function openLightbox(id) {
+  var n = notes.find(function(x) { return x.id === Number(id); });
+  if (!n || !n.imagem) return;
+  document.getElementById('lightbox-img').src = 'data:image/jpeg;base64,' + n.imagem;
+  document.getElementById('lightbox').classList.add('open');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('open');
+}
+
+/* ── MODAL: preview da imagem antes de publicar ──────────────── */
+var _modalImgB64 = null;
+async function onModalImagePicked(ev) {
+  var file = ev.target.files && ev.target.files[0];
+  if (!file) { _modalImgB64 = null; return; }
+  try {
+    _modalImgB64 = await compressImageFile(file, 800, 0.6);
+    var preview = document.getElementById('f-img-preview');
+    preview.src = 'data:image/jpeg;base64,' + _modalImgB64;
+    preview.classList.add('show');
+    document.getElementById('f-img-label').textContent = '✓ Foto anexada (clique para trocar)';
+    var input = document.createElement('input');
+    input.type = 'file'; input.id = 'f-img'; input.accept = 'image/*';
+    input.onchange = onModalImagePicked;
+    document.getElementById('f-img-label').appendChild(input);
+  } catch (e) {
+    showToast('Erro ao processar imagem: ' + e.message, 3500);
+  }
+}
+function resetModalImage() {
+  _modalImgB64 = null;
+  var preview = document.getElementById('f-img-preview');
+  preview.src = ''; preview.classList.remove('show');
+  document.getElementById('f-img-label').innerHTML =
+    '📎 Anexar foto (opcional)<input type="file" id="f-img" accept="image/*" onchange="onModalImagePicked(event)" />';
 }
 
 /* ── FILTER ─────────────────────────────────────────────────── */
@@ -703,6 +912,7 @@ function setFilter(tag, btn) {
 function openModal() {
   document.getElementById('modal-bg').classList.add('open');
   renderSwatches();
+  resetModalImage();
   setTimeout(function() {
     document.getElementById('f-author').focus();
   }, 60);
@@ -729,17 +939,18 @@ async function saveNote() {
 
   try {
     var result = await tursoExec(
-      'INSERT INTO mural_recados (autor, texto, tag, cor) VALUES (?, ?, ?, ?)',
-      [autor, texto, tag, selColor]
+      'INSERT INTO mural_recados (autor, texto, tag, cor, imagem) VALUES (?, ?, ?, ?, ?)',
+      [autor, texto, tag, selColor, _modalImgB64]
     );
     var newId = parseInt(result.last_insert_rowid || Date.now(), 10);
     notes.unshift({
-      id:    newId,
-      autor: autor,
-      texto: texto,
-      tag:   tag,
-      cor:   selColor,
-      tempo: 'agora',
+      id:     newId,
+      autor:  autor,
+      texto:  texto,
+      tag:    tag,
+      cor:    selColor,
+      tempo:  'agora',
+      imagem: _modalImgB64,
     });
     document.getElementById('f-text').value   = '';
     document.getElementById('f-author').value = '';
@@ -775,7 +986,7 @@ document.getElementById('modal-bg').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
 });
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') closeModal();
+  if (e.key === 'Escape') { closeModal(); closeLightbox(); }
 });
 
 /* ── INIT ─────────────────────────────────────────────────────── */
@@ -829,12 +1040,13 @@ def mural_tab(turso_url: str, turso_token: str, rows: list) -> None:
 
     notes = [
         {
-            "id":    int(r[0]),
-            "autor": str(r[1] or "Anônimo"),
-            "texto": str(r[2] or ""),
-            "tag":   str(r[3] or "aviso"),
-            "cor":   int(r[4] or 0),
-            "tempo": _fmt_tempo(str(r[5] or "")),
+            "id":     int(r[0]),
+            "autor":  str(r[1] or "Anônimo"),
+            "texto":  str(r[2] or ""),
+            "tag":    str(r[3] or "aviso"),
+            "cor":    int(r[4] or 0),
+            "tempo":  _fmt_tempo(str(r[5] or "")),
+            "imagem": (r[6] if len(r) > 6 and r[6] else None),
         }
         for r in rows
     ]
