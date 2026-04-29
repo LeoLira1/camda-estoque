@@ -154,7 +154,7 @@ button { -webkit-tap-highlight-color: transparent; }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
   gap: 18px;
-  align-items: stretch;
+  align-items: start;
   perspective: 1100px;
 }
 
