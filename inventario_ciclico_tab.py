@@ -82,6 +82,60 @@ _CSS_CARDS = """<style>
 }
 </style>"""
 
+# CSS: oculta visualmente os controles de conferência (feita externamente)
+_CSS_HIDE_CONFERENCIA = """<style>
+/* Campo de busca do treemap — oculto; o input ainda existe no DOM para o JS */
+[data-testid="stTextInput"]:has(input[placeholder="ciclo-search-input"]) {
+    display: none !important;
+}
+</style>"""
+
+# JS: oculta seletivamente os demais controles de conferência via MutationObserver
+_JS_HIDE_CONFERENCIA = """
+<script>
+(function () {
+    var pd = window.parent.document;
+    var _t;
+
+    function hideConferenciaUI() {
+        // Selectbox "Categoria para conferir"
+        pd.querySelectorAll('[data-testid="stSelectbox"]').forEach(function (el) {
+            var lbl = el.querySelector('label');
+            if (lbl && lbl.textContent.trim() === 'Categoria para conferir') {
+                el.style.display = 'none';
+            }
+        });
+
+        // Captions de instrução da conferência
+        pd.querySelectorAll('[data-testid="stCaptionContainer"]').forEach(function (el) {
+            var txt = el.textContent || '';
+            if (txt.includes('Selecione uma categoria') || txt.includes('Clique em qualquer card')) {
+                el.style.display = 'none';
+            }
+        });
+
+        // Expander "Desfazer conferência"
+        pd.querySelectorAll('[data-testid="stExpander"]').forEach(function (el) {
+            if ((el.textContent || '').includes('Desfazer conferência')) {
+                el.style.display = 'none';
+            }
+        });
+
+        // Divisor (hr) imediatamente anterior ao bloco de busca
+        pd.querySelectorAll('[data-testid="stDivider"]').forEach(function (el) {
+            el.style.display = 'none';
+        });
+    }
+
+    hideConferenciaUI();
+    new window.parent.MutationObserver(function () {
+        clearTimeout(_t);
+        _t = setTimeout(hideConferenciaUI, 200);
+    }).observe(pd.body, { childList: true, subtree: true });
+})();
+</script>
+"""
+
 # JS injetado no iframe para tornar os cards do treemap clicáveis
 _JS_TREEMAP_CLICK = """
 <script>
@@ -435,6 +489,9 @@ def build_inventario_ciclico_tab(
         <span>🟡 Aguardando</span><span>🟢 Conferido OK</span><span>🔴 Divergência</span>
     </div>""", unsafe_allow_html=True)
 
+    # CSS: oculta controles de conferência (conferência feita via app externo)
+    st.markdown(_CSS_HIDE_CONFERENCIA, unsafe_allow_html=True)
+
     # ── Filtro de categoria ───────────────────────────────────────────────────
     all_cats = _sort_ciclo(df["categoria"].unique().tolist())
     filtro_cat = st.selectbox(
@@ -542,3 +599,5 @@ def build_inventario_ciclico_tab(
 
     # JS que faz os cards do treemap dispararem o input de busca ao serem clicados
     st.components.v1.html(_JS_TREEMAP_CLICK, height=0)
+    # JS que oculta visualmente os controles de conferência
+    st.components.v1.html(_JS_HIDE_CONFERENCIA, height=0)
