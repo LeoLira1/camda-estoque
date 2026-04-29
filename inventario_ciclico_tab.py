@@ -82,54 +82,75 @@ _CSS_CARDS = """<style>
 }
 </style>"""
 
-# CSS: oculta o wrapper do campo de busca — o input ainda existe no DOM para o JS
-_CSS_HIDE_CONFERENCIA = """<style>
-[data-testid="element-container"]:has(input[placeholder="ciclo-search-input"]) {
-    display: none !important;
-}
-</style>"""
-
-# JS: oculta os demais controles subindo até o element-container pai para colapsar espaço
+# JS: injeta CSS no <head> do pai + oculta controles via MutationObserver
 _JS_HIDE_CONFERENCIA = """
 <script>
 (function () {
-    var pd = window.parent.document;
+    var p = window.parent;
+    var pd = p.document;
     var _t;
 
-    function up(el) {
-        var c = el.closest('[data-testid="element-container"]') ||
-                el.closest('.element-container') ||
-                el.parentElement;
-        if (c) c.style.display = 'none';
-        else el.style.display = 'none';
+    /* CSS persistente injetado no <head> — sobrevive a re-renders do Streamlit */
+    if (!pd.getElementById('_ciclo_hide_css')) {
+        var s = pd.createElement('style');
+        s.id = '_ciclo_hide_css';
+        var RULE = 'display:none!important;height:0!important;min-height:0!important;' +
+                   'margin:0!important;padding:0!important;overflow:hidden!important;';
+        s.textContent =
+            /* campo de busca — pelo placeholder único */
+            '[data-testid="element-container"]:has(input[placeholder="ciclo-search-input"]){' + RULE + '}' +
+            'input[placeholder="ciclo-search-input"]{' + RULE + '}';
+        (pd.head || pd.documentElement).appendChild(s);
     }
 
-    function hideConferenciaUI() {
-        // Selectbox "Categoria para conferir"
+    var Z = 'display:none!important;height:0!important;min-height:0!important;' +
+            'margin:0!important;padding:0!important;overflow:hidden!important;';
+
+    function collapse(el) {
+        /* sobe até o element-container do Streamlit e colapsa ele + o widget */
+        var c = el.closest('[data-testid="element-container"]') ||
+                el.closest('.stElementContainer') ||
+                el.parentElement;
+        if (c) c.setAttribute('style', Z);
+        el.setAttribute('style', Z);
+    }
+
+    function run() {
+        /* Selectbox "Categoria para conferir" */
         pd.querySelectorAll('[data-testid="stSelectbox"]').forEach(function (el) {
             var lbl = el.querySelector('label');
-            if (lbl && lbl.textContent.trim() === 'Categoria para conferir') { up(el); }
+            if (lbl && lbl.textContent.trim() === 'Categoria para conferir') collapse(el);
         });
-
-        // Captions de instrução
+        /* Captions de instrução */
         pd.querySelectorAll('[data-testid="stCaptionContainer"]').forEach(function (el) {
-            var txt = el.textContent || '';
-            if (txt.includes('Selecione uma categoria') || txt.includes('Clique em qualquer card')) { up(el); }
+            var t = el.textContent || '';
+            if (t.includes('Selecione uma categoria') || t.includes('Clique em qualquer card')) collapse(el);
         });
-
-        // Expander "Desfazer conferência"
+        /* Expander "Desfazer conferência" */
         pd.querySelectorAll('[data-testid="stExpander"]').forEach(function (el) {
-            if ((el.textContent || '').includes('Desfazer conferência')) { up(el); }
+            if ((el.textContent || '').includes('Desfazer conferência')) collapse(el);
         });
-
-        // Divisor horizontal
-        pd.querySelectorAll('[data-testid="stDivider"]').forEach(function (el) { up(el); });
+        /* Campo de busca (backup ao CSS) */
+        pd.querySelectorAll('input[placeholder="ciclo-search-input"]').forEach(function (inp) {
+            collapse(inp);
+        });
+        /* Divisor — somente dentro do painel que contém o treemap cíclico */
+        var inp = pd.querySelector('input[placeholder="ciclo-search-input"]');
+        if (inp) {
+            var panel = inp.closest('[data-testid="stTabPanel"]') ||
+                        inp.closest('[data-testid="stVerticalBlock"]');
+            if (panel) {
+                panel.querySelectorAll('[data-testid="stDivider"]').forEach(function (el) {
+                    collapse(el);
+                });
+            }
+        }
     }
 
-    hideConferenciaUI();
-    new window.parent.MutationObserver(function () {
+    run();
+    new p.MutationObserver(function () {
         clearTimeout(_t);
-        _t = setTimeout(hideConferenciaUI, 200);
+        _t = setTimeout(run, 50);
     }).observe(pd.body, { childList: true, subtree: true });
 })();
 </script>
@@ -487,9 +508,6 @@ def build_inventario_ciclico_tab(
                 color:#64748b;font-family:JetBrains Mono,monospace;'>
         <span>🟡 Aguardando</span><span>🟢 Conferido OK</span><span>🔴 Divergência</span>
     </div>""", unsafe_allow_html=True)
-
-    # CSS: oculta controles de conferência (conferência feita via app externo)
-    st.markdown(_CSS_HIDE_CONFERENCIA, unsafe_allow_html=True)
 
     # ── Filtro de categoria ───────────────────────────────────────────────────
     all_cats = _sort_ciclo(df["categoria"].unique().tolist())
