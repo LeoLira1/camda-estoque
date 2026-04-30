@@ -821,26 +821,45 @@ st.markdown("""
         display: none !important;
         pointer-events: none !important;
     }
-    /* ── Botão de scroll das abas ──────────────────────────────────────── */
-    [data-testid="stTabs"] [aria-label="scroll right"],
-    [data-testid="stTabs"] [aria-label="scroll left"] {
+    /* ── Botão de scroll das abas — seletores multi-versão ────────────── */
+    [data-testid="stTabs"] [data-baseweb="tab-list"] > button,
+    [data-testid="stTabScrollRightButton"],
+    [data-testid="stTabScrollLeftButton"],
+    [data-testid="stTabs"] button[aria-label="scroll right"],
+    [data-testid="stTabs"] button[aria-label="scroll left"],
+    [data-testid="stTabs"] [aria-label="Scroll tab list right"],
+    [data-testid="stTabs"] [aria-label="Scroll tab list left"] {
         width: 36px !important;
         height: 36px !important;
+        min-width: 36px !important;
         border-radius: 50% !important;
         background: #1e3a5f !important;
         border: 1.5px solid #7dd4fc !important;
         color: #7dd4fc !important;
         box-shadow: 0 0 10px rgba(125,212,252,0.35) !important;
         transition: all 0.2s ease !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
-    [data-testid="stTabs"] [aria-label="scroll right"]:hover,
-    [data-testid="stTabs"] [aria-label="scroll left"]:hover {
+    [data-testid="stTabs"] [data-baseweb="tab-list"] > button:hover,
+    [data-testid="stTabScrollRightButton"]:hover,
+    [data-testid="stTabScrollLeftButton"]:hover,
+    [data-testid="stTabs"] button[aria-label="scroll right"]:hover,
+    [data-testid="stTabs"] button[aria-label="scroll left"]:hover,
+    [data-testid="stTabs"] [aria-label="Scroll tab list right"]:hover,
+    [data-testid="stTabs"] [aria-label="Scroll tab list left"]:hover {
         background: #2a4f7c !important;
         box-shadow: 0 0 18px rgba(125,212,252,0.6) !important;
         transform: scale(1.1) !important;
     }
-    [data-testid="stTabs"] [aria-label="scroll right"] svg,
-    [data-testid="stTabs"] [aria-label="scroll left"] svg {
+    [data-testid="stTabs"] [data-baseweb="tab-list"] > button svg,
+    [data-testid="stTabScrollRightButton"] svg,
+    [data-testid="stTabScrollLeftButton"] svg,
+    [data-testid="stTabs"] button[aria-label="scroll right"] svg,
+    [data-testid="stTabs"] button[aria-label="scroll left"] svg,
+    [data-testid="stTabs"] [aria-label="Scroll tab list right"] svg,
+    [data-testid="stTabs"] [aria-label="Scroll tab list left"] svg {
         fill: #7dd4fc !important;
         width: 18px !important;
         height: 18px !important;
