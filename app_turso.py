@@ -822,7 +822,6 @@ st.markdown("""
         pointer-events: none !important;
     }
     /* ── Botão de scroll das abas — seletores multi-versão ────────────── */
-    [data-testid="stTabs"] [data-baseweb="tab-list"] > button,
     [data-testid="stTabScrollRightButton"],
     [data-testid="stTabScrollLeftButton"],
     [data-testid="stTabs"] button[aria-label="scroll right"],
@@ -842,7 +841,6 @@ st.markdown("""
         align-items: center !important;
         justify-content: center !important;
     }
-    [data-testid="stTabs"] [data-baseweb="tab-list"] > button:hover,
     [data-testid="stTabScrollRightButton"]:hover,
     [data-testid="stTabScrollLeftButton"]:hover,
     [data-testid="stTabs"] button[aria-label="scroll right"]:hover,
@@ -853,7 +851,6 @@ st.markdown("""
         box-shadow: 0 0 18px rgba(125,212,252,0.6) !important;
         transform: scale(1.1) !important;
     }
-    [data-testid="stTabs"] [data-baseweb="tab-list"] > button svg,
     [data-testid="stTabScrollRightButton"] svg,
     [data-testid="stTabScrollLeftButton"] svg,
     [data-testid="stTabs"] button[aria-label="scroll right"] svg,
