@@ -545,12 +545,12 @@ def build_inventario_ciclico_tab(
                     prefix = _status_prefix(status_c)
                     safe = _safe(str(prod["codigo"]))
                     is_sel = sel_codigo == str(prod["codigo"])
-                    label = f"{prod['codigo']}\n{prod['qtd_sistema']}"
+                    label = f"{prod['codigo']}  \n{prod['qtd_sistema']}"
                     if status_c in ("ok", "divergencia"):
                         contado_em = str(prod.get("contado_ciclo_em", "") or "").strip()
-                        if contado_em:
-                            data_fmt = contado_em[8:10] + "/" + contado_em[5:7] if len(contado_em) >= 10 else contado_em
-                            label += f"\n📅 {data_fmt}"
+                        if contado_em and contado_em.lower() != "none" and len(contado_em) >= 10:
+                            data_fmt = f"{contado_em[8:10]}/{contado_em[5:7]}"
+                            label += f"  \n📅 {data_fmt}"
 
                     with cols[i]:
                         marker_html = f'<div id="{prefix}{safe}" style="display:none"></div>'
