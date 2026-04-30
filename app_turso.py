@@ -31,6 +31,7 @@ from db_mapa import (
 from mapa_3d_component import render_rack_3d
 from mural_tab import mural_tab as _render_mural_tab
 from inventario_ciclico_tab import build_inventario_ciclico_tab as _render_ciclico_tab
+from visao_geral_tab import build_visao_geral_tab as _render_visao_geral_tab
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -7706,7 +7707,7 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_mural, t_ciclico = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "📌 Mural", "🔄 Inv. Cíclico"])
+    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_mural, t_ciclico, t_visao = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "📌 Mural", "🔄 Inv. Cíclico", "🫧 Visão Geral"])
 
     with t0:
         # ── Dados ──────────────────────────────────────────────────────────
@@ -10851,6 +10852,9 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 with t_ciclico:
     _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name,
                         get_divergencias=get_divergencias, get_historico_divergencias=get_historico_divergencias)
+
+with t_visao:
+    _render_visao_geral_tab(get_current_stock())
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
