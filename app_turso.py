@@ -5385,6 +5385,20 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Classe de piscado por validade + label de data (somente para alertas)
             blink_cls, venc_label_html = _venc_info(r["produto"])
 
+            # Label da data de contagem cíclica (só no modo cíclico, em itens conferidos)
+            ciclo_date_html = ""
+            if color_mode == "ciclico":
+                _status_c = str(r.get("status_ciclo", "") or "")
+                if _status_c in ("ok", "divergencia"):
+                    _contado = str(r.get("contado_ciclo_em", "") or "").strip()
+                    if _contado and _contado.lower() != "none" and len(_contado) >= 10:
+                        _data_fmt = f"{_contado[8:10]}/{_contado[5:7]}"
+                        ciclo_date_html = (
+                            f'<div style="margin-top:6px;font-size:10px;font-weight:600;'
+                            f'font-family:\'JetBrains Mono\',monospace;letter-spacing:0.3px;'
+                            f'color:rgba(255,255,255,0.92);">📅 {_data_fmt}</div>'
+                        )
+
             # Cooperado(s) com divergência para exibir no popup CSS do card
             cooperado_popup_html = ""
             if cod_str in divergencias_map_norm:
@@ -5416,6 +5430,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 f'<div class="tm-name">{short_name(r["produto"])}</div>'
                 f'<div class="tm-info" style="color:{qty_color};">{info}</div>'
                 f'{venc_label_html}'
+                f'{ciclo_date_html}'
                 f'<div class="tm-cod">{r["codigo"]}</div>'
                 f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}{cooperado_popup_html}</div>'
                 f'</div>'
