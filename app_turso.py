@@ -821,6 +821,30 @@ st.markdown("""
         display: none !important;
         pointer-events: none !important;
     }
+    /* ── Botão de scroll das abas ──────────────────────────────────────── */
+    [data-testid="stTabs"] [aria-label="scroll right"],
+    [data-testid="stTabs"] [aria-label="scroll left"] {
+        width: 36px !important;
+        height: 36px !important;
+        border-radius: 50% !important;
+        background: #1e3a5f !important;
+        border: 1.5px solid #7dd4fc !important;
+        color: #7dd4fc !important;
+        box-shadow: 0 0 10px rgba(125,212,252,0.35) !important;
+        transition: all 0.2s ease !important;
+    }
+    [data-testid="stTabs"] [aria-label="scroll right"]:hover,
+    [data-testid="stTabs"] [aria-label="scroll left"]:hover {
+        background: #2a4f7c !important;
+        box-shadow: 0 0 18px rgba(125,212,252,0.6) !important;
+        transform: scale(1.1) !important;
+    }
+    [data-testid="stTabs"] [aria-label="scroll right"] svg,
+    [data-testid="stTabs"] [aria-label="scroll left"] svg {
+        fill: #7dd4fc !important;
+        width: 18px !important;
+        height: 18px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
