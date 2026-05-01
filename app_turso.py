@@ -828,18 +828,20 @@ st.markdown("""
     [data-testid="stTabs"] button[aria-label="scroll left"],
     [data-testid="stTabs"] [aria-label="Scroll tab list right"],
     [data-testid="stTabs"] [aria-label="Scroll tab list left"] {
-        width: 36px !important;
-        height: 36px !important;
-        min-width: 36px !important;
-        border-radius: 50% !important;
-        background: #1e3a5f !important;
-        border: 1.5px solid #7dd4fc !important;
-        color: #7dd4fc !important;
-        box-shadow: 0 0 10px rgba(125,212,252,0.35) !important;
+        width: 44px !important;
+        height: 44px !important;
+        min-width: 44px !important;
+        border-radius: 14px !important;
+        background: linear-gradient(160deg, #0f2a48 0%, #1d4f7f 100%) !important;
+        border: 2px solid #a5f3fc !important;
+        color: #e0f2fe !important;
+        box-shadow: 0 0 0 2px rgba(14,116,144,0.40), 0 8px 20px rgba(8,47,73,0.55) !important;
         transition: all 0.2s ease !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
+        backdrop-filter: blur(3px);
+        z-index: 30 !important;
     }
     [data-testid="stTabScrollRightButton"]:hover,
     [data-testid="stTabScrollLeftButton"]:hover,
@@ -847,9 +849,9 @@ st.markdown("""
     [data-testid="stTabs"] button[aria-label="scroll left"]:hover,
     [data-testid="stTabs"] [aria-label="Scroll tab list right"]:hover,
     [data-testid="stTabs"] [aria-label="Scroll tab list left"]:hover {
-        background: #2a4f7c !important;
-        box-shadow: 0 0 18px rgba(125,212,252,0.6) !important;
-        transform: scale(1.1) !important;
+        background: linear-gradient(160deg, #16406a 0%, #2f6aa3 100%) !important;
+        box-shadow: 0 0 0 2px rgba(56,189,248,0.45), 0 10px 24px rgba(8,47,73,0.7) !important;
+        transform: translateY(-1px) scale(1.07) !important;
     }
     [data-testid="stTabScrollRightButton"] svg,
     [data-testid="stTabScrollLeftButton"] svg,
@@ -857,9 +859,52 @@ st.markdown("""
     [data-testid="stTabs"] button[aria-label="scroll left"] svg,
     [data-testid="stTabs"] [aria-label="Scroll tab list right"] svg,
     [data-testid="stTabs"] [aria-label="Scroll tab list left"] svg {
-        fill: #7dd4fc !important;
-        width: 18px !important;
-        height: 18px !important;
+        fill: #f0f9ff !important;
+        width: 22px !important;
+        height: 22px !important;
+        filter: drop-shadow(0 0 6px rgba(56,189,248,0.65));
+    }
+
+    /* ── Garantia extra: Streamlit novo/antigo (wrapper + ícones) ─────── */
+    [data-testid="stTabs"] [data-testid="stTabScrollLeftButton"],
+    [data-testid="stTabs"] [data-testid="stTabScrollRightButton"],
+    [data-testid="stTabs"] button[aria-label*="scroll" i],
+    [data-testid="stTabs"] button[aria-label*="tab list" i] {
+        opacity: 1 !important;
+        visibility: visible !important;
+        position: relative !important;
+    }
+    [data-testid="stTabs"] [data-testid="stTabScrollLeftButton"] *,
+    [data-testid="stTabs"] [data-testid="stTabScrollRightButton"] *,
+    [data-testid="stTabs"] button[aria-label*="scroll" i] *,
+    [data-testid="stTabs"] button[aria-label*="tab list" i] * {
+        background: transparent !important;
+        border: none !important;
+        color: #f0f9ff !important;
+        fill: #f0f9ff !important;
+        stroke: #f0f9ff !important;
+    }
+    [data-testid="stTabs"] [data-testid="stTabScrollLeftButton"]::after,
+    [data-testid="stTabs"] [data-testid="stTabScrollRightButton"]::after,
+    [data-testid="stTabs"] button[aria-label*="scroll" i]::after,
+    [data-testid="stTabs"] button[aria-label*="tab list" i]::after {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 16px;
+        border: 1px solid rgba(165,243,252,0.55);
+        box-shadow: 0 0 16px rgba(56,189,248,0.45);
+        pointer-events: none;
+    }
+    @media (max-width: 640px) {
+        [data-testid="stTabScrollRightButton"],
+        [data-testid="stTabScrollLeftButton"],
+        [data-testid="stTabs"] button[aria-label*="scroll" i],
+        [data-testid="stTabs"] button[aria-label*="tab list" i] {
+            width: 48px !important;
+            height: 48px !important;
+            min-width: 48px !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
