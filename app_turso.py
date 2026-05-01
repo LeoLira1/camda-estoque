@@ -864,48 +864,6 @@ st.markdown("""
         height: 22px !important;
         filter: drop-shadow(0 0 6px rgba(56,189,248,0.65));
     }
-
-    /* ── Garantia extra: Streamlit novo/antigo (wrapper + ícones) ─────── */
-    [data-testid="stTabs"] [data-testid="stTabScrollLeftButton"],
-    [data-testid="stTabs"] [data-testid="stTabScrollRightButton"],
-    [data-testid="stTabs"] button[aria-label*="scroll" i],
-    [data-testid="stTabs"] button[aria-label*="tab list" i] {
-        opacity: 1 !important;
-        visibility: visible !important;
-        position: relative !important;
-    }
-    [data-testid="stTabs"] [data-testid="stTabScrollLeftButton"] *,
-    [data-testid="stTabs"] [data-testid="stTabScrollRightButton"] *,
-    [data-testid="stTabs"] button[aria-label*="scroll" i] *,
-    [data-testid="stTabs"] button[aria-label*="tab list" i] * {
-        background: transparent !important;
-        border: none !important;
-        color: #f0f9ff !important;
-        fill: #f0f9ff !important;
-        stroke: #f0f9ff !important;
-    }
-    [data-testid="stTabs"] [data-testid="stTabScrollLeftButton"]::after,
-    [data-testid="stTabs"] [data-testid="stTabScrollRightButton"]::after,
-    [data-testid="stTabs"] button[aria-label*="scroll" i]::after,
-    [data-testid="stTabs"] button[aria-label*="tab list" i]::after {
-        content: "";
-        position: absolute;
-        inset: -4px;
-        border-radius: 16px;
-        border: 1px solid rgba(165,243,252,0.55);
-        box-shadow: 0 0 16px rgba(56,189,248,0.45);
-        pointer-events: none;
-    }
-    @media (max-width: 640px) {
-        [data-testid="stTabScrollRightButton"],
-        [data-testid="stTabScrollLeftButton"],
-        [data-testid="stTabs"] button[aria-label*="scroll" i],
-        [data-testid="stTabs"] button[aria-label*="tab list" i] {
-            width: 48px !important;
-            height: 48px !important;
-            min-width: 48px !important;
-        }
-    }
 </style>
 """, unsafe_allow_html=True)
 
