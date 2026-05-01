@@ -1,0 +1,272 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-01T00:00:00Z",
+  "title": "Design System: CAMDA Estoque",
+  "extensions": {
+    "colorMeta": {
+      "verde-cerrado": {
+        "role": "primary",
+        "displayName": "Verde Cerrado",
+        "canonical": "oklch(80% 0.18 162)",
+        "tonalRamp": ["oklch(15% 0.05 162)", "oklch(25% 0.08 162)", "oklch(35% 0.12 162)", "oklch(48% 0.16 162)", "oklch(60% 0.18 162)", "oklch(70% 0.18 162)", "oklch(80% 0.18 162)", "oklch(91% 0.09 162)"]
+      },
+      "verde-cerrado-deep": {
+        "role": "primary",
+        "displayName": "Verde Cerrado Deep",
+        "canonical": "oklch(72% 0.16 162)",
+        "tonalRamp": ["oklch(12% 0.04 162)", "oklch(22% 0.07 162)", "oklch(32% 0.11 162)", "oklch(44% 0.14 162)", "oklch(56% 0.16 162)", "oklch(66% 0.16 162)", "oklch(75% 0.15 162)", "oklch(87% 0.08 162)"]
+      },
+      "azul-referencia": {
+        "role": "secondary",
+        "displayName": "Azul Referência",
+        "canonical": "oklch(60% 0.20 260)",
+        "tonalRamp": ["oklch(15% 0.07 260)", "oklch(25% 0.11 260)", "oklch(35% 0.15 260)", "oklch(45% 0.18 260)", "oklch(55% 0.20 260)", "oklch(65% 0.20 260)", "oklch(76% 0.16 260)", "oklch(88% 0.08 260)"]
+      },
+      "vermelho-falta": {
+        "role": "status-error",
+        "displayName": "Vermelho Falta",
+        "canonical": "oklch(62% 0.22 20)",
+        "tonalRamp": ["oklch(15% 0.07 20)", "oklch(25% 0.11 20)", "oklch(35% 0.16 20)", "oklch(45% 0.19 20)", "oklch(55% 0.22 20)", "oklch(65% 0.22 20)", "oklch(76% 0.17 20)", "oklch(89% 0.08 20)"]
+      },
+      "ambar-sobra": {
+        "role": "status-warning",
+        "displayName": "Âmbar Sobra",
+        "canonical": "oklch(76% 0.18 72)",
+        "tonalRamp": ["oklch(18% 0.06 72)", "oklch(28% 0.10 72)", "oklch(38% 0.14 72)", "oklch(50% 0.17 72)", "oklch(62% 0.18 72)", "oklch(73% 0.18 72)", "oklch(83% 0.14 72)", "oklch(93% 0.06 72)"]
+      },
+      "roxo-viz": {
+        "role": "tertiary",
+        "displayName": "Roxo Viz",
+        "canonical": "oklch(58% 0.22 296)",
+        "tonalRamp": ["oklch(15% 0.07 296)", "oklch(25% 0.11 296)", "oklch(35% 0.16 296)", "oklch(45% 0.19 296)", "oklch(55% 0.22 296)", "oklch(65% 0.20 296)", "oklch(76% 0.15 296)", "oklch(89% 0.07 296)"]
+      },
+      "ciano-prazo": {
+        "role": "tertiary",
+        "displayName": "Ciano Prazo",
+        "canonical": "oklch(78% 0.18 210)",
+        "tonalRamp": ["oklch(15% 0.06 210)", "oklch(25% 0.10 210)", "oklch(36% 0.14 210)", "oklch(48% 0.17 210)", "oklch(60% 0.18 210)", "oklch(70% 0.18 210)", "oklch(80% 0.16 210)", "oklch(91% 0.08 210)"]
+      },
+      "noite-cerrado": {
+        "role": "neutral-bg",
+        "displayName": "Noite do Cerrado",
+        "canonical": "oklch(8% 0.015 255)",
+        "tonalRamp": ["oklch(8% 0.015 255)", "oklch(12% 0.017 255)", "oklch(16% 0.019 255)", "oklch(22% 0.020 255)", "oklch(30% 0.020 255)", "oklch(42% 0.018 255)", "oklch(56% 0.015 255)", "oklch(72% 0.010 255)"]
+      },
+      "superficie": {
+        "role": "neutral-surface",
+        "displayName": "Superfície",
+        "canonical": "oklch(14% 0.018 255)",
+        "tonalRamp": ["oklch(8% 0.015 255)", "oklch(14% 0.018 255)", "oklch(18% 0.020 255)", "oklch(24% 0.022 255)", "oklch(32% 0.020 255)", "oklch(44% 0.018 255)", "oklch(58% 0.015 255)", "oklch(74% 0.010 255)"]
+      },
+      "superficie-elevada": {
+        "role": "neutral-surface-variant",
+        "displayName": "Superfície Elevada",
+        "canonical": "oklch(18% 0.020 250)",
+        "tonalRamp": ["oklch(10% 0.016 250)", "oklch(15% 0.018 250)", "oklch(20% 0.021 250)", "oklch(26% 0.022 250)", "oklch(35% 0.021 250)", "oklch(46% 0.019 250)", "oklch(60% 0.016 250)", "oklch(76% 0.010 250)"]
+      },
+      "borda-superficie": {
+        "role": "neutral-border",
+        "displayName": "Borda de Superfície",
+        "canonical": "oklch(22% 0.022 250)",
+        "tonalRamp": ["oklch(10% 0.016 250)", "oklch(16% 0.019 250)", "oklch(22% 0.022 250)", "oklch(30% 0.022 250)", "oklch(40% 0.020 250)", "oklch(52% 0.018 250)", "oklch(65% 0.014 250)", "oklch(80% 0.008 250)"]
+      },
+      "texto-primario": {
+        "role": "neutral-text-primary",
+        "displayName": "Texto Primário",
+        "canonical": "oklch(92% 0.010 250)",
+        "tonalRamp": ["oklch(20% 0.008 250)", "oklch(35% 0.009 250)", "oklch(50% 0.009 250)", "oklch(62% 0.010 250)", "oklch(72% 0.010 250)", "oklch(80% 0.010 250)", "oklch(87% 0.010 250)", "oklch(92% 0.010 250)"]
+      },
+      "texto-secundario": {
+        "role": "neutral-text-secondary",
+        "displayName": "Texto Secundário",
+        "canonical": "oklch(72% 0.07 240)",
+        "tonalRamp": ["oklch(18% 0.03 240)", "oklch(28% 0.04 240)", "oklch(38% 0.05 240)", "oklch(50% 0.06 240)", "oklch(62% 0.07 240)", "oklch(72% 0.07 240)", "oklch(82% 0.05 240)", "oklch(91% 0.03 240)"]
+      },
+      "texto-mudo": {
+        "role": "neutral-text-muted",
+        "displayName": "Texto Mudo",
+        "canonical": "oklch(52% 0.04 250)",
+        "tonalRamp": ["oklch(15% 0.02 250)", "oklch(26% 0.03 250)", "oklch(36% 0.04 250)", "oklch(46% 0.04 250)", "oklch(56% 0.04 250)", "oklch(66% 0.03 250)", "oklch(76% 0.03 250)", "oklch(86% 0.02 250)"]
+      },
+      "texto-desabilitado": {
+        "role": "neutral-text-disabled",
+        "displayName": "Texto Desabilitado",
+        "canonical": "oklch(40% 0.035 250)",
+        "tonalRamp": ["oklch(12% 0.015 250)", "oklch(22% 0.022 250)", "oklch(32% 0.030 250)", "oklch(40% 0.035 250)", "oklch(50% 0.032 250)", "oklch(60% 0.028 250)", "oklch(72% 0.022 250)", "oklch(84% 0.015 250)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "KPIs e grandes contagens. Máximo um por seção visível." },
+      "headline": { "displayName": "Headline", "purpose": "Títulos de seção, headers de modal, tab ativa." },
+      "title": { "displayName": "Title", "purpose": "Card titles, labels de grupo, subtítulos de painel." },
+      "body": { "displayName": "Body", "purpose": "Texto corrido, descrições, mensagens de estado." },
+      "label": { "displayName": "Label / Mono", "purpose": "Códigos, quantidades, badges, timestamps. Dado escaneado, não lido." }
+    },
+    "shadows": [
+      {
+        "name": "flutuante",
+        "value": "0 24px 64px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08)",
+        "purpose": "Modais e dialogs — elementos que flutuam sobre o conteúdo."
+      },
+      {
+        "name": "hover-operacional",
+        "value": "0 4px 16px rgba(0,214,143,0.15)",
+        "purpose": "Cards clicáveis no estado hover. Glow verde sinaliza interatividade."
+      },
+      {
+        "name": "focus-ring",
+        "value": "0 0 0 2px rgba(0,214,143,0.4)",
+        "purpose": "Focus ring de acessibilidade. Verde consistente com a semântica de confirmação."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-standard",
+        "value": "cubic-bezier(0.4, 0, 0.2, 1)",
+        "purpose": "Transições de estado: hover, focus, toggle."
+      },
+      {
+        "name": "ease-out-quart",
+        "value": "cubic-bezier(0.25, 1, 0.5, 1)",
+        "purpose": "Entrada de elementos: cascade de cards, abertura de modais."
+      },
+      {
+        "name": "duration-fast",
+        "value": "150ms",
+        "purpose": "Micro-interações: hover, focus, scale de botão."
+      },
+      {
+        "name": "duration-standard",
+        "value": "200ms",
+        "purpose": "Transições de estado de inputs e tabs."
+      },
+      {
+        "name": "duration-enter",
+        "value": "300ms",
+        "purpose": "Entrada de modais e painéis."
+      }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "640px", "purpose": "Layout compacto — tiles de 50% largura, BottomNav." },
+      { "name": "desktop", "value": "641px", "purpose": "Grid operacional completo — padrão do dashboard." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Botão Primário",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ação principal — confirmar contagem, salvar lançamento, submeter formulário.",
+      "html": "<button class=\"ds-btn-primary\">CONFIRMAR OK</button>",
+      "css": ".ds-btn-primary { background: #00d68f; color: #0a0f1a; padding: 10px 20px; border: none; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: background 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1); } .ds-btn-primary:hover { background: #00b887; transform: scale(1.02); } .ds-btn-primary:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(0,214,143,0.4); } .ds-btn-primary:active { transform: scale(0.99); }"
+    },
+    {
+      "name": "Badge de Status",
+      "kind": "chip",
+      "refersTo": "badge-ok",
+      "description": "Indicador semântico de estado de inventário. Sempre texto + cor, nunca ícone sozinho.",
+      "html": "<div class=\"ds-badge-row\"><span class=\"ds-badge ds-badge--ok\">OK</span><span class=\"ds-badge ds-badge--falta\">FALTA</span><span class=\"ds-badge ds-badge--sobra\">SOBRA</span><span class=\"ds-badge ds-badge--avaria\">AVARIA</span></div>",
+      "css": ".ds-badge-row { display: flex; gap: 8px; align-items: center; } .ds-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; } .ds-badge--ok { background: rgba(0,214,143,0.12); color: #00d68f; } .ds-badge--falta { background: rgba(255,71,87,0.12); color: #ff4757; } .ds-badge--sobra { background: rgba(255,165,2,0.12); color: #ffa502; } .ds-badge--avaria { background: rgba(255,107,122,0.12); color: #ff6b7a; }"
+    },
+    {
+      "name": "Card Tonal",
+      "kind": "card",
+      "refersTo": "card-tonal",
+      "description": "Container padrão de conteúdo. Background sólido, sem blur — Regra do Vidro Reservado.",
+      "html": "<div class=\"ds-card-tonal\"><div class=\"ds-card-tonal__title\">Insumos Agrícolas</div><div class=\"ds-card-tonal__meta\">48 produtos</div><div class=\"ds-card-tonal__body\">3 divergências detectadas no último ciclo</div></div>",
+      "css": ".ds-card-tonal { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; transition: box-shadow 150ms cubic-bezier(0.4,0,0.2,1); } .ds-card-tonal:hover { box-shadow: 0 4px 16px rgba(0,214,143,0.15); } .ds-card-tonal__title { font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 600; color: #e0e6ed; margin-bottom: 2px; } .ds-card-tonal__meta { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; margin-bottom: 8px; } .ds-card-tonal__body { font-family: 'DM Sans', sans-serif; font-size: 0.875rem; color: #7bafd4; line-height: 1.5; }"
+    },
+    {
+      "name": "Stat Card (KPI)",
+      "kind": "custom",
+      "refersTo": "card-tonal",
+      "description": "Componente assinatura — número grande + label. Accent line superior sinaliza caráter semântico.",
+      "html": "<div class=\"ds-stat-row\"><div class=\"ds-stat ds-stat--falta\"><div class=\"ds-stat__value\">12</div><div class=\"ds-stat__label\">Em Falta</div></div><div class=\"ds-stat ds-stat--sobra\"><div class=\"ds-stat__value\">7</div><div class=\"ds-stat__label\">Sobra</div></div><div class=\"ds-stat ds-stat--ok\"><div class=\"ds-stat__value\">431</div><div class=\"ds-stat__label\">OK</div></div></div>",
+      "css": ".ds-stat-row { display: flex; gap: 8px; } .ds-stat { flex: 1; background: #111827; border: 1px solid #1e293b; border-top-width: 2px; border-radius: 12px; padding: 16px 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; } .ds-stat--ok { border-top-color: #00d68f; } .ds-stat--falta { border-top-color: #ff4757; } .ds-stat--sobra { border-top-color: #ffa502; } .ds-stat__value { font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 900; color: #e0e6ed; line-height: 1.1; } .ds-stat__label { font-family: 'JetBrains Mono', monospace; font-size: 0.55rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #64748b; }"
+    },
+    {
+      "name": "Campo de Busca",
+      "kind": "input",
+      "refersTo": "input-default",
+      "description": "Input de busca com ícone inline. Focus em verde — consistente com semântica de confirmação.",
+      "html": "<div class=\"ds-search\"><svg class=\"ds-search__icon\" width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#64748b\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><line x1=\"21\" y1=\"21\" x2=\"16.65\" y2=\"16.65\"/></svg><input class=\"ds-search__input\" type=\"text\" placeholder=\"Buscar produto ou código...\" /></div>",
+      "css": ".ds-search { position: relative; display: flex; align-items: center; } .ds-search__icon { position: absolute; left: 10px; pointer-events: none; flex-shrink: 0; } .ds-search__input { width: 100%; background: #1a2332; border: 1px solid #1e293b; border-radius: 8px; padding: 8px 12px 8px 32px; font-family: 'DM Sans', sans-serif; font-size: 0.875rem; color: #e0e6ed; outline: none; transition: border-color 200ms, box-shadow 200ms; } .ds-search__input::placeholder { color: #64748b; } .ds-search__input:focus { border-color: #00d68f; box-shadow: 0 0 0 2px rgba(0,214,143,0.25); }"
+    },
+    {
+      "name": "Alert Banner (Espaço Real)",
+      "kind": "custom",
+      "description": "Implementação da Regra do Espaço Real. Alertas críticos com número em Display — nunca apenas badge.",
+      "html": "<div class=\"ds-alert ds-alert--falta\"><div class=\"ds-alert__count\">7</div><div class=\"ds-alert__content\"><div class=\"ds-alert__title\">Produtos em Falta</div><div class=\"ds-alert__sub\">Ruptura crítica &middot; Ação imediata</div></div></div>",
+      "css": ".ds-alert { display: flex; align-items: center; gap: 16px; padding: 16px; border-radius: 12px; border: 1px solid; } .ds-alert--falta { background: rgba(255,71,87,0.10); border-color: rgba(255,71,87,0.30); } .ds-alert--sobra { background: rgba(255,165,2,0.10); border-color: rgba(255,165,2,0.30); } .ds-alert__count { font-family: 'JetBrains Mono', monospace; font-size: 2rem; font-weight: 900; line-height: 1; min-width: 2ch; text-align: center; } .ds-alert--falta .ds-alert__count { color: #ff4757; } .ds-alert--sobra .ds-alert__count { color: #ffa502; } .ds-alert__title { font-family: 'Outfit', sans-serif; font-size: 1rem; font-weight: 700; color: #e0e6ed; } .ds-alert__sub { font-family: 'JetBrains Mono', monospace; font-size: 0.6rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-top: 3px; } .ds-alert--falta .ds-alert__sub { color: #ff4757; } .ds-alert--sobra .ds-alert__sub { color: #ffa502; }"
+    },
+    {
+      "name": "Tab de Navegação",
+      "kind": "nav",
+      "description": "Tab do painel principal. Ativa em azul (Azul Referência), não em verde — verde é estado de dado, azul é estado de UI.",
+      "html": "<div class=\"ds-tabs\"><button class=\"ds-tab ds-tab--active\">Visão Geral</button><button class=\"ds-tab\">Inventário</button><button class=\"ds-tab\">Mural</button><button class=\"ds-tab\">Armazém</button></div>",
+      "css": ".ds-tabs { display: flex; gap: 4px; background: #111827; padding: 4px; border-radius: 10px; border: 1px solid #1e293b; overflow-x: auto; scrollbar-width: none; } .ds-tabs::-webkit-scrollbar { display: none; } .ds-tab { background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 7px 14px; font-family: 'DM Sans', sans-serif; font-size: 0.8rem; font-weight: 400; color: #64748b; cursor: pointer; white-space: nowrap; transition: background 150ms, color 150ms, border-color 150ms; } .ds-tab:hover { color: #7bafd4; background: rgba(255,255,255,0.03); } .ds-tab--active { background: rgba(59,130,246,0.12); border-color: rgba(59,130,246,0.40); color: #e0e6ed; font-weight: 600; box-shadow: 0 0 8px rgba(59,130,246,0.15); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "O Terminal do Cerrado",
+    "overview": "CAMDA Estoque é um instrumento de operação — não um produto de marketing, não um dashboard genérico de SaaS. A interface existe para um único usuário experiente que conhece profundamente os dados que está vendo: quantidades, códigos de produto, datas de vencimento, divergências de inventário. Cada decisão visual parte de uma premissa: precisão serve ao trabalho; decoração atrapalha.\n\nA identidade visual é enraizada no agronegócio do Brasil Central — não de forma literal, mas na escolha de um verde que é operacional antes de ser bonito, num contraste alto que funciona sob luz de escritório, numa tipografia monoespacial que trata número como dado antes de tratá-lo como texto. O sistema rejeita a estética dark SaaS genérico: o azul-marinho monótono do Grafana, a grade de cards idênticos sem identidade de setor, o template que poderia pertencer a qualquer startup de fintech ou DevOps.\n\nA filosofia de densidade é intencional: denso mas navegável. O usuário precisa processar muita informação por sessão — status de centenas de produtos, datas críticas, quantidades divergentes. O sistema não reduz a carga escondendo informação; organiza com hierarquia tipográfica, agrupamento semântico e cor com propósito.",
+    "keyCharacteristics": [
+      "Tema escuro permanente: alta densidade em ambiente de escritório, sessões longas",
+      "Verde Cerrado (#00d68f) como linguagem operacional — sinaliza OK, não decora",
+      "Três vozes tipográficas com papéis rígidos: Outfit / DM Sans / JetBrains Mono",
+      "Status codificados por cor com espaço visual garantido — alertas nunca são silenciosos",
+      "Elevação via layering tonal; blur restrito a elementos flutuantes",
+      "Responsive: compacto em ≤640px, grid operacional em ≥641px"
+    ],
+    "rules": [
+      {
+        "name": "A Regra do Verde Operacional",
+        "body": "Cada uso de #00d68f na tela responde à pergunta: 'o que está OK aqui?' Se a resposta for vaga, a cor está errada. Verde como decoração quebra a linguagem semântica do sistema.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra do Espaço Real",
+        "body": "Alertas de vencimento e ruptura nunca são silenciosos — nunca apenas um ícone discreto na borda. Vermelho Falta e Âmbar Sobra exigem área visual dedicada: banner, card completo, número em Display. Se o alerta couber em 16px, não é suficiente.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra do Texto Secundário",
+        "body": "#7bafd4 existe como cor de texto auxiliar. Seu azul saturado é forte demais para bordas e glows. Bordas usam #1e293b; glows usam transparências de verde ou branco.",
+        "section": "colors"
+      },
+      {
+        "name": "A Regra do Monoespaciado",
+        "body": "Qualquer valor numérico operacional — quantidade, código de produto, data, preço — usa JetBrains Mono. Números em sans-serif são decoração; em Mono são dados.",
+        "section": "typography"
+      },
+      {
+        "name": "A Fonte Syne está eliminada",
+        "body": "O código-fonte importa Syne como fonte alternativa. Ela não faz parte deste sistema. Outfit é a única fonte de título. Syne não deve aparecer em nenhum novo componente.",
+        "section": "typography"
+      },
+      {
+        "name": "A Regra do Vidro Reservado",
+        "body": "Quando tudo tem blur, nada tem profundidade. backdrop-filter é um recurso caro. Cards tonais são o padrão; blur é a exceção que sinaliza 'este elemento está acima de tudo o mais'.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Use Verde Cerrado como linguagem semântica — cada #00d68f responde a 'o que está OK aqui?'",
+      "Use JetBrains Mono para todo dado numérico operacional: quantidade, código, data, preço",
+      "Dê espaço visual real a alertas críticos — banner, card completo, número em Display",
+      "Mantenha blur restrito a elementos flutuantes (modais, tooltips, popovers)",
+      "Use a escala Noite do Cerrado → Superfície → Superfície Elevada para profundidade tonal",
+      "Mantenha badges com texto + cor — nunca apenas ícone"
+    ],
+    "donts": [
+      "Não use glassmorfismo em cards de conteúdo — viola a Regra do Vidro Reservado",
+      "Não crie dashboards estilo Grafana/Datadog — azul-marinho monótono, cards idênticos sem identidade",
+      "Não use rainbow charts estilo PowerBI — visualizações seguem a paleta semântica do sistema",
+      "Não use whitespace excessivo estilo Notion — ferramenta de alta densidade operacional",
+      "Não use a fonte Syne — eliminada do sistema",
+      "Não use Texto Secundário (#7bafd4) como cor de borda ou glow",
+      "Não hardcode cores de fornecedor como tokens de design — são dados dinâmicos",
+      "Não crie template genérico dark SaaS — deve ser reconhecível como ferramenta de cooperativa agrícola"
+    ]
+  }
+}
