@@ -7750,7 +7750,7 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t0, t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_mural, t_ciclico, t_visao = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "📌 Mural", "🔄 Inv. Cíclico", "🫧 Visão Geral"])
+    t0, t1, t2, t3, t4, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_visao = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", "🫧 Visão Geral"])
 
     with t0:
         # ── Dados ──────────────────────────────────────────────────────────
