@@ -149,13 +149,19 @@ button { -webkit-tap-highlight-color: transparent; }
   box-shadow: 0 12px 28px rgba(148,163,184,0.18);
 }
 
-/* GRID */
+/* GRID (masonry via CSS columns para evitar buracos entre cards de alturas diferentes) */
 .grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
-  gap: 18px;
-  align-items: start;
+  column-width: 215px;
+  column-gap: 18px;
   perspective: 1100px;
+}
+.grid > * {
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
+  page-break-inside: avoid;
+  width: 100%;
+  margin: 0 0 18px;
+  display: inline-block;
 }
 
 /* CARD */
@@ -440,7 +446,6 @@ button { -webkit-tap-highlight-color: transparent; }
 
 /* EMPTY */
 .empty {
-  grid-column: 1/-1;
   text-align: center;
   padding: 58px 18px;
   color: #64748b;
@@ -594,7 +599,8 @@ button { -webkit-tap-highlight-color: transparent; }
   .topbar { align-items: flex-start; }
   .topbar-subtitle { display: none; }
   .count-pill { display: none; }
-  .grid { grid-template-columns: 1fr; gap: 14px; }
+  .grid { column-count: 1; column-gap: 14px; }
+  .grid > * { margin-bottom: 14px; }
   .card { min-height: 168px; }
 }
 </style>
