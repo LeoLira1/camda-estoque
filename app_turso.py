@@ -168,10 +168,7 @@ if not st.session_state.authenticated:
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
     .stApp {
-        background:
-            linear-gradient(160deg,rgba(10,15,26,0.55) 0%,rgba(10,15,26,0.45) 100%),
-            url('https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/Cerrado.jpg')
-            center center / cover no-repeat fixed;
+        background: linear-gradient(160deg,rgba(10,15,26,0.55) 0%,rgba(10,15,26,0.45) 100%);
         font-family:'Outfit',sans-serif;
     }
     #MainMenu,footer,header{visibility:hidden;}
@@ -435,6 +432,40 @@ if not st.session_state.authenticated:
             setTimeout(disablePwdManager, 800);
             var _obs = new MutationObserver(disablePwdManager);
             try{ _obs.observe(window.parent.document.body,{childList:true,subtree:true}); }catch(e){}
+        })();
+        </script>
+        <script>
+        (function(){
+            var win = window.parent;
+            if (win.__parallaxRunning) return;
+            win.__parallaxRunning = true;
+            var doc = win.document;
+            var bg = doc.getElementById('parallax-bg');
+            if (!bg) {
+                bg = doc.createElement('div');
+                bg.id = 'parallax-bg';
+                bg.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:-1;' +
+                    'background:url("https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/Cerrado.jpg") center center/cover no-repeat;' +
+                    'will-change:transform;';
+                doc.body.insertBefore(bg, doc.body.firstChild);
+            }
+            var mx=0,my=0,cx=0,cy=0;
+            doc.addEventListener('mousemove',function(e){
+                mx=(e.clientX/win.innerWidth-0.5)*2;
+                my=(e.clientY/win.innerHeight-0.5)*2;
+            });
+            doc.addEventListener('touchmove',function(e){
+                if(e.touches.length>0){
+                    mx=(e.touches[0].clientX/win.innerWidth-0.5)*2;
+                    my=(e.touches[0].clientY/win.innerHeight-0.5)*2;
+                }
+            },{passive:true});
+            function loop(){
+                cx+=(mx-cx)*0.06; cy+=(my-cy)*0.06;
+                bg.style.transform='translate('+(cx*14).toFixed(2)+'px,'+(cy*9).toFixed(2)+'px) scale(1.06)';
+                win.requestAnimationFrame(loop);
+            }
+            loop();
         })();
         </script>""", height=0)
         with st.form("form_login"):
