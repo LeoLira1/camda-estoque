@@ -168,7 +168,7 @@ if not st.session_state.authenticated:
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700;900&display=swap');
     .stApp {
-        background: linear-gradient(160deg,rgba(10,15,26,0.55) 0%,rgba(10,15,26,0.45) 100%);
+        background: linear-gradient(160deg,rgba(10,15,26,0.30) 0%,rgba(10,15,26,0.22) 100%);
         font-family:'Outfit',sans-serif;
     }
     #MainMenu,footer,header{visibility:hidden;}
@@ -446,7 +446,7 @@ if not st.session_state.authenticated:
                 bg.id = 'parallax-bg';
                 bg.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:-1;' +
                     'background:url("https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/Cerrado.jpg") center center/cover no-repeat;' +
-                    'will-change:transform;filter:brightness(.72) sepia(.08);';
+                    'will-change:transform;filter:brightness(1.15) sepia(.08);';
                 doc.body.insertBefore(bg, doc.body.firstChild);
             }
             var mx=0,my=0,cx=0,cy=0;
