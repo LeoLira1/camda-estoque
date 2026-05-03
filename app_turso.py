@@ -446,7 +446,7 @@ if not st.session_state.authenticated:
                 bg.id = 'parallax-bg';
                 bg.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:-1;' +
                     'background:url("https://raw.githubusercontent.com/LeoLira1/camda-estoque/main/Cerrado.jpg") center center/cover no-repeat;' +
-                    'will-change:transform;';
+                    'will-change:transform;filter:brightness(.72) sepia(.08);';
                 doc.body.insertBefore(bg, doc.body.firstChild);
             }
             var mx=0,my=0,cx=0,cy=0;
