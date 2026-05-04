@@ -9088,16 +9088,17 @@ new Chart(document.getElementById('coop-chart'),{
                 # ── Galões SVG + Fotos na mesma galeria ────────────────────
                 fotos_av = listar_fotos_avaria(av_id)
 
-                # Cards de foto (mesmo tamanho dos baldes)
+                # Cards de foto (mesmo tamanho dos baldes) com lightbox ao clicar
                 _foto_cards_html = "".join(
-                    f'<div style="display:flex;flex-direction:column;align-items:center;'
+                    f'<div onclick="openAvLightbox(this)" '
+                    f'style="display:flex;flex-direction:column;align-items:center;'
                     f'min-width:120px;max-width:120px;height:185px;border-radius:12px;'
                     f'overflow:hidden;border:1px solid rgba(100,180,255,0.2);'
-                    f'flex-shrink:0;background:rgba(0,0,0,0.25);">'
+                    f'flex-shrink:0;background:rgba(0,0,0,0.25);cursor:zoom-in;">'
                     f'<img src="data:image/jpeg;base64,{f["foto_base64"]}" '
-                    f'style="width:120px;height:152px;object-fit:cover;">'
+                    f'style="width:120px;height:152px;object-fit:cover;pointer-events:none;">'
                     f'<div style="font-size:9px;color:rgba(100,180,255,0.5);padding:5px 0;'
-                    f'letter-spacing:0.5px;font-family:monospace;">FOTO {i+1}</div>'
+                    f'letter-spacing:0.5px;font-family:monospace;pointer-events:none;">FOTO {i+1}</div>'
                     f'</div>'
                     for i, f in enumerate(fotos_av)
                 )
@@ -9111,8 +9112,38 @@ new Chart(document.getElementById('coop-chart'),{
                 import streamlit.components.v1 as _cv1
                 if galoes_html or _foto_cards_html:
                     _has_foto = bool(_foto_cards_html)
+                    _lightbox_html = (
+                        '<style>'
+                        '#av-lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.92);'
+                        'z-index:9999;align-items:center;justify-content:center;cursor:zoom-out;}'
+                        '#av-lb.open{display:flex;}'
+                        '#av-lb img{max-width:95%;max-height:95%;border-radius:12px;'
+                        'box-shadow:0 20px 60px rgba(0,0,0,0.7);}'
+                        '</style>'
+                        '<div id="av-lb" onclick="closeAvLightbox()">'
+                        '<img id="av-lb-img" src="">'
+                        '</div>'
+                        '<script>'
+                        'var _avFrOrigStyle=null;'
+                        'function openAvLightbox(el){'
+                        '  var img=el.querySelector("img");if(!img)return;'
+                        '  document.getElementById("av-lb-img").src=img.src;'
+                        '  document.getElementById("av-lb").classList.add("open");'
+                        '  var fr=window.frameElement;'
+                        '  if(fr){_avFrOrigStyle=fr.getAttribute("style")||"";'
+                        '  fr.style.cssText=_avFrOrigStyle+";position:fixed!important;top:0!important;'
+                        'left:0!important;width:100%!important;height:100%!important;z-index:9999!important;"}'
+                        '}'
+                        'function closeAvLightbox(){'
+                        '  document.getElementById("av-lb").classList.remove("open");'
+                        '  var fr=window.frameElement;'
+                        '  if(fr&&_avFrOrigStyle!==null){fr.setAttribute("style",_avFrOrigStyle);_avFrOrigStyle=null;}'
+                        '}'
+                        '</script>'
+                    )
                     _galoes_container = (
-                        '<div style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;'
+                        _lightbox_html
+                        + '<div style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;'
                         'background:rgba(255,255,255,0.025);border-radius:12px;'
                         'padding:10px 10px 8px;">'
                         + galoes_html
