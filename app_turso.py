@@ -1905,6 +1905,8 @@ def resolver_avaria(avaria_id: int):
 def deletar_avaria(avaria_id: int):
     try:
         conn = get_db()
+        conn.execute("DELETE FROM avaria_unidades WHERE avaria_id = ?", (avaria_id,))
+        conn.execute("DELETE FROM avaria_fotos WHERE avaria_id = ?", (avaria_id,))
         conn.execute("DELETE FROM avarias WHERE id = ?", (avaria_id,))
         conn.commit()
         sync_db()
@@ -2030,7 +2032,7 @@ def remover_unidade_avaria(uid: str):
 
 
 def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str,
-                     capacidade_litros: float = 20.0):
+                     capacidade_litros: float = 20.0, criar_balde: bool = True):
     try:
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
@@ -2043,8 +2045,8 @@ def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str,
         )
         # Obtém o ID antes do commit
         avaria_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
-        # Cria a primeira unidade (galão) com nível 50%
-        if avaria_id:
+        # Cria a primeira unidade (galão) com nível 50% apenas se for balde
+        if avaria_id and criar_balde:
             uid = f"{avaria_id}_{int(datetime.now().timestamp() * 1000)}"
             conn.execute(
                 "INSERT INTO avaria_unidades (avaria_id, uid, nivel) VALUES (?, ?, 50.0)",
@@ -8998,6 +9000,11 @@ new Chart(document.getElementById('coop-chart'),{
                     idx_sel = opcoes.index(sel)
                     row_sel = df_filtrado_av.iloc[idx_sel]
 
+                    eh_balde = st.checkbox(
+                        "Produto em balde / galão", value=True, key="av_eh_balde",
+                        help="Desmarque para pacotes, sacos ou qualquer produto que não seja em galão"
+                    )
+
                     col_av1, col_av2 = st.columns(2)
                     with col_av1:
                         qtd_av = st.number_input(
@@ -9006,11 +9013,14 @@ new Chart(document.getElementById('coop-chart'),{
                             value=1, step=1, key="av_qtd"
                         )
                     with col_av2:
-                        cap_av = st.number_input(
-                            "Capacidade do galão (litros)", min_value=0.1, max_value=1000.0,
-                            value=20.0, step=0.5, key="av_cap",
-                            help="Capacidade total de cada galão/balde avariado"
-                        )
+                        if eh_balde:
+                            cap_av = st.number_input(
+                                "Capacidade do galão (litros)", min_value=0.1, max_value=1000.0,
+                                value=20.0, step=0.5, key="av_cap",
+                                help="Capacidade total de cada galão/balde avariado"
+                            )
+                        else:
+                            cap_av = 20.0
 
                     motivo_av = st.text_area(
                         "Motivo / descrição", placeholder="Ex: balde furado, galão aberto, vazamento...",
@@ -9024,7 +9034,8 @@ new Chart(document.getElementById('coop-chart'),{
                             ok_av = registrar_avaria(
                                 row_sel["codigo"], row_sel["produto"],
                                 int(qtd_av), motivo_av.strip(),
-                                capacidade_litros=float(cap_av)
+                                capacidade_litros=float(cap_av),
+                                criar_balde=eh_balde,
                             )
                             if ok_av:
                                 st.success(f"✅ Avaria registrada: {row_sel['produto']} ({int(qtd_av)} un)")
@@ -9206,11 +9217,10 @@ new Chart(document.getElementById('coop-chart'),{
                                 if abs(novo_nivel - u["nivel"]) > 0.5:
                                     atualizar_nivel_unidade(u["uid"], novo_nivel)
                                     st.rerun()
-                                if len(unidades) > 1:
-                                    if st.button("✕ Remover", key=f"av_rm_{u['uid']}",
-                                                 use_container_width=True):
-                                        remover_unidade_avaria(u["uid"])
-                                        st.rerun()
+                                if is_aberta and st.button("✕ Remover balde", key=f"av_rm_{u['uid']}",
+                                             use_container_width=True):
+                                    remover_unidade_avaria(u["uid"])
+                                    st.rerun()
                         with slider_cols[-1]:
                             st.markdown("<div style='padding-top:22px;'></div>", unsafe_allow_html=True)
                             if is_aberta and st.button("＋ Balde", key=f"av_add_{av_id}",
