@@ -1,6 +1,6 @@
 """
 CAMDA Estoque Mestre — Aba Avarias
-Layout: Cards quadrados lado a lado
+Layout: Cards quadrados clicáveis com botão ✕ de exclusão rápida
 """
 
 import streamlit as st
@@ -9,15 +9,21 @@ from datetime import datetime, date
 import json
 
 
-def render_avarias_cards(df_avarias):
+def render_avarias_cards(df_avarias, selected_id: int | None = None):
     """
-    Renderiza as avarias abertas em layout de cards quadrados.
+    Renderiza avarias abertas em grid de cards quadrados.
 
-    Colunas esperadas em df_avarias (DataFrame ou lista de dicts):
-        - produto       : str  — nome do produto
-        - status        : str  — 'ABERTA' | 'FECHADA'  (ou 'aberto')
-        - data_registro : date/datetime/str — data de abertura
-        - fotos         : list — lista de paths/urls (pode ser vazia)
+    Colunas esperadas em df_avarias:
+        - id            : int
+        - produto       : str
+        - status        : str  ('ABERTA' | 'aberto')
+        - data_registro : date/datetime/str
+        - fotos         : list
+
+    selected_id: id da avaria atualmente selecionada (card destacado)
+
+    Retorna via st.query_params o id clicado ('av_sel') ou
+    'av_del' quando o ✕ é acionado.
     """
 
     hoje = date.today()
@@ -85,7 +91,9 @@ def render_avarias_cards(df_avarias):
         fotos = r.get("fotos", [])
         n_fotos = len(fotos) if isinstance(fotos, (list, tuple)) else (1 if fotos else 0)
 
+        av_id = int(r.get("id", 0))
         cards_data.append({
+            "id": av_id,
             "produto": r.get("produto", "—"),
             "tempo_label": tempo_label,
             "cor_borda": cor_borda,
@@ -93,6 +101,7 @@ def render_avarias_cards(df_avarias):
             "cor_status_txt": cor_status_txt,
             "cor_status_border": cor_status_border,
             "n_fotos": n_fotos,
+            "selected": av_id == selected_id,
         })
 
     cards_json = json.dumps(cards_data, ensure_ascii=False)
@@ -118,12 +127,35 @@ def render_avarias_cards(df_avarias):
         flex-direction: column;
         overflow: hidden;
         cursor: pointer;
-        transition: border-color 0.15s, transform 0.1s;
+        position: relative;
+        transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
       }}
-      .av-card:hover {{
-        transform: translateY(-1px);
-        border-color: #444;
+      .av-card:hover {{ transform: translateY(-1px); border-color: #555; }}
+      .av-card.selected {{
+        box-shadow: 0 0 0 2px #60a5fa;
+        border-color: #60a5fa !important;
       }}
+
+      .btn-del {{
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: rgba(239,68,68,0.15);
+        border: 0.5px solid rgba(239,68,68,0.4);
+        color: #f87171;
+        font-size: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        z-index: 10;
+        transition: background 0.1s;
+        line-height: 1;
+      }}
+      .btn-del:hover {{ background: rgba(239,68,68,0.35); }}
 
       .card-top {{
         padding: 9px 10px 6px;
@@ -137,6 +169,7 @@ def render_avarias_cards(df_avarias):
         display: flex;
         align-items: center;
         gap: 5px;
+        padding-right: 18px;
       }}
 
       .card-status {{
@@ -151,10 +184,7 @@ def render_avarias_cards(df_avarias):
         border-style: solid;
       }}
 
-      .card-time {{
-        font-size: 9px;
-        color: #666;
-      }}
+      .card-time {{ font-size: 9px; color: #666; }}
 
       .card-product {{
         font-size: 11px;
@@ -210,14 +240,9 @@ def render_avarias_cards(df_avarias):
         align-items: center;
         justify-content: center;
         gap: 5px;
-        cursor: pointer;
+        cursor: default;
         font-size: 11px;
-        color: #444;
-        transition: border-color 0.15s;
-      }}
-      .add-card:hover {{
-        border-color: #555;
-        color: #777;
+        color: #333;
       }}
     </style>
 
@@ -234,10 +259,19 @@ def render_avarias_cards(df_avarias):
       </svg>`;
 
       const plusIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" stroke-width="1.5" opacity="0.4">
+        stroke="currentColor" stroke-width="1.5" opacity="0.25">
         <circle cx="12" cy="12" r="9"/>
         <path d="M12 8v8M8 12h8"/>
       </svg>`;
+
+      function setParam(key, value) {{
+        const url = new URL(window.parent.location.href);
+        url.searchParams.set(key, value);
+        // remove the other action param to avoid conflicts
+        if (key === 'av_sel') url.searchParams.delete('av_del');
+        if (key === 'av_del') url.searchParams.delete('av_sel');
+        window.parent.location.href = url.toString();
+      }}
 
       const grid = document.getElementById('avarias-grid');
 
@@ -252,8 +286,20 @@ def render_avarias_cards(df_avarias):
         }}
 
         const card = document.createElement('div');
-        card.className = 'av-card';
+        card.className = 'av-card' + (c.selected ? ' selected' : '');
         card.style.borderTopColor = c.cor_borda;
+
+        const btnDel = document.createElement('div');
+        btnDel.className = 'btn-del';
+        btnDel.title = 'Excluir avaria';
+        btnDel.textContent = '✕';
+        btnDel.onclick = (e) => {{
+          e.stopPropagation();
+          if (confirm('Excluir avaria "' + c.produto + '"?')) {{
+            setParam('av_del', c.id);
+          }}
+        }};
+
         card.innerHTML = `
           <div class="card-top">
             <div class="card-status-row">
@@ -269,12 +315,14 @@ def render_avarias_cards(df_avarias):
           </div>
           <div class="card-photos">${{fotosHtml}}</div>
         `;
+        card.prepend(btnDel);
+        card.onclick = () => setParam('av_sel', c.id);
         grid.appendChild(card);
       }});
 
       const addCard = document.createElement('div');
       addCard.className = 'add-card';
-      addCard.innerHTML = `${{plusIcon}}<span>registrar avaria</span>`;
+      addCard.innerHTML = `${{plusIcon}}<span>clique num card</span>`;
       grid.appendChild(addCard);
     </script>
     """
