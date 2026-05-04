@@ -9087,7 +9087,14 @@ new Chart(document.getElementById('coop-chart'),{
             except Exception:
                 pass
 
-        if not df_av.empty:
+        if df_av.empty:
+            st.markdown("""
+            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.3);">
+                <div style="font-size:2.5rem;">✅</div>
+                <div>Nenhuma avaria registrada</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
             _df_cards = df_av[["id", "produto", "status", "registrado_em"]].copy()
             _df_cards["data_registro"] = _df_cards["registrado_em"]
             _df_cards["fotos"] = _df_cards["id"].apply(
@@ -10783,6 +10790,224 @@ with t_ciclico:
 
 with t_visao:
     _render_visao_geral_tab(get_current_stock())
+
+# ── Gerenciamento de Avarias ─────────────────────────────────────────────────
+import streamlit.components.v1 as _cv1_av
+
+_df_av_mgmt = listar_avarias(apenas_abertas=True)
+if not _df_av_mgmt.empty:
+    st.markdown(
+        "<div style='font-size:10px;color:#555;letter-spacing:1px;"
+        "margin-top:4px;margin-bottom:4px;'>🔴 AVARIAS — GERENCIAMENTO</div>",
+        unsafe_allow_html=True,
+    )
+    for _, av in _df_av_mgmt.iterrows():
+        is_aberta = av["status"] == "aberto"
+        av_id = int(av["id"])
+        capacidade = float(av.get("capacidade_litros") or 20.0)
+
+        try:
+            dt_reg = datetime.strptime(av["registrado_em"], "%Y-%m-%d %H:%M:%S")
+            dias_av = (datetime.now(tz=_BRT).replace(tzinfo=None) - dt_reg).days
+            tempo_av = "hoje" if dias_av == 0 else ("ontem" if dias_av == 1 else f"{dias_av}d atrás")
+        except Exception:
+            tempo_av = av["registrado_em"]
+
+        unidades = listar_unidades_avaria(av_id)
+        niveis_atuais = {
+            u["uid"]: st.session_state.get(f"av_nivel_{u['uid']}", u["nivel"])
+            for u in unidades
+        }
+
+        with st.expander(f"{'⚠️' if is_aberta else '✅'} {av['produto']}  ·  {tempo_av}", expanded=False):
+
+            fotos_av = listar_fotos_avaria(av_id)
+
+            _foto_cards_html = "".join(
+                f'<div onclick="openAvLightbox(this)" '
+                f'style="display:flex;flex-direction:column;align-items:center;'
+                f'min-width:120px;max-width:120px;height:185px;border-radius:12px;'
+                f'overflow:hidden;border:1px solid rgba(100,180,255,0.2);'
+                f'flex-shrink:0;background:rgba(0,0,0,0.25);cursor:zoom-in;">'
+                f'<img src="data:image/jpeg;base64,{f["foto_base64"]}" '
+                f'style="width:120px;height:152px;object-fit:cover;pointer-events:none;">'
+                f'<div style="font-size:9px;color:rgba(100,180,255,0.5);padding:5px 0;'
+                f'letter-spacing:0.5px;font-family:monospace;pointer-events:none;">FOTO {i+1}</div>'
+                f'</div>'
+                for i, f in enumerate(fotos_av)
+            )
+
+            galoes_html = "".join(
+                _galao_svg_html(u["uid"], niveis_atuais[u["uid"]], capacidade, i)
+                for i, u in enumerate(unidades)
+            )
+
+            if galoes_html or _foto_cards_html:
+                _has_foto = bool(_foto_cards_html)
+                _lightbox_html = (
+                    '<script>'
+                    'function openAvLightbox(el){'
+                    '  var img=el.querySelector("img");if(!img)return;'
+                    '  var src=img.src;'
+                    '  var pd=window.parent.document;'
+                    '  var old=pd.getElementById("av-lb-global");'
+                    '  if(old)old.parentNode.removeChild(old);'
+                    '  var lb=pd.createElement("div");'
+                    '  lb.id="av-lb-global";'
+                    '  lb.style.cssText="position:fixed;inset:0;background:rgba(0,0,0,0.92);'
+                    'z-index:99999;display:flex;align-items:center;justify-content:center;'
+                    'cursor:zoom-out;";'
+                    '  lb.onclick=function(){pd.body.removeChild(lb);};'
+                    '  var li=pd.createElement("img");'
+                    '  li.src=src;'
+                    '  li.style.cssText="width:90vw;height:90vh;border-radius:12px;'
+                    'box-shadow:0 20px 60px rgba(0,0,0,0.7);object-fit:contain;";'
+                    '  li.onclick=function(e){e.stopPropagation();pd.body.removeChild(lb);};'
+                    '  lb.appendChild(li);'
+                    '  pd.body.appendChild(lb);'
+                    '}'
+                    '</script>'
+                )
+                _galoes_container = (
+                    _lightbox_html
+                    + '<div style="display:flex;flex-wrap:nowrap;overflow-x:auto;gap:10px;'
+                    'background:rgba(255,255,255,0.025);border-radius:12px;'
+                    'padding:10px 10px 8px;">'
+                    + galoes_html
+                    + _foto_cards_html
+                    + '</div>'
+                )
+                _cv1_av.html(_galoes_container, height=210 if _has_foto else 150, scrolling=False)
+
+            if unidades:
+                total_rest = sum((niveis_atuais[u["uid"]] / 100.0) * capacidade for u in unidades)
+                total_perd = sum(((100.0 - niveis_atuais[u["uid"]]) / 100.0) * capacidade for u in unidades)
+                nivel_min = min(niveis_atuais[u["uid"]] for u in unidades)
+                accent_rest = _galao_color(nivel_min)["glow"]
+                st.markdown(
+                    f'<div class="av-stats">'
+                    f'<div class="av-stat" style="border-left:3px solid {accent_rest}55;">'
+                    f'<div class="av-stat-lbl">RESTANTE</div>'
+                    f'<div class="av-stat-val" style="color:{accent_rest};">{total_rest:.1f} L</div>'
+                    f'</div>'
+                    f'<div class="av-stat" style="border-left:3px solid #f8717155;">'
+                    f'<div class="av-stat-lbl">PERDIDO</div>'
+                    f'<div class="av-stat-val" style="color:#f87171;">{total_perd:.1f} L</div>'
+                    f'</div>'
+                    f'<div class="av-stat" style="border-left:3px solid #60a5fa55;">'
+                    f'<div class="av-stat-lbl">BALDES</div>'
+                    f'<div class="av-stat-val" style="color:#60a5fa;">{len(unidades)}</div>'
+                    f'</div>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+            _edit_key = f"av_editando_{av_id}"
+            _is_editing = st.session_state.get(_edit_key, False)
+            _foto_ver_key = f"av_foto_ver_{av_id}"
+            _foto_up_key = f"av_foto_{av_id}_{st.session_state.get(_foto_ver_key, 0)}"
+
+            if _is_editing:
+                st.markdown(
+                    '<div style="font-size:11px;color:#4ade80;margin-bottom:4px;">'
+                    '🔓 Modo de edição ativo</div>',
+                    unsafe_allow_html=True
+                )
+                if unidades:
+                    n_cols = len(unidades) + 1
+                    slider_cols = st.columns(n_cols)
+                    for i, u in enumerate(unidades):
+                        with slider_cols[i]:
+                            key_s = f"av_nivel_{u['uid']}"
+                            novo_nivel = st.slider(
+                                f"Nº{i+1} ({capacidade:.0f}L)",
+                                0.0, 100.0,
+                                value=float(u["nivel"]),
+                                step=1.0,
+                                key=key_s,
+                                format="%.0f%%"
+                            )
+                            if abs(novo_nivel - u["nivel"]) > 0.5:
+                                atualizar_nivel_unidade(u["uid"], novo_nivel)
+                                st.rerun()
+                            if is_aberta and st.button("✕ Remover balde", key=f"av_rm_{u['uid']}",
+                                         use_container_width=True):
+                                remover_unidade_avaria(u["uid"])
+                                st.rerun()
+                    with slider_cols[-1]:
+                        st.markdown("<div style='padding-top:22px;'></div>", unsafe_allow_html=True)
+                        if is_aberta and st.button("＋ Balde", key=f"av_add_{av_id}",
+                                                    use_container_width=True):
+                            adicionar_unidade_avaria(av_id)
+                            st.rerun()
+                else:
+                    if is_aberta and st.button("＋ Adicionar balde", key=f"av_add_{av_id}"):
+                        adicionar_unidade_avaria(av_id)
+                        st.rerun()
+
+                if fotos_av:
+                    st.markdown(
+                        '<div style="font-size:10px;color:rgba(255,255,255,0.35);'
+                        'margin:8px 0 4px;">🗑️ Remover fotos</div>',
+                        unsafe_allow_html=True
+                    )
+                    _del_cols = st.columns(len(fotos_av))
+                    for i, f in enumerate(fotos_av):
+                        with _del_cols[i]:
+                            if st.button(f"✕ foto {i+1}", key=f"av_delfoto_{f['id']}",
+                                         use_container_width=True):
+                                remover_foto_item(f["id"])
+                                st.rerun()
+
+                st.markdown("<div style='margin-top:6px;'></div>", unsafe_allow_html=True)
+                col_res, col_del, col_close = st.columns([1, 1, 1])
+                with col_res:
+                    if is_aberta and st.button("✅ Resolver", key=f"av_res_{av_id}",
+                                                use_container_width=True):
+                        resolver_avaria(av_id)
+                        st.rerun()
+                with col_del:
+                    if st.button("🗑️ Excluir", key=f"av_del_{av_id}",
+                                 use_container_width=True):
+                        deletar_avaria(av_id)
+                        st.rerun()
+                with col_close:
+                    if st.button("🔒 Fechar", key=f"av_close_{av_id}",
+                                 use_container_width=True):
+                        st.session_state[_edit_key] = False
+                        st.rerun()
+            else:
+                _foto_up = st.file_uploader(
+                    "📎 Adicionar foto",
+                    type=["jpg", "jpeg", "png", "webp"],
+                    key=_foto_up_key,
+                )
+                if _foto_up is not None:
+                    if adicionar_foto_avaria(av_id, _foto_up.read()):
+                        st.session_state[_foto_ver_key] = (
+                            st.session_state.get(_foto_ver_key, 0) + 1
+                        )
+                        st.success("Foto salva! ✔")
+                        st.rerun()
+                st.divider()
+                _senha_input = st.text_input(
+                    "🔒 Senha para editar/excluir", type="password",
+                    key=f"av_senha_{av_id}",
+                    placeholder="camda@edit"
+                )
+                if st.button("Confirmar", key=f"av_auth_{av_id}", type="primary"):
+                    if _senha_input == "camda@edit":
+                        st.session_state[_edit_key] = True
+                        st.rerun()
+                    else:
+                        st.error("❌ Senha incorreta")
+
+            if not is_aberta and av.get("resolvido_em"):
+                st.markdown(
+                    f'<div style="color:#4ade80;font-size:0.65rem;margin-top:4px;">'
+                    f'✅ Resolvido em: {av["resolvido_em"]}</div>',
+                    unsafe_allow_html=True
+                )
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
