@@ -1369,6 +1369,7 @@ def _get_connection():
             codigo_produto  TEXT    NOT NULL,
             descricao       TEXT    DEFAULT '',
             armazem         TEXT    DEFAULT '',
+            grupo           TEXT    DEFAULT '',
             tipo            TEXT    DEFAULT '',
             codigo_parceiro TEXT    DEFAULT '',
             loja            TEXT    DEFAULT '',
@@ -1490,6 +1491,13 @@ def _get_connection():
             conn.execute("DROP TABLE materiais_terceiros")
             conn.execute("ALTER TABLE materiais_terceiros_new RENAME TO materiais_terceiros")
             conn.commit()
+    except Exception:
+        pass
+
+    # ── Migração: adiciona coluna grupo em materiais_terceiros se ausente ──
+    try:
+        conn.execute("ALTER TABLE materiais_terceiros ADD COLUMN grupo TEXT DEFAULT ''")
+        conn.commit()
     except Exception:
         pass
 
@@ -2695,14 +2703,14 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     for r in records:
         conn.execute("""
             INSERT INTO materiais_terceiros
-                (codigo_produto, descricao, armazem, tipo, codigo_parceiro, loja,
+                (codigo_produto, descricao, armazem, grupo, tipo, codigo_parceiro, loja,
                  razao_social, doc_origin, serie, dt_emissao,
                  qtd_original, qtd_entregue, saldo,
                  tm, data_lancto, data_referencia, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             r.get("codigo_produto", ""), r.get("descricao", ""), r.get("armazem", ""),
-            r.get("tipo", ""), r.get("codigo_parceiro", ""), r.get("loja", ""),
+            r.get("grupo", ""), r.get("tipo", ""), r.get("codigo_parceiro", ""), r.get("loja", ""),
             r.get("razao_social", ""), r.get("doc_origin", ""), r.get("serie", ""),
             r.get("dt_emissao", ""), r.get("qtd_original", 0), r.get("qtd_entregue", 0),
             r.get("saldo", 0), r.get("tm", ""), r.get("data_lancto", ""),
@@ -2712,15 +2720,21 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     sync_db()
     get_materiais_terceiros.clear()
     get_materiais_cooperados.clear()
+    get_materiais_grupos.clear()
     get_materiais_resumo.clear()
     return len(records), removidos
 
 
 @st.cache_data(ttl=120)
-def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None, cooperado: str | None = None) -> pd.DataFrame:
+def get_materiais_terceiros(
+    armazem: str | None = None,
+    tipo: str | None = None,
+    cooperado: str | None = None,
+    grupos_excluir: tuple[str, ...] | None = None,
+) -> pd.DataFrame:
     """Retorna DataFrame de materiais em poder de terceiros, com filtros opcionais."""
     cols = [
-        "id", "codigo_produto", "descricao", "armazem", "tipo", "codigo_parceiro",
+        "id", "codigo_produto", "descricao", "armazem", "grupo", "tipo", "codigo_parceiro",
         "loja", "razao_social", "doc_origin", "serie", "dt_emissao",
         "qtd_original", "qtd_entregue", "saldo", "tm", "data_lancto", "data_referencia",
     ]
@@ -2736,9 +2750,13 @@ def get_materiais_terceiros(armazem: str | None = None, tipo: str | None = None,
         if cooperado:
             where_clauses.append("razao_social = ?")
             params.append(cooperado)
+        if grupos_excluir:
+            placeholders = ",".join("?" * len(grupos_excluir))
+            where_clauses.append(f"UPPER(COALESCE(grupo,'')) NOT IN ({placeholders})")
+            params.extend(g.upper() for g in grupos_excluir)
         where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
         rows = get_db().execute(
-            f"SELECT id, codigo_produto, descricao, armazem, tipo, codigo_parceiro,"
+            f"SELECT id, codigo_produto, descricao, armazem, grupo, tipo, codigo_parceiro,"
             f" loja, razao_social, doc_origin, serie, dt_emissao,"
             f" qtd_original, qtd_entregue, saldo, tm, data_lancto, data_referencia"
             f" FROM materiais_terceiros {where} ORDER BY razao_social, descricao",
@@ -2757,6 +2775,20 @@ def get_materiais_cooperados() -> list:
             "SELECT DISTINCT razao_social FROM materiais_terceiros"
             " WHERE razao_social IS NOT NULL AND razao_social != ''"
             " ORDER BY razao_social"
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=120)
+def get_materiais_grupos() -> list:
+    """Retorna lista ordenada de grupos distintos em materiais_terceiros."""
+    try:
+        rows = get_db().execute(
+            "SELECT DISTINCT UPPER(COALESCE(grupo,'')) FROM materiais_terceiros"
+            " WHERE grupo IS NOT NULL AND grupo != ''"
+            " ORDER BY 1"
         ).fetchall()
         return [r[0] for r in rows]
     except Exception:
@@ -10464,11 +10496,34 @@ new Chart(document.getElementById('coop-chart'),{
             help="Digite para filtrar por nome do cooperado",
         )
 
+        # Grupos disponíveis no banco + grupos padrão a ocultar
+        _GRUPOS_OCULTOS_PADRAO = [
+            "MAQUINARIOS E FERRAMENTAS",
+            "EQUIPAMENTOS DE INFORMATICA",
+            "MAQUINAS E IMPLEMENTOS AGRICOLAS",
+        ]
+        _grupos_disponiveis = get_materiais_grupos()
+        # Inclui os padrões mesmo que ainda não existam no banco (serão ignorados pelo filtro)
+        _grupos_todos = sorted(set(_grupos_disponiveis) | set(_GRUPOS_OCULTOS_PADRAO))
+        _grupos_excluir_sel = st.multiselect(
+            "Ocultar grupos",
+            options=_grupos_todos,
+            default=[g for g in _GRUPOS_OCULTOS_PADRAO if g in _grupos_todos or not _grupos_disponiveis],
+            key="mat_grupos_excluir_sel",
+            help="Grupos de produto que não serão exibidos na listagem",
+        )
+
         _arm_filter = None if _arm_sel == "Todos" else _arm_sel.split(" ")[0]
         _tipo_filter = None if _tipo_sel == "Todos" else _tipo_sel
         _coop_filter = None if _coop_sel == "Todos" else _coop_sel
+        _grupos_excluir_filter = tuple(_grupos_excluir_sel) if _grupos_excluir_sel else None
 
-        _df_mat = get_materiais_terceiros(armazem=_arm_filter, tipo=_tipo_filter, cooperado=_coop_filter)
+        _df_mat = get_materiais_terceiros(
+            armazem=_arm_filter,
+            tipo=_tipo_filter,
+            cooperado=_coop_filter,
+            grupos_excluir=_grupos_excluir_filter,
+        )
 
         if _df_mat.empty:
             st.info(
@@ -10476,9 +10531,11 @@ new Chart(document.getElementById('coop-chart'),{
                 "Importe um relatório MATR480 usando o painel acima."
             )
         else:
+            _grupos_exc_txt = f" · Ocultando: {', '.join(_grupos_excluir_sel)}" if _grupos_excluir_sel else ""
             st.caption(
                 f"{len(_df_mat)} linha(s) · "
                 f"Armazém: {_arm_sel} · Tipo: {_tipo_sel} · Cooperado: {_coop_sel}"
+                f"{_grupos_exc_txt}"
             )
 
             # ── Tabela agrupada por Razão Social ──────────────────────────

@@ -55,6 +55,9 @@ def _norm(s: str) -> str:
 
 # ── Padrões ───────────────────────────────────────────────────────────────────
 
+# Cabeçalho de grupo de produto: "Grupo: MAQUINARIOS E FERRAMENTAS"
+_GRUPO_RE = re.compile(r"^Grupo\s*:\s*(.+)$", re.IGNORECASE)
+
 # Label que precede a linha de dados do produto
 _PROD_LABEL_RE = re.compile(
     r"^Codigo\s+Descricao\s+Armazem\s*$", re.IGNORECASE
@@ -138,6 +141,7 @@ def parse_matr480(
     records: list[dict] = []
     warnings: list[str] = []
     current_product: dict | None = None
+    current_grupo: str = ""
     expect_product_data: bool = False   # True após ver "Codigo Descricao Armazem"
 
     with pdfplumber.open(source) as pdf:
@@ -154,6 +158,12 @@ def parse_matr480(
                     expect_product_data = False
                     continue
 
+                # ── Cabeçalho de grupo de produto ────────────────────────
+                gm = _GRUPO_RE.match(line)
+                if gm:
+                    current_grupo = _norm(gm.group(1)).upper()
+                    continue
+
                 # ── Label de produto ─────────────────────────────────────
                 if _PROD_LABEL_RE.match(line):
                     expect_product_data = True
@@ -168,6 +178,7 @@ def parse_matr480(
                             "codigo":    m.group(1).strip(),
                             "descricao": _norm(m.group(2)),
                             "armazem":   m.group(3).strip(),
+                            "grupo":     current_grupo,
                         }
                     else:
                         warnings.append(
@@ -189,6 +200,7 @@ def parse_matr480(
                             "codigo_produto":  current_product["codigo"],
                             "descricao":       current_product["descricao"],
                             "armazem":         current_product["armazem"],
+                            "grupo":           current_product.get("grupo", ""),
                             "tipo":            mv.group(1),
                             "codigo_parceiro": mv.group(2),
                             "loja":            mv.group(3),
