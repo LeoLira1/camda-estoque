@@ -9128,7 +9128,7 @@ new Chart(document.getElementById('coop-chart'),{
                         '  lb.onclick=function(){pd.body.removeChild(lb);};'
                         '  var li=pd.createElement("img");'
                         '  li.src=src;'
-                        '  li.style.cssText="max-width:95%;max-height:95%;border-radius:12px;'
+                        '  li.style.cssText="width:90vw;height:90vh;border-radius:12px;'
                         'box-shadow:0 20px 60px rgba(0,0,0,0.7);object-fit:contain;";'
                         '  li.onclick=function(e){e.stopPropagation();pd.body.removeChild(lb);};'
                         '  lb.appendChild(li);'
