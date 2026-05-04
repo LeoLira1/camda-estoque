@@ -10993,7 +10993,7 @@ if not _df_av_mgmt.empty:
                 _senha_input = st.text_input(
                     "🔒 Senha para editar/excluir", type="password",
                     key=f"av_senha_{av_id}",
-                    placeholder="camda@edit"
+                    placeholder="Digite a senha"
                 )
                 if st.button("Confirmar", key=f"av_auth_{av_id}", type="primary"):
                     if _senha_input == "camda@edit":
