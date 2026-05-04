@@ -2078,12 +2078,12 @@ def listar_fotos_avaria(avaria_id: int) -> list[dict]:
 
 
 def adicionar_foto_avaria(avaria_id: int, foto_bytes: bytes) -> bool:
-    """Comprime a foto (max 400px, JPEG 60%) e insere na tabela avaria_fotos."""
+    """Comprime a foto (max 1600px, JPEG 82%) e insere na tabela avaria_fotos."""
     try:
         img = Image.open(io.BytesIO(foto_bytes)).convert("RGB")
-        img.thumbnail((400, 400), Image.LANCZOS)
+        img.thumbnail((1600, 1600), Image.LANCZOS)
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=60, optimize=True)
+        img.save(buf, format="JPEG", quality=82, optimize=True)
         foto_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         conn = get_db()
