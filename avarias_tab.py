@@ -1,29 +1,79 @@
 """
 CAMDA Estoque Mestre — Aba Avarias
-Layout: Cards quadrados clicáveis com botão ✕ de exclusão rápida
+Grid de cards com botões nativos Streamlit (seleção e exclusão funcionais)
 """
 
 import streamlit as st
-import streamlit.components.v1 as components
 from datetime import datetime, date
-import json
 
 
-def render_avarias_cards(df_avarias, selected_id: int | None = None):
+def _card_html(produto: str, tempo_label: str, cor_borda: str,
+               cor_status_bg: str, cor_status_txt: str, cor_status_border: str,
+               n_fotos: int, selected: bool) -> str:
+    ring = "box-shadow:0 0 0 2px #60a5fa;" if selected else ""
+    cam = (
+        '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" '
+        'stroke="currentColor" stroke-width="1.5">'
+        '<rect x="3" y="3" width="18" height="18" rx="2"/>'
+        '<circle cx="8.5" cy="8.5" r="1.5"/>'
+        '<path d="m21 15-5-5L5 21"/></svg>'
+    )
+    if n_fotos > 0:
+        thumbs = "".join(
+            f'<div style="flex:1;aspect-ratio:1/1;max-height:34px;background:#1a1d27;'
+            f'border-radius:4px;border:0.5px solid #2a2a3a;display:flex;'
+            f'flex-direction:column;align-items:center;justify-content:center;'
+            f'font-size:8px;color:#555;gap:1px;">{cam}<span>{i+1}</span></div>'
+            for i in range(min(n_fotos, 3))
+        )
+    else:
+        thumbs = (
+            '<div style="flex:1;display:flex;align-items:center;'
+            'justify-content:center;font-size:9px;color:#2a2a3a;">sem fotos</div>'
+        )
+
+    return f"""
+    <div style="
+        background:#0e1117;
+        border-radius:10px 10px 0 0;
+        border:0.5px solid #2a2a3a;
+        border-top:2.5px solid {cor_borda};
+        display:flex;flex-direction:column;
+        padding:9px 10px 0;
+        min-height:110px;
+        {ring}
+    ">
+      <div style="display:flex;align-items:center;gap:5px;margin-bottom:5px;">
+        <span style="
+          display:inline-flex;align-items:center;gap:3px;
+          font-size:9px;font-weight:600;padding:2px 6px;
+          border-radius:99px;border:0.5px solid {cor_status_border};
+          background:{cor_status_bg};color:{cor_status_txt};
+        ">&#9888; ABERTA</span>
+        <span style="font-size:9px;color:#555;">{tempo_label}</span>
+      </div>
+      <div style="
+        font-size:11px;font-weight:600;color:#ddd;line-height:1.35;
+        flex:1;overflow:hidden;display:-webkit-box;
+        -webkit-line-clamp:3;-webkit-box-orient:vertical;
+        margin-bottom:6px;
+      ">{produto}</div>
+      <div style="display:flex;gap:4px;padding-bottom:8px;">{thumbs}</div>
+    </div>
     """
-    Renderiza avarias abertas em grid de cards quadrados.
+
+
+def render_avarias_cards(df_avarias, deletar_fn=None):
+    """
+    Renderiza avarias abertas em grid de cards com botões nativos.
 
     Colunas esperadas em df_avarias:
-        - id            : int
-        - produto       : str
-        - status        : str  ('ABERTA' | 'aberto')
-        - data_registro : date/datetime/str
-        - fotos         : list
+        - id, produto, status, data_registro (ou registrado_em), fotos
 
-    selected_id: id da avaria atualmente selecionada (card destacado)
+    deletar_fn: callable(av_id) para executar a exclusão.
+                Se None, o botão ✕ não aparece.
 
-    Retorna via st.query_params o id clicado ('av_sel') ou
-    'av_del' quando o ✕ é acionado.
+    Seleção via st.session_state["av_sel"] (int | None).
     """
 
     hoje = date.today()
@@ -34,300 +84,113 @@ def render_avarias_cards(df_avarias, selected_id: int | None = None):
         todos = list(df_avarias)
 
     def _is_aberta(r):
-        s = str(r.get("status", "")).lower()
-        return s in ("aberta", "aberto", "open")
+        return str(r.get("status", "")).lower() in ("aberta", "aberto", "open")
 
     registros = [r for r in todos if _is_aberta(r)]
-    total_abertas = len(registros)
+    total = len(registros)
 
     st.markdown(
-        f"<p style='font-size:12px; color:#aaa; margin-bottom:10px;'>"
+        f"<p style='font-size:12px;color:#aaa;margin-bottom:10px;'>"
         f"Avarias abertas &nbsp;"
-        f"<span style='color:#e24b4a; font-weight:600;'>{total_abertas}</span></p>",
+        f"<span style='color:#e24b4a;font-weight:600;'>{total}</span></p>",
         unsafe_allow_html=True,
     )
 
-    if total_abertas == 0:
+    if total == 0:
         st.info("Nenhuma avaria aberta no momento.")
         return
 
-    cards_data = []
-    for r in registros:
-        data_reg = r.get("data_registro")
+    _sel = st.session_state.get("av_sel")
 
-        if isinstance(data_reg, str):
-            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-                try:
-                    data_reg = datetime.strptime(data_reg, fmt).date()
-                    break
-                except ValueError:
-                    pass
+    N = 4
+    for row_start in range(0, total, N):
+        chunk = registros[row_start: row_start + N]
+        cols = st.columns(N)
+
+        for col_i, r in enumerate(chunk):
+            av_id = int(r.get("id", 0))
+            data_reg = r.get("data_registro") or r.get("registrado_em")
+
+            if isinstance(data_reg, str):
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                    try:
+                        data_reg = datetime.strptime(data_reg, fmt).date()
+                        break
+                    except ValueError:
+                        pass
+                else:
+                    data_reg = hoje
+            elif isinstance(data_reg, datetime):
+                data_reg = data_reg.date()
+
+            dias = (hoje - data_reg).days if isinstance(data_reg, date) else 0
+
+            if dias <= 7:
+                tempo_label = "hoje" if dias == 0 else f"{dias}d atrás"
+                cor_borda, cor_bg, cor_txt, cor_border = "#e24b4a", "#FCEBEB", "#A32D2D", "#F09595"
+            elif dias <= 20:
+                tempo_label = f"{dias}d atrás"
+                cor_borda, cor_bg, cor_txt, cor_border = "#EF9F27", "#FAEEDA", "#854F0B", "#FAC775"
             else:
-                data_reg = hoje
-        elif isinstance(data_reg, datetime):
-            data_reg = data_reg.date()
+                tempo_label = f"{dias}d atrás"
+                cor_borda, cor_bg, cor_txt, cor_border = "#BA7517", "#FAEEDA", "#854F0B", "#FAC775"
 
-        dias = (hoje - data_reg).days if isinstance(data_reg, date) else 0
+            fotos = r.get("fotos", [])
+            n_fotos = len(fotos) if isinstance(fotos, (list, tuple)) else (1 if fotos else 0)
+            selected = av_id == _sel
 
-        if dias <= 7:
-            tempo_label = "hoje" if dias == 0 else f"{dias}d atrás"
-            cor_borda = "#e24b4a"
-            cor_status_bg = "#FCEBEB"
-            cor_status_txt = "#A32D2D"
-            cor_status_border = "#F09595"
-        elif dias <= 20:
-            tempo_label = f"{dias}d atrás"
-            cor_borda = "#EF9F27"
-            cor_status_bg = "#FAEEDA"
-            cor_status_txt = "#854F0B"
-            cor_status_border = "#FAC775"
-        else:
-            tempo_label = f"{dias}d atrás"
-            cor_borda = "#BA7517"
-            cor_status_bg = "#FAEEDA"
-            cor_status_txt = "#854F0B"
-            cor_status_border = "#FAC775"
+            with cols[col_i]:
+                st.markdown(
+                    _card_html(r.get("produto", "—"), tempo_label,
+                               cor_borda, cor_bg, cor_txt, cor_border,
+                               n_fotos, selected),
+                    unsafe_allow_html=True,
+                )
+                # Botões nativos alinhados com o card
+                _b1, _b2 = st.columns([4, 1])
+                with _b1:
+                    if st.button(
+                        "Ver detalhes" if not selected else "✓ Selecionado",
+                        key=f"av_open_{av_id}",
+                        use_container_width=True,
+                        type="primary" if selected else "secondary",
+                    ):
+                        if selected:
+                            st.session_state.pop("av_sel", None)
+                        else:
+                            st.session_state["av_sel"] = av_id
+                        st.rerun()
+                with _b2:
+                    if deletar_fn and st.button(
+                        "✕", key=f"av_xbtn_{av_id}",
+                        use_container_width=True,
+                        help="Excluir avaria",
+                    ):
+                        st.session_state[f"av_del_confirm_{av_id}"] = True
+                        st.rerun()
 
-        fotos = r.get("fotos", [])
-        n_fotos = len(fotos) if isinstance(fotos, (list, tuple)) else (1 if fotos else 0)
+                if st.session_state.get(f"av_del_confirm_{av_id}"):
+                    st.warning(f"Excluir **{r.get('produto','?')}**?")
+                    _ok, _cancel = st.columns(2)
+                    with _ok:
+                        if st.button("Confirmar", key=f"av_del_ok_{av_id}",
+                                     type="primary", use_container_width=True):
+                            deletar_fn(av_id)
+                            st.session_state.pop(f"av_del_confirm_{av_id}", None)
+                            if st.session_state.get("av_sel") == av_id:
+                                st.session_state.pop("av_sel", None)
+                            st.rerun()
+                    with _cancel:
+                        if st.button("Cancelar", key=f"av_del_cancel_{av_id}",
+                                     use_container_width=True):
+                            st.session_state.pop(f"av_del_confirm_{av_id}", None)
+                            st.rerun()
 
-        av_id = int(r.get("id", 0))
-        cards_data.append({
-            "id": av_id,
-            "produto": r.get("produto", "—"),
-            "tempo_label": tempo_label,
-            "cor_borda": cor_borda,
-            "cor_status_bg": cor_status_bg,
-            "cor_status_txt": cor_status_txt,
-            "cor_status_border": cor_status_border,
-            "n_fotos": n_fotos,
-            "selected": av_id == selected_id,
-        })
-
-    cards_json = json.dumps(cards_data, ensure_ascii=False)
-
-    html = f"""
-    <style>
-      * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-
-      .avarias-grid {{
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-        gap: 10px;
-        font-family: 'Source Sans Pro', sans-serif;
-      }}
-
-      .av-card {{
-        background: #0e1117;
-        border-radius: 10px;
-        border: 0.5px solid #2a2a3a;
-        border-top-width: 2.5px;
-        aspect-ratio: 1 / 1;
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        cursor: pointer;
-        position: relative;
-        transition: border-color 0.15s, transform 0.1s, box-shadow 0.15s;
-      }}
-      .av-card:hover {{ transform: translateY(-1px); border-color: #555; }}
-      .av-card.selected {{
-        box-shadow: 0 0 0 2px #60a5fa;
-        border-color: #60a5fa !important;
-      }}
-
-      .btn-del {{
-        position: absolute;
-        top: 5px;
-        right: 5px;
-        width: 18px;
-        height: 18px;
-        border-radius: 50%;
-        background: rgba(239,68,68,0.15);
-        border: 0.5px solid rgba(239,68,68,0.4);
-        color: #f87171;
-        font-size: 10px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        z-index: 10;
-        transition: background 0.1s;
-        line-height: 1;
-      }}
-      .btn-del:hover {{ background: rgba(239,68,68,0.35); }}
-
-      .card-top {{
-        padding: 9px 10px 6px;
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        gap: 5px;
-      }}
-
-      .card-status-row {{
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        padding-right: 18px;
-      }}
-
-      .card-status {{
-        display: inline-flex;
-        align-items: center;
-        gap: 3px;
-        font-size: 9px;
-        font-weight: 600;
-        padding: 2px 6px;
-        border-radius: 99px;
-        border-width: 0.5px;
-        border-style: solid;
-      }}
-
-      .card-time {{ font-size: 9px; color: #666; }}
-
-      .card-product {{
-        font-size: 11px;
-        font-weight: 600;
-        color: #ddd;
-        line-height: 1.35;
-        flex: 1;
-        display: -webkit-box;
-        -webkit-line-clamp: 3;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }}
-
-      .card-photos {{
-        display: flex;
-        gap: 4px;
-        padding: 6px 10px 10px;
-      }}
-
-      .photo-thumb {{
-        flex: 1;
-        aspect-ratio: 1 / 1;
-        max-height: 40px;
-        background: #1a1d27;
-        border-radius: 5px;
-        border: 0.5px solid #2a2a3a;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        font-size: 9px;
-        color: #555;
-        gap: 2px;
-      }}
-
-      .no-foto {{
-        flex: 1;
-        max-height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 9px;
-        color: #333;
-      }}
-
-      .add-card {{
-        background: #0e1117;
-        border-radius: 10px;
-        border: 0.5px dashed #2a2a3a;
-        aspect-ratio: 1 / 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 5px;
-        cursor: default;
-        font-size: 11px;
-        color: #333;
-      }}
-    </style>
-
-    <div class="avarias-grid" id="avarias-grid"></div>
-
-    <script>
-      const cards = {cards_json};
-
-      const camIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" stroke-width="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2"/>
-        <circle cx="8.5" cy="8.5" r="1.5"/>
-        <path d="m21 15-5-5L5 21"/>
-      </svg>`;
-
-      const plusIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-        stroke="currentColor" stroke-width="1.5" opacity="0.25">
-        <circle cx="12" cy="12" r="9"/>
-        <path d="M12 8v8M8 12h8"/>
-      </svg>`;
-
-      function setParam(key, value) {{
-        const url = new URL(window.parent.location.href);
-        url.searchParams.set(key, value);
-        // remove the other action param to avoid conflicts
-        if (key === 'av_sel') url.searchParams.delete('av_del');
-        if (key === 'av_del') url.searchParams.delete('av_sel');
-        window.parent.location.href = url.toString();
-      }}
-
-      const grid = document.getElementById('avarias-grid');
-
-      cards.forEach(c => {{
-        let fotosHtml = '';
-        if (c.n_fotos > 0) {{
-          fotosHtml = Array.from({{length: Math.min(c.n_fotos, 3)}}, (_, i) =>
-            `<div class="photo-thumb">${{camIcon}}<span>${{i+1}}</span></div>`
-          ).join('');
-        }} else {{
-          fotosHtml = `<div class="no-foto">sem fotos</div>`;
-        }}
-
-        const card = document.createElement('div');
-        card.className = 'av-card' + (c.selected ? ' selected' : '');
-        card.style.borderTopColor = c.cor_borda;
-
-        const btnDel = document.createElement('div');
-        btnDel.className = 'btn-del';
-        btnDel.title = 'Excluir avaria';
-        btnDel.textContent = '✕';
-        btnDel.onclick = (e) => {{
-          e.stopPropagation();
-          if (confirm('Excluir avaria "' + c.produto + '"?')) {{
-            setParam('av_del', c.id);
-          }}
-        }};
-
-        card.innerHTML = `
-          <div class="card-top">
-            <div class="card-status-row">
-              <span class="card-status" style="
-                background:${{c.cor_status_bg}};
-                color:${{c.cor_status_txt}};
-                border-color:${{c.cor_status_border}};">
-                &#9888; ABERTA
-              </span>
-              <span class="card-time">${{c.tempo_label}}</span>
-            </div>
-            <div class="card-product">${{c.produto}}</div>
-          </div>
-          <div class="card-photos">${{fotosHtml}}</div>
-        `;
-        card.prepend(btnDel);
-        card.onclick = () => setParam('av_sel', c.id);
-        grid.appendChild(card);
-      }});
-
-      const addCard = document.createElement('div');
-      addCard.className = 'add-card';
-      addCard.innerHTML = `${{plusIcon}}<span>clique num card</span>`;
-      grid.appendChild(addCard);
-    </script>
-    """
-
-    linhas = max(1, -(-len(registros) // 4))
-    altura = linhas * 175 + 40
-
-    components.html(html, height=altura, scrolling=False)
+        # Preenche colunas vazias da última linha
+        for col_i in range(len(chunk), N):
+            with cols[col_i]:
+                st.markdown(
+                    "<div style='border:0.5px dashed #1a1a2a;border-radius:10px;"
+                    "min-height:110px;margin-bottom:4px;'></div>",
+                    unsafe_allow_html=True,
+                )

@@ -9076,21 +9076,6 @@ new Chart(document.getElementById('coop-chart'),{
 
         df_av = listar_avarias(apenas_abertas=True)
 
-        # ── Ações de query param (clique no card) ──────────────────────────
-        _qp = st.query_params
-        _av_sel_raw = _qp.get("av_sel")
-        _av_del_raw = _qp.get("av_del")
-
-        if _av_del_raw:
-            try:
-                deletar_avaria(int(_av_del_raw))
-            except Exception:
-                pass
-            _qp.clear()
-            st.rerun()
-
-        _av_sel = int(_av_sel_raw) if _av_sel_raw else None
-
         # Build photo counts in one query
         _fotos_count: dict[int, int] = {}
         if not df_av.empty:
@@ -9115,9 +9100,10 @@ new Chart(document.getElementById('coop-chart'),{
             _df_cards["fotos"] = _df_cards["id"].apply(
                 lambda aid: [None] * _fotos_count.get(int(aid), 0)
             )
-            render_avarias_cards(_df_cards, selected_id=_av_sel)
+            render_avarias_cards(_df_cards, deletar_fn=deletar_avaria)
 
-            # ── Painel de detalhe do card selecionado ───────────────────────
+            # ── Painel de detalhe (abre ao clicar "Ver detalhes") ──────────
+            _av_sel = st.session_state.get("av_sel")
             if _av_sel and _av_sel in df_av["id"].values:
                 av = df_av[df_av["id"] == _av_sel].iloc[0]
                 av_id = _av_sel
@@ -9136,29 +9122,29 @@ new Chart(document.getElementById('coop-chart'),{
                 fotos_av = listar_fotos_avaria(av_id)
 
                 # Galões SVG + fotos
-                if unidades or fotos_av:
-                    niveis_atuais = {
-                        u["uid"]: st.session_state.get(f"av_nivel_{u['uid']}", u["nivel"])
-                        for u in unidades
-                    }
-                    import streamlit.components.v1 as _cv1_det
-                    _foto_html = "".join(
-                        f'<div onclick="openLb(this)" '
-                        f'style="display:flex;flex-direction:column;align-items:center;'
-                        f'min-width:120px;max-width:120px;height:185px;border-radius:12px;'
-                        f'overflow:hidden;border:1px solid rgba(100,180,255,0.2);'
-                        f'flex-shrink:0;background:rgba(0,0,0,0.25);cursor:zoom-in;">'
-                        f'<img src="data:image/jpeg;base64,{f["foto_base64"]}" '
-                        f'style="width:120px;height:152px;object-fit:cover;pointer-events:none;">'
-                        f'<div style="font-size:9px;color:rgba(100,180,255,0.5);padding:5px 0;'
-                        f'letter-spacing:0.5px;font-family:monospace;pointer-events:none;">FOTO {i+1}</div>'
-                        f'</div>'
-                        for i, f in enumerate(fotos_av)
-                    )
-                    _galoes_html = "".join(
-                        _galao_svg_html(u["uid"], niveis_atuais[u["uid"]], capacidade, i)
-                        for i, u in enumerate(unidades)
-                    )
+                import streamlit.components.v1 as _cv1_det
+                niveis_atuais = {
+                    u["uid"]: st.session_state.get(f"av_nivel_{u['uid']}", u["nivel"])
+                    for u in unidades
+                }
+                _foto_html = "".join(
+                    f'<div onclick="openLb(this)" '
+                    f'style="display:flex;flex-direction:column;align-items:center;'
+                    f'min-width:120px;max-width:120px;height:185px;border-radius:12px;'
+                    f'overflow:hidden;border:1px solid rgba(100,180,255,0.2);'
+                    f'flex-shrink:0;background:rgba(0,0,0,0.25);cursor:zoom-in;">'
+                    f'<img src="data:image/jpeg;base64,{f["foto_base64"]}" '
+                    f'style="width:120px;height:152px;object-fit:cover;pointer-events:none;">'
+                    f'<div style="font-size:9px;color:rgba(100,180,255,0.5);padding:5px 0;'
+                    f'letter-spacing:0.5px;font-family:monospace;pointer-events:none;">FOTO {i+1}</div>'
+                    f'</div>'
+                    for i, f in enumerate(fotos_av)
+                )
+                _galoes_html = "".join(
+                    _galao_svg_html(u["uid"], niveis_atuais[u["uid"]], capacidade, i)
+                    for i, u in enumerate(unidades)
+                )
+                if _galoes_html or _foto_html:
                     _lb = (
                         '<script>function openLb(el){'
                         'var img=el.querySelector("img");if(!img)return;'
@@ -9186,10 +9172,6 @@ new Chart(document.getElementById('coop-chart'),{
 
                 # Totais
                 if unidades:
-                    niveis_atuais = {
-                        u["uid"]: st.session_state.get(f"av_nivel_{u['uid']}", u["nivel"])
-                        for u in unidades
-                    }
                     total_rest_l = sum((niveis_atuais[u["uid"]] / 100.0) * capacidade for u in unidades)
                     total_perd_l = sum(((100.0 - niveis_atuais[u["uid"]]) / 100.0) * capacidade for u in unidades)
                     nivel_min = min(niveis_atuais[u["uid"]] for u in unidades)
@@ -9212,9 +9194,9 @@ new Chart(document.getElementById('coop-chart'),{
                         unsafe_allow_html=True,
                     )
 
-                st.markdown("<div style='height:10px'></div>", unsafe_allow_html=True)
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
 
-                # ── Edição de nível por balde (Litros / KG) ─────────────────
+                # ── Quantidade restante por balde (Litros / KG) ─────────────
                 if unidades:
                     _col_u, _col_dens = st.columns([2, 1])
                     with _col_u:
@@ -9223,34 +9205,31 @@ new Chart(document.getElementById('coop-chart'),{
                             horizontal=True, key=f"av_unit_{av_id}",
                         )
                     with _col_dens:
-                        if _unit == "KG":
-                            _dens = st.number_input(
-                                "Densidade (kg/L)", min_value=0.1, max_value=5.0,
-                                value=1.0, step=0.01, key=f"av_dens_{av_id}",
-                                help="Padrão 1,0 para líquidos. Ajuste conforme o produto.",
-                            )
-                        else:
-                            _dens = 1.0
+                        _dens = st.number_input(
+                            "Densidade (kg/L)", min_value=0.1, max_value=5.0,
+                            value=1.0, step=0.01, key=f"av_dens_{av_id}",
+                            help="Padrão 1,0 para líquidos.",
+                        ) if _unit == "KG" else 1.0
 
                     _cap_unit = capacidade * (_dens if _unit == "KG" else 1.0)
                     _unit_lbl = "kg" if _unit == "KG" else "L"
 
-                    _slider_cols = st.columns(len(unidades))
+                    _inp_cols = st.columns(len(unidades))
                     for i, u in enumerate(unidades):
                         _nivel_atual = st.session_state.get(f"av_nivel_{u['uid']}", u["nivel"])
                         _restante_atual = (_nivel_atual / 100.0) * _cap_unit
-                        with _slider_cols[i]:
+                        with _inp_cols[i]:
                             _novo_rest = st.number_input(
-                                f"Balde {i+1} ({_cap_unit:.0f} {_unit_lbl})",
+                                f"Balde {i+1}  ({_cap_unit:.0f} {_unit_lbl} total)",
                                 min_value=0.0,
                                 max_value=float(_cap_unit),
-                                value=float(round(_restante_atual, 2)),
-                                step=0.1,
+                                value=float(round(_restante_atual, 1)),
+                                step=0.5,
                                 format="%.1f",
-                                key=f"av_rest_{u['uid']}_{_unit}",
+                                key=f"av_rest_{u['uid']}_{_unit}_{av_id}",
                             )
-                            _novo_nivel = (_novo_rest / _cap_unit) * 100 if _cap_unit > 0 else 0
-                            if abs(_novo_nivel - _nivel_atual) > 0.5:
+                            _novo_nivel = (_novo_rest / _cap_unit * 100) if _cap_unit > 0 else 0
+                            if abs(_novo_nivel - _nivel_atual) > 0.4:
                                 atualizar_nivel_unidade(u["uid"], _novo_nivel)
                                 st.rerun()
 
@@ -9278,12 +9257,9 @@ new Chart(document.getElementById('coop-chart'),{
                         '<div style="font-size:11px;color:#4ade80;margin-bottom:4px;">🔓 Modo edição ativo</div>',
                         unsafe_allow_html=True,
                     )
-                    # Adicionar/remover baldes
-                    _col_add, _col_close = st.columns([1, 1])
-                    with _col_add:
-                        if is_aberta and st.button("＋ Balde", key=f"av_add_{av_id}", use_container_width=True):
-                            adicionar_unidade_avaria(av_id)
-                            st.rerun()
+                    if is_aberta and st.button("＋ Balde", key=f"av_add_{av_id}"):
+                        adicionar_unidade_avaria(av_id)
+                        st.rerun()
                     if unidades:
                         _rm_cols = st.columns(len(unidades))
                         for i, u in enumerate(unidades):
@@ -9293,8 +9269,6 @@ new Chart(document.getElementById('coop-chart'),{
                                 ):
                                     remover_unidade_avaria(u["uid"])
                                     st.rerun()
-
-                    # Remover fotos
                     if fotos_av:
                         st.markdown(
                             '<div style="font-size:10px;color:rgba(255,255,255,0.35);margin:6px 0 2px;">🗑️ Remover fotos</div>',
@@ -9306,24 +9280,23 @@ new Chart(document.getElementById('coop-chart'),{
                                 if st.button(f"✕ foto {i+1}", key=f"av_delfoto_{f['id']}", use_container_width=True):
                                     remover_foto_item(f["id"])
                                     st.rerun()
-
                     _cr, _cd, _cc = st.columns([1, 1, 1])
                     with _cr:
                         if is_aberta and st.button("✅ Resolver", key=f"av_res_{av_id}", use_container_width=True):
                             resolver_avaria(av_id)
-                            _qp.clear()
+                            st.session_state.pop("av_sel", None)
                             st.rerun()
                     with _cd:
                         if st.button("🗑️ Excluir", key=f"av_del_btn_{av_id}", use_container_width=True):
                             deletar_avaria(av_id)
-                            _qp.clear()
+                            st.session_state.pop("av_sel", None)
                             st.rerun()
                     with _cc:
                         if st.button("🔒 Fechar edição", key=f"av_close_{av_id}", use_container_width=True):
                             st.session_state[_edit_key] = False
                             st.rerun()
                 else:
-                    _col_pw, _col_btn, _col_x = st.columns([3, 1, 1])
+                    _col_pw, _col_btn = st.columns([3, 1])
                     with _col_pw:
                         _senha = st.text_input(
                             "Senha", type="password",
@@ -9338,10 +9311,6 @@ new Chart(document.getElementById('coop-chart'),{
                                 st.rerun()
                             else:
                                 st.error("❌ Senha incorreta")
-                    with _col_x:
-                        if st.button("✕ Fechar", key=f"av_panel_close_{av_id}", use_container_width=True):
-                            _qp.clear()
-                            st.rerun()
 
     with t8:
         import streamlit.components.v1 as components
