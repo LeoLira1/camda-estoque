@@ -7564,12 +7564,12 @@ st.markdown("""
         background: radial-gradient(circle, rgba(0,200,255,0.18) 0%, transparent 65%);
         pointer-events: none;
     "></div>
-    <div style="display: flex; align-items: center; gap: 14px; position: relative; z-index: 1;">
+    <div style="display: flex; align-items: center; justify-content: center; gap: 14px; position: relative; z-index: 1;">
         <svg width="42" height="42" viewBox="0 0 100 100" aria-hidden="true">
             <polygon points="50,8 84,28 84,72 50,92 16,72 16,28" fill="none" stroke="#00bcd4" stroke-width="6" />
             <text x="50" y="58" text-anchor="middle" fill="#00bcd4" font-size="38" font-weight="800" font-family="Arial, sans-serif">C</text>
         </svg>
-        <div>
+        <div style="text-align: center;">
             <div style="color: #00e5ff; font-size: 26px; font-weight: 900; letter-spacing: 3px; line-height: 1;">CAMDA</div>
             <div style="margin-top: 6px; font-size: 11px; color: #4a9abb; letter-spacing: .6px;">
                 <span style="color: #00bcd4;">●</span> Controle de Estoque
