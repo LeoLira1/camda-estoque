@@ -10486,34 +10486,36 @@ new Chart(document.getElementById('coop-chart'),{
             help="Digite para filtrar por nome do cooperado",
         )
 
-        # Grupos disponíveis no banco + grupos padrão a ocultar
-        _GRUPOS_OCULTOS_PADRAO = [
+        _busca_prod = st.text_input(
+            "Buscar produto (nome ou código)",
+            placeholder="Ex: SOJA, MILHO, 000123…",
+            key="mat_busca_produto",
+        )
+
+        # Grupos de equipamentos sempre ocultos
+        _GRUPOS_OCULTOS_PADRAO = (
             "MAQUINARIOS E FERRAMENTAS",
             "EQUIPAMENTOS DE INFORMATICA",
             "MAQUINAS E IMPLEMENTOS AGRICOLAS",
-        ]
-        _grupos_disponiveis = get_materiais_grupos()
-        # Inclui os padrões mesmo que ainda não existam no banco (serão ignorados pelo filtro)
-        _grupos_todos = sorted(set(_grupos_disponiveis) | set(_GRUPOS_OCULTOS_PADRAO))
-        _grupos_excluir_sel = st.multiselect(
-            "Ocultar grupos",
-            options=_grupos_todos,
-            default=[g for g in _GRUPOS_OCULTOS_PADRAO if g in _grupos_todos or not _grupos_disponiveis],
-            key="mat_grupos_excluir_sel",
-            help="Grupos de produto que não serão exibidos na listagem",
         )
 
         _arm_filter = None if _arm_sel == "Todos" else _arm_sel.split(" ")[0]
         _tipo_filter = None if _tipo_sel == "Todos" else _tipo_sel
         _coop_filter = None if _coop_sel == "Todos" else _coop_sel
-        _grupos_excluir_filter = tuple(_grupos_excluir_sel) if _grupos_excluir_sel else None
 
         _df_mat = get_materiais_terceiros(
             armazem=_arm_filter,
             tipo=_tipo_filter,
             cooperado=_coop_filter,
-            grupos_excluir=_grupos_excluir_filter,
+            grupos_excluir=_GRUPOS_OCULTOS_PADRAO,
         )
+
+        if _busca_prod.strip():
+            _q = _busca_prod.strip().upper()
+            _df_mat = _df_mat[
+                _df_mat["descricao"].str.upper().str.contains(_q, na=False)
+                | _df_mat["codigo_produto"].str.upper().str.contains(_q, na=False)
+            ]
 
         if _df_mat.empty:
             st.info(
@@ -10521,11 +10523,9 @@ new Chart(document.getElementById('coop-chart'),{
                 "Importe um relatório MATR480 usando o painel acima."
             )
         else:
-            _grupos_exc_txt = f" · Ocultando: {', '.join(_grupos_excluir_sel)}" if _grupos_excluir_sel else ""
             st.caption(
                 f"{len(_df_mat)} linha(s) · "
                 f"Armazém: {_arm_sel} · Tipo: {_tipo_sel} · Cooperado: {_coop_sel}"
-                f"{_grupos_exc_txt}"
             )
 
             # ── Tabela agrupada por Razão Social ──────────────────────────
