@@ -4410,9 +4410,10 @@ def limpar_contagem() -> None:
 
 
 def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
-    """Detecta reposição em batch."""
+    """Detecta reposição em batch. Acumula qtd_vendida para pendências existentes."""
     pending = {row[0] for row in conn.execute("SELECT codigo FROM reposicao_loja WHERE reposto = 0").fetchall()}
     to_insert = []
+    to_update = []  # (qtd_adicional, codigo) para produtos já pendentes
 
     for r in records:
         qtd_v = r.get("qtd_vendida", 0)
@@ -4422,9 +4423,10 @@ def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
         if cat in CATEGORIAS_EXCLUIDAS_REPOSICAO:
             continue
         if r["codigo"] in pending:
-            continue
-        to_insert.append((r["codigo"], r["produto"], r["categoria"], qtd_v, now))
-        pending.add(r["codigo"])
+            to_update.append((qtd_v, r["codigo"]))
+        else:
+            to_insert.append((r["codigo"], r["produto"], r["categoria"], qtd_v, now))
+            pending.add(r["codigo"])
 
     if to_insert:
         conn.executemany("""
@@ -4432,7 +4434,14 @@ def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
             VALUES (?, ?, ?, ?, ?)
         """, to_insert)
 
-    return len(to_insert)
+    if to_update:
+        conn.executemany("""
+            UPDATE reposicao_loja
+            SET qtd_vendida = qtd_vendida + ?
+            WHERE codigo = ? AND reposto = 0
+        """, to_update)
+
+    return len(to_insert) + len(to_update)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
