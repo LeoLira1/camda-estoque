@@ -10731,6 +10731,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         get_historico_uploads.clear()
                         get_divergencias.clear()
                         get_historico_divergencias.clear()
+                        checar_reconciliacao_gv.clear()
                         st.rerun()
                     else:
                         st.error(msg)
