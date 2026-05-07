@@ -8465,6 +8465,13 @@ new Chart(document.getElementById('coop-chart'),{
             df_div_agg = pd.DataFrame(_div_agg_list) if _div_agg_list else pd.DataFrame(
                 columns=["ids", "codigo", "produto", "categoria", "delta", "status", "cooperado", "qtd_sistema", "criado_em"]
             )
+            # Garante que itens do mesmo cooperado ficam consecutivos (evita cabeçalho duplicado
+            # quando dois grupos têm o mesmo _group_newest e suas linhas se intercalam no sort acima)
+            if _agrupar and not df_div_agg.empty:
+                _agg_newest = df_div_agg.groupby("cooperado", sort=False)["criado_em"].transform("max")
+                df_div_agg = df_div_agg.assign(_group_newest=_agg_newest).sort_values(
+                    ["_group_newest", "cooperado", "criado_em"], ascending=[False, True, False]
+                ).drop(columns=["_group_newest"]).reset_index(drop=True)
 
             _prev_obs_group = None
             for _, item in df_div_agg.iterrows():
