@@ -8127,7 +8127,10 @@ if has_mestre:
         if df_div.empty:
             st.info("Nenhuma divergência.")
         else:
-
+            # Normaliza case do cooperado para evitar duplicatas por variação de maiúsculas/minúsculas
+            if "cooperado" in df_div.columns:
+                df_div["cooperado"] = df_div["cooperado"].fillna("").astype(str).str.strip().str.upper()
+                df_div["cooperado"] = df_div["cooperado"].replace("", None)
 
             # ── Gráfico de barras: faltas por cooperado ──────────────────────────
             import json as _json_chart
