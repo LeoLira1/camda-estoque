@@ -2702,6 +2702,7 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     get_materiais_terceiros.clear()
     get_materiais_cooperados.clear()
     get_materiais_grupos.clear()
+    get_materiais_descricoes.clear()
     get_materiais_resumo.clear()
     return len(records), removidos
 
@@ -2770,6 +2771,20 @@ def get_materiais_grupos() -> list:
             "SELECT DISTINCT UPPER(COALESCE(grupo,'')) FROM materiais_terceiros"
             " WHERE grupo IS NOT NULL AND grupo != ''"
             " ORDER BY 1"
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=120)
+def get_materiais_descricoes() -> list:
+    """Retorna lista ordenada de descrições distintas em materiais_terceiros."""
+    try:
+        rows = get_db().execute(
+            "SELECT DISTINCT descricao FROM materiais_terceiros"
+            " WHERE descricao IS NOT NULL AND descricao != ''"
+            " ORDER BY descricao"
         ).fetchall()
         return [r[0] for r in rows]
     except Exception:
@@ -10534,10 +10549,13 @@ new Chart(document.getElementById('coop-chart'),{
             help="Digite para filtrar por nome do cooperado",
         )
 
-        _busca_prod = st.text_input(
-            "Buscar produto (nome ou código)",
-            placeholder="Ex: SOJA, MILHO, 000123…",
+        _prod_lista = get_materiais_descricoes()
+        _prod_opts = ["Todos"] + _prod_lista
+        _prod_sel = st.selectbox(
+            "Produto",
+            _prod_opts,
             key="mat_busca_produto",
+            help="Clique e digite para filtrar por nome do produto",
         )
 
         # Grupos de equipamentos sempre ocultos
@@ -10558,12 +10576,8 @@ new Chart(document.getElementById('coop-chart'),{
             grupos_excluir=_GRUPOS_OCULTOS_PADRAO,
         )
 
-        if _busca_prod.strip():
-            _q = _busca_prod.strip().upper()
-            _df_mat = _df_mat[
-                _df_mat["descricao"].str.upper().str.contains(_q, na=False)
-                | _df_mat["codigo_produto"].str.upper().str.contains(_q, na=False)
-            ]
+        if _prod_sel != "Todos":
+            _df_mat = _df_mat[_df_mat["descricao"] == _prod_sel]
 
         if _df_mat.empty:
             st.info(
