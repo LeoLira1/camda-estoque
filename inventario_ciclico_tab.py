@@ -116,11 +116,6 @@ _JS_HIDE_CONFERENCIA = """
     }
 
     function run() {
-        /* Selectbox "Categoria para conferir" */
-        pd.querySelectorAll('[data-testid="stSelectbox"]').forEach(function (el) {
-            var lbl = el.querySelector('label');
-            if (lbl && lbl.textContent.trim() === 'Categoria para conferir') collapse(el);
-        });
         /* Captions de instrução */
         pd.querySelectorAll('[data-testid="stCaptionContainer"]').forEach(function (el) {
             var t = el.textContent || '';
