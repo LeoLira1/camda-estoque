@@ -5496,6 +5496,11 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                         _qtd_cont is not None and _qtd_sis is not None
                         and float(_qtd_cont) > float(_qtd_sis)
                     )
+                    if _qtd_cont is not None and _qtd_sis is not None:
+                        try:
+                            diff = int(float(_qtd_cont)) - int(float(_qtd_sis))
+                        except (ValueError, TypeError):
+                            pass
                     if _is_sobra:
                         border_color = "#06b6d4"
                         card_bg = "rgba(6,182,212,0.72)"
