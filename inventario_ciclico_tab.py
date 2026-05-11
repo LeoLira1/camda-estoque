@@ -551,6 +551,13 @@ def build_inventario_ciclico_tab(
                         if contado_em and contado_em.lower() != "none" and len(contado_em) >= 10:
                             data_fmt = f"{contado_em[8:10]}/{contado_em[5:7]}"
                             label += f"  \n📅 {data_fmt}"
+                    if status_c == "divergencia":
+                        qtd_contada = prod.get("qtd_contada_ciclo")
+                        qtd_na_cont = prod.get("qtd_sistema_na_contagem")
+                        if qtd_contada is not None and qtd_na_cont is not None:
+                            diff = int(qtd_contada) - int(qtd_na_cont)
+                            sinal = "+" if diff > 0 else ""
+                            label += f"  \n⚠️ {sinal}{diff}"
 
                     with cols[i]:
                         marker_html = f'<div id="{prefix}{safe}" style="display:none"></div>'
