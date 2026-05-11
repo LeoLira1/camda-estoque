@@ -1399,6 +1399,19 @@ def _get_connection():
             UNIQUE(data_contagem, produto_id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS variacao_estoque (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            produto TEXT NOT NULL,
+            qtd_anterior INTEGER NOT NULL,
+            qtd_atual INTEGER NOT NULL,
+            delta INTEGER NOT NULL,
+            detectado_em TEXT NOT NULL,
+            upload_id INTEGER,
+            status TEXT DEFAULT 'pendente'
+        )
+    """)
     conn.commit()
 
     # ── Índices para reduzir full-table scans ──
@@ -3981,6 +3994,15 @@ def upload_mestre(records: list) -> tuple:
             "SELECT codigo, status, diferenca FROM estoque_mestre WHERE status IN ('falta', 'sobra')"
         ).fetchall()}
 
+        n_div = sum(1 for r in records if r.get("status") in ("falta", "sobra"))
+        conn.execute("""
+            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, [now, "MESTRE", "", len(records), len(records), 0, n_div])
+        upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        detectar_e_registrar_variacoes(records, conn, now, upload_id)
+
         conn.execute("DELETE FROM estoque_mestre")
 
         # BATCH INSERT via executemany
@@ -4007,14 +4029,6 @@ def upload_mestre(records: list) -> tuple:
                    WHERE codigo = ? AND status = 'ok'""",
                 [(status, dif, dif, codigo) for codigo, (status, dif) in existing_div.items()]
             )
-
-        n_div = conn.execute(
-            "SELECT COUNT(*) FROM estoque_mestre WHERE status IN ('falta', 'sobra')"
-        ).fetchone()[0]
-        conn.execute("""
-            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, [now, "MESTRE", "", len(records), len(records), 0, n_div])
 
         # Auto-cachear princípios ativos para todos os produtos do mestre
         _auto_cache_principios_ativos([r["produto"] for r in records], conn)
@@ -4079,6 +4093,15 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
                     r["nota"], r["status"], now, now
                 ))
 
+        n_div = sum(1 for r in records if r["status"] != "ok")
+        conn.execute("""
+            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, [now, "PARCIAL", "", len(records), len(novos_data), len(update_data), n_div])
+        upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        detectar_e_registrar_variacoes(records, conn, now, upload_id)
+
         # BATCH updates e inserts
         # Preserva status, diferenca e qtd_fisica para produtos com divergência existente.
         # qtd_fisica é recalculado como novo qtd_sistema + diferenca preservada, mantendo
@@ -4116,13 +4139,6 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
 
         # Reposição loja
         n_repo = _detectar_reposicao_batch(records, conn, now)
-
-        n_div = sum(1 for r in records if r["status"] != "ok")
-        conn.execute("""
-            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, [now, "PARCIAL", "", len(records), len(novos_data), len(update_data), n_div])
-        upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
         popular_contagem(records, upload_id, conn, zerados=zerados)
 
@@ -4457,6 +4473,61 @@ def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
         """, to_update)
 
     return len(to_insert) + len(to_update)
+
+
+def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int):
+    estado_atual = {
+        row[0]: row[1]
+        for row in conn.execute("SELECT codigo, qtd_sistema FROM estoque_mestre").fetchall()
+    }
+    variacoes = []
+    for r in records:
+        cod = r["codigo"]
+        qtd_nova = r["qtd_sistema"]
+        qtd_ant = estado_atual.get(cod)
+        if qtd_ant is not None and qtd_ant != qtd_nova:
+            variacoes.append((
+                cod, r["produto"], qtd_ant, qtd_nova,
+                qtd_nova - qtd_ant, now, upload_id, "pendente"
+            ))
+    if variacoes:
+        conn.executemany("""
+            INSERT INTO variacao_estoque
+            (codigo, produto, qtd_anterior, qtd_atual, delta, detectado_em, upload_id, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, variacoes)
+    return len(variacoes)
+
+
+def get_variacoes(apenas_pendentes: bool = False) -> pd.DataFrame:
+    cols = ["id", "codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"]
+    try:
+        query = "SELECT id, codigo, produto, qtd_anterior, qtd_atual, delta, detectado_em, status FROM variacao_estoque"
+        if apenas_pendentes:
+            query += " WHERE status = 'pendente'"
+        query += " ORDER BY detectado_em DESC LIMIT 200"
+        rows = get_db().execute(query).fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
+
+def marcar_variacao_verificada(variacao_id: int):
+    try:
+        conn = get_db()
+        conn.execute("UPDATE variacao_estoque SET status = 'verificado' WHERE id = ?", (variacao_id,))
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        st.error(f"❌ Erro: {e}")
+
+
+def get_variacoes_pendentes_count() -> int:
+    try:
+        row = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE status = 'pendente'").fetchone()
+        return row[0] if row else 0
+    except Exception:
+        return 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -10391,6 +10462,79 @@ new Chart(document.getElementById('coop-chart'),{
                     if st.button("✖ Cancelar", key="hist_zerar_nao", use_container_width=True):
                         st.session_state.pop("hist_confirmar_zerar", None)
                         st.rerun()
+
+        # ── Variações de Quantidade Detectadas ───────────────────────────────
+        _var_count = get_variacoes_pendentes_count()
+        _badge_color = "#ffa502" if _var_count > 0 else "#4b5563"
+        _badge_txt = f"{_var_count} pendentes"
+        st.markdown(
+            f'<div style="display:flex;align-items:center;gap:10px;margin:24px 0 12px 0;">'
+            f'<span style="font-size:1.05rem;font-weight:700;color:#e0e6ed;">⚠️ Variações de Quantidade Detectadas</span>'
+            f'<span style="background:{_badge_color};color:#fff;font-family:\'JetBrains Mono\',monospace;'
+            f'font-size:0.72rem;font-weight:700;padding:2px 10px;border-radius:20px;">{_badge_txt}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        _col_var1, _col_var2 = st.columns([1, 2])
+        with _col_var1:
+            _apenas_pend = st.checkbox("Mostrar apenas pendentes", value=True, key="var_apenas_pend")
+        with _col_var2:
+            _dir_filter = st.radio(
+                "Direção",
+                ["Todos", "Aumentou ▲", "Diminuiu ▼"],
+                horizontal=True,
+                key="var_dir_filter",
+                label_visibility="collapsed",
+            )
+
+        _df_var = get_variacoes(apenas_pendentes=_apenas_pend)
+
+        if not _df_var.empty:
+            if _dir_filter == "Aumentou ▲":
+                _df_var = _df_var[_df_var["delta"] > 0]
+            elif _dir_filter == "Diminuiu ▼":
+                _df_var = _df_var[_df_var["delta"] < 0]
+
+        if _df_var.empty:
+            st.markdown(
+                '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.35);">'
+                '✅ Nenhuma variação pendente</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            for _, _vr in _df_var.iterrows():
+                _delta_color = "#00d68f" if _vr["delta"] > 0 else "#ff4757"
+                _delta_sign = "+" if _vr["delta"] > 0 else ""
+                _delta_arrow = "▲" if _vr["delta"] > 0 else "▼"
+                _card_html = (
+                    f'<div style="background:linear-gradient(135deg,#111827,#1a2332);'
+                    f'border:1px solid rgba(255,255,255,0.07);border-radius:10px;'
+                    f'padding:12px 16px;margin-bottom:8px;display:flex;'
+                    f'align-items:center;justify-content:space-between;gap:12px;">'
+                    f'<div style="flex:1;min-width:0;">'
+                    f'<div style="font-family:\'Outfit\',sans-serif;font-weight:600;'
+                    f'color:#e0e6ed;font-size:0.9rem;white-space:nowrap;overflow:hidden;'
+                    f'text-overflow:ellipsis;" title="{_vr["produto"]}">{_vr["produto"]}</div>'
+                    f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.82rem;'
+                    f'color:#94a3b8;margin-top:2px;">'
+                    f'{int(_vr["qtd_anterior"])} → {int(_vr["qtd_atual"])} '
+                    f'<span style="color:{_delta_color};font-weight:700;">'
+                    f'{_delta_arrow} {_delta_sign}{int(_vr["delta"])}</span>'
+                    f'</div>'
+                    f'</div>'
+                    f'<div style="font-family:\'JetBrains Mono\',monospace;font-size:0.72rem;'
+                    f'color:#64748b;white-space:nowrap;">{str(_vr["detectado_em"])[:16]}</div>'
+                    f'</div>'
+                )
+                _btn_col, _card_col = st.columns([1, 5])
+                with _card_col:
+                    st.markdown(_card_html, unsafe_allow_html=True)
+                with _btn_col:
+                    if _vr["status"] == "pendente":
+                        if st.button("✓ Verificado", key=f"var_check_{_vr['id']}", use_container_width=True):
+                            marcar_variacao_verificada(int(_vr["id"]))
+                            st.rerun()
 
 
     # ══════════════════════════════════════════════════════════════════════════
