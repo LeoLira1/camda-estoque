@@ -529,26 +529,44 @@ def build_inventario_ciclico_tab(
         <span>🟡 Aguardando</span><span>🟢 Conferido OK</span><span>🔴 Divergência</span>
     </div>""", unsafe_allow_html=True)
 
-    # ── Filtro de categoria ───────────────────────────────────────────────────
+    # ── Filtros ───────────────────────────────────────────────────────────────
     all_cats = _sort_ciclo(df["categoria"].unique().tolist())
-    filtro_cat = st.selectbox(
-        "Categoria para conferir",
-        ["TODOS"] + all_cats,
-        key="inv_ciclico_filtro_cat",
-    )
+    col_cat, col_status = st.columns(2)
+    with col_cat:
+        filtro_cat = st.selectbox(
+            "Categoria para conferir",
+            ["TODOS"] + all_cats,
+            key="inv_ciclico_filtro_cat",
+        )
+    with col_status:
+        filtro_status = st.selectbox(
+            "Status",
+            ["Todos", "Pendentes", "Contados", "Divergências"],
+            key="inv_ciclico_filtro_status",
+        )
 
-    # ── Grade interativa (apenas quando categoria selecionada) ────────────────
+    # ── Grade interativa ──────────────────────────────────────────────────────
     sel_codigo = st.session_state.get("ciclo_sel")
 
-    if filtro_cat == "TODOS":
-        st.caption("Selecione uma categoria acima para conferir produtos clicando nos cards, ou clique diretamente no mapa abaixo.")
+    if filtro_cat == "TODOS" and filtro_status == "Todos":
+        st.caption("Selecione uma categoria ou status acima para conferir produtos clicando nos cards, ou clique diretamente no mapa abaixo.")
     else:
-        cat_df = df[df["categoria"] == filtro_cat].sort_values("produto").reset_index(drop=True)
+        if filtro_cat != "TODOS":
+            cat_df = df[df["categoria"] == filtro_cat].sort_values("produto").reset_index(drop=True)
+        else:
+            cat_df = df.copy().sort_values("produto").reset_index(drop=True)
+
+        if filtro_status == "Pendentes":
+            cat_df = cat_df[~cat_df["status_ciclo"].isin(["ok", "divergencia"])].reset_index(drop=True)
+        elif filtro_status == "Contados":
+            cat_df = cat_df[cat_df["status_ciclo"] == "ok"].reset_index(drop=True)
+        elif filtro_status == "Divergências":
+            cat_df = cat_df[cat_df["status_ciclo"] == "divergencia"].reset_index(drop=True)
 
         if cat_df.empty:
-            st.info(f"Nenhum produto na categoria {filtro_cat}.")
+            st.info("Nenhum produto encontrado com os filtros selecionados.")
         else:
-            # Se produto selecionado não pertence a esta categoria, limpa seleção
+            # Se produto selecionado não está nos resultados filtrados, limpa seleção
             if sel_codigo and sel_codigo not in set(cat_df["codigo"].astype(str)):
                 st.session_state.pop("ciclo_sel", None)
                 sel_codigo = None
