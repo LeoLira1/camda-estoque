@@ -5490,10 +5490,20 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     qty_color = "#ffffff"
                     card_border = "border:2px solid #00d68f;"
                 elif status_c == "divergencia":
-                    border_color = "#ff4757"
-                    card_bg = "rgba(255,71,87,0.72)"
+                    _qtd_cont = r.get("qtd_contada_ciclo")
+                    _qtd_sis  = r.get("qtd_sistema_na_contagem")
+                    _is_sobra = (
+                        _qtd_cont is not None and _qtd_sis is not None
+                        and float(_qtd_cont) > float(_qtd_sis)
+                    )
+                    if _is_sobra:
+                        border_color = "#06b6d4"
+                        card_bg = "rgba(6,182,212,0.72)"
+                    else:
+                        border_color = "#ff4757"
+                        card_bg = "rgba(255,71,87,0.72)"
                     qty_color = "#ffffff"
-                    card_border = "border:2px solid #ff4757;"
+                    card_border = f"border:2px solid {border_color};"
                 else:
                     border_color = "#ffa502"
                     card_bg = "linear-gradient(135deg, rgba(255,165,2,0.12), #1a1d2e)"

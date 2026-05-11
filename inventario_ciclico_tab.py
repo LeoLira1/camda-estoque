@@ -653,8 +653,17 @@ def build_inventario_ciclico_tab(
         label_visibility="collapsed",
     )
 
+    # Aplica filtro de status também no treemap
+    df_treemap = df.copy()
+    if filtro_status == "Pendentes":
+        df_treemap = df_treemap[~df_treemap["status_ciclo"].isin(["ok", "divergencia"])]
+    elif filtro_status == "Contados":
+        df_treemap = df_treemap[df_treemap["status_ciclo"] == "ok"]
+    elif filtro_status == "Divergências":
+        df_treemap = df_treemap[df_treemap["status_ciclo"] == "divergencia"]
+
     html_mapa = build_css_treemap(
-        df,
+        df_treemap,
         filter_cat=filtro_cat,
         avarias_map=None,
         color_mode="ciclico",
