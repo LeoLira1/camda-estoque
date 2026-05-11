@@ -378,6 +378,25 @@ def _desfazer_conferencia(codigo: str, get_db, sync_db) -> bool:
         return False
 
 
+def _get_divergencias_cicli(get_db) -> dict:
+    """Retorna {produto_id: divergencia} com o registro mais recente de inventario_cicli."""
+    try:
+        conn = get_db()
+        rows = conn.execute("""
+            SELECT produto_id, divergencia
+            FROM inventario_cicli
+            WHERE divergencia IS NOT NULL
+            ORDER BY data_contagem DESC, contado_em DESC
+        """).fetchall()
+        result = {}
+        for produto_id, divergencia in rows:
+            if str(produto_id) not in result:
+                result[str(produto_id)] = divergencia
+        return result
+    except Exception:
+        return {}
+
+
 def _get_progresso_ciclo(get_db) -> dict:
     try:
         conn = get_db()
@@ -461,6 +480,7 @@ def build_inventario_ciclico_tab(
 
     df = get_current_stock()
     progresso = _get_progresso_ciclo(get_db)
+    divergencias_cicli = _get_divergencias_cicli(get_db)
 
     # ── Processa clique no treemap (via JS → input → callback) ───────────────
     # O callback _on_busca_treemap roda ANTES do corpo do script e seta esta chave.
@@ -556,8 +576,11 @@ def build_inventario_ciclico_tab(
                         qtd_na_cont = prod.get("qtd_sistema_na_contagem")
                         if qtd_contada is not None and qtd_na_cont is not None:
                             diff = int(qtd_contada) - int(qtd_na_cont)
-                            sinal = "+" if diff > 0 else ""
-                            label += f"  \n⚠️ {sinal}{diff}"
+                        else:
+                            diff = divergencias_cicli.get(str(prod["codigo"]))
+                        if diff is not None:
+                            sinal = "+" if int(diff) > 0 else ""
+                            label += f"  \n⚠️ {sinal}{int(diff)}"
 
                     with cols[i]:
                         marker_html = f'<div id="{prefix}{safe}" style="display:none"></div>'
