@@ -11298,9 +11298,9 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     else:
                         st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
 
-with t_ciclico:
-    _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name,
-                        get_divergencias=get_divergencias, get_historico_divergencias=get_historico_divergencias)
+    with t_ciclico:
+        _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name,
+                            get_divergencias=get_divergencias, get_historico_divergencias=get_historico_divergencias)
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
