@@ -1731,7 +1731,7 @@ def checar_e_registrar_alertas() -> dict:
     from datetime import timedelta
     hoje = datetime.now(tz=_BRT).date()
     conn = get_db()
-    result = {"validade_30d": [], "pendencia_5d": [], "reconciliacao_gv": []}
+    result = {"validade_30d": [], "pendencia_5d": [], "reconciliacao_gv": [], "aumento_estoque": []}
     houve_escrita = False
 
     # ── Lotes com validade ≤ 30 dias ──────────────────────────────────────
@@ -1819,6 +1819,37 @@ def checar_e_registrar_alertas() -> dict:
                 data_disparo = date.fromisoformat(rec[0])
             if (hoje - data_disparo).days <= 2:
                 result["reconciliacao_gv"].append(item)
+    except Exception:
+        pass
+
+    # ── Aumentos de estoque ───────────────────────────────────────────────
+    try:
+        aumentos = conn.execute(
+            "SELECT codigo, produto, delta, detectado_em FROM variacao_estoque "
+            "WHERE delta > 0 AND status = 'pendente'"
+        ).fetchall()
+        for codigo, produto, delta, detectado_em in aumentos:
+            chave = f"{codigo}|{str(detectado_em)[:10]}"
+            rec = conn.execute(
+                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                ("aumento_estoque", chave),
+            ).fetchone()
+            if rec is None:
+                conn.execute(
+                    "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                    ("aumento_estoque", chave, hoje.isoformat()),
+                )
+                houve_escrita = True
+                data_disparo = hoje
+            else:
+                data_disparo = date.fromisoformat(rec[0])
+            if (hoje - data_disparo).days <= 1:
+                nome_curto = produto.split(" - ")[-1][:40] if " - " in produto else produto[:40]
+                result["aumento_estoque"].append({
+                    "codigo": codigo,
+                    "produto": nome_curto,
+                    "delta": int(delta),
+                })
     except Exception:
         pass
 
@@ -4201,6 +4232,16 @@ def upload_parcial_estoque(records: list) -> tuple:
                     r["nota"], r["status"], now, now,
                 ))
 
+        n_atualizados = len(update_data) + len(update_nota_data)
+        n_div = sum(1 for r in records if r["status"] != "ok")
+        conn.execute("""
+            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, [now, "PARCIAL_ESTOQUE", "", len(records), len(novos_data), n_atualizados, n_div])
+        upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+        detectar_e_registrar_variacoes(records, conn, now, upload_id)
+
         if update_data:
             conn.executemany("""
                 UPDATE estoque_mestre SET
@@ -4229,13 +4270,6 @@ def upload_parcial_estoque(records: list) -> tuple:
             """, novos_data)
             # Auto-cachear P.A. para produtos que entraram ou voltaram ao estoque
             _auto_cache_principios_ativos([r[1] for r in novos_data], conn)
-
-        n_atualizados = len(update_data) + len(update_nota_data)
-        n_div = sum(1 for r in records if r["status"] != "ok")
-        conn.execute("""
-            INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, [now, "PARCIAL_ESTOQUE", "", len(records), len(novos_data), n_atualizados, n_div])
 
         conn.commit()
         sync_db()
@@ -7631,9 +7665,10 @@ if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cach
     st.session_state["alertas_cache_date"] = datetime.now(tz=_BRT).date().isoformat()
 
 _alertas = st.session_state["alertas_cache"]
-_al_val   = _alertas.get("validade_30d", [])
-_al_pend  = _alertas.get("pendencia_5d", [])
+_al_val    = _alertas.get("validade_30d", [])
+_al_pend   = _alertas.get("pendencia_5d", [])
 _al_reconc = _alertas.get("reconciliacao_gv", [])
+_al_aumento = _alertas.get("aumento_estoque", [])
 
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
@@ -7769,7 +7804,7 @@ if has_mestre:
     </script>""", height=0)
 
     # ── Alertas (abaixo da busca, compacto) ──────────────────────────────────
-    if _al_val or _al_pend or _al_reconc:
+    if _al_val or _al_pend or _al_reconc or _al_aumento:
         _pills = []
         if _al_pend:
             n = len(_al_pend)
@@ -7812,6 +7847,15 @@ if has_mestre:
                 _pills.append(
                     f'<div class="al-pill al-gv">🔵 <b>Divergência GV — {_n_gv} cooperado{"s" if _n_gv > 1 else ""}:</b> {_nomes_gv}</div>'
                 )
+        if _al_aumento:
+            _nomes_au = ", ".join(
+                f"{a['produto']} +{a['delta']}" for a in _al_aumento[:3]
+            )
+            if len(_al_aumento) > 3:
+                _nomes_au += f" +{len(_al_aumento) - 3} mais"
+            _pills.append(
+                f'<div class="al-pill al-aumento">🟢 <b>Aumento de estoque:</b> {_nomes_au}</div>'
+            )
         st.markdown(
             """
             <style>
@@ -7821,6 +7865,7 @@ if has_mestre:
             .al-urgente{background:rgba(255,140,0,0.12);color:#ff8c00;border:1px solid rgba(255,140,0,0.4);}
             .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
             .al-gv{background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);}
+            .al-aumento{background:rgba(34,197,94,0.12);color:#22c55e;border:1px solid rgba(34,197,94,0.35);}
             </style>
             """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
             unsafe_allow_html=True,
