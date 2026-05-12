@@ -4555,6 +4555,20 @@ def marcar_variacao_verificada(variacao_id: int):
         st.error(f"❌ Erro: {e}")
 
 
+def limpar_variacoes_pendentes() -> int:
+    try:
+        conn = get_db()
+        n = conn.execute(
+            "SELECT COUNT(*) FROM variacao_estoque WHERE status = 'pendente'"
+        ).fetchone()[0]
+        conn.execute("UPDATE variacao_estoque SET status = 'verificado' WHERE status = 'pendente'")
+        conn.commit()
+        sync_db()
+        return n
+    except Exception:
+        return 0
+
+
 def get_variacoes_pendentes_count() -> int:
     try:
         row = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE status = 'pendente'").fetchone()
@@ -10535,7 +10549,7 @@ new Chart(document.getElementById('coop-chart'),{
             unsafe_allow_html=True,
         )
 
-        _col_var1, _col_var2 = st.columns([1, 2])
+        _col_var1, _col_var2, _col_var3 = st.columns([1, 2, 1])
         with _col_var1:
             _apenas_pend = st.checkbox("Mostrar apenas pendentes", value=True, key="var_apenas_pend")
         with _col_var2:
@@ -10546,6 +10560,13 @@ new Chart(document.getElementById('coop-chart'),{
                 key="var_dir_filter",
                 label_visibility="collapsed",
             )
+        with _col_var3:
+            if _var_count > 0:
+                if st.button("🗑️ Limpar todos pendentes", key="var_limpar_todos", use_container_width=True):
+                    _n_limpos = limpar_variacoes_pendentes()
+                    st.session_state.pop("alertas_cache", None)
+                    st.toast(f"✅ {_n_limpos} variação(ões) marcadas como verificadas.")
+                    st.rerun()
 
         _df_var = get_variacoes(apenas_pendentes=_apenas_pend)
 
