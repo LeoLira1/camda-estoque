@@ -4130,7 +4130,7 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
         """, [now, "PARCIAL", "", len(records), len(novos_data), len(update_data), n_div])
         upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        detectar_e_registrar_variacoes(records, conn, now, upload_id)
+        detectar_e_registrar_variacoes(records, conn, now, upload_id, include_novos=True)
 
         # BATCH updates e inserts
         # Preserva status, diferenca e qtd_fisica para produtos com divergência existente.
@@ -4240,7 +4240,7 @@ def upload_parcial_estoque(records: list) -> tuple:
         """, [now, "PARCIAL_ESTOQUE", "", len(records), len(novos_data), n_atualizados, n_div])
         upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        detectar_e_registrar_variacoes(records, conn, now, upload_id)
+        detectar_e_registrar_variacoes(records, conn, now, upload_id, include_novos=True)
 
         if update_data:
             conn.executemany("""
@@ -4508,7 +4508,7 @@ def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
     return len(to_insert) + len(to_update)
 
 
-def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int):
+def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int, include_novos: bool = False):
     estado_atual = {
         row[0]: row[1]
         for row in conn.execute("SELECT codigo, qtd_sistema FROM estoque_mestre").fetchall()
@@ -4522,6 +4522,11 @@ def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int
             variacoes.append((
                 cod, r["produto"], qtd_ant, qtd_nova,
                 qtd_nova - qtd_ant, now, upload_id, "pendente"
+            ))
+        elif include_novos and qtd_ant is None and qtd_nova > 0:
+            variacoes.append((
+                cod, r["produto"], 0, qtd_nova,
+                qtd_nova, now, upload_id, "pendente"
             ))
     if variacoes:
         conn.executemany("""
