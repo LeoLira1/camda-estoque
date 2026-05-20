@@ -7868,10 +7868,8 @@ if has_mestre:
                 )
         if _al_aumento:
             _nomes_au = ", ".join(
-                f"{a['produto']} +{a['delta']}" for a in _al_aumento[:3]
+                f"{a['produto']} +{a['delta']}" for a in _al_aumento
             )
-            if len(_al_aumento) > 3:
-                _nomes_au += f" +{len(_al_aumento) - 3} mais"
             _pills.append(
                 f'<div class="al-pill al-aumento">🟢 <b>Aumento de estoque:</b> {_nomes_au}</div>'
             )
