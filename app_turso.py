@@ -45,10 +45,68 @@ _BRT = timezone(timedelta(hours=-3))
 
 
 # ── Weather Widget ───────────────────────────────────────────────────────────
+def _weather_desc_from_code(code):
+    if code == 0:              return "☀️", "Céu limpo"
+    elif code in (1, 2):       return "🌤️", "Poucas nuvens"
+    elif code == 3:            return "☁️", "Nublado"
+    elif code in (45, 48):     return "🌫️", "Névoa"
+    elif code in (51,53,55):   return "🌦️", "Chuvisco"
+    elif code in (61,63,65):   return "🌧️", "Chuva"
+    elif code in (80,81,82):   return "🌧️", "Pancadas"
+    elif code in (95,96,99):   return "⛈️", "Tempestade"
+    else:                      return "🌡️", ""
+
+
+def _get_weather_quirinopolis_wttr():
+    """API de reserva: wttr.in (gratuita, sem chave)."""
+    import urllib.request, json
+    url = "https://wttr.in/Quirinopolis,GO?format=j1"
+    with urllib.request.urlopen(url, timeout=5) as r:
+        d = json.loads(r.read())
+    cur = d["current_condition"][0]
+    temp = round(float(cur["temp_C"]))
+    humid = int(cur["humidity"])
+    vento = round(float(cur["windspeedKmph"]))
+    # mapeia weatherCode do wttr → Open-Meteo aproximado
+    wc = int(cur["weatherCode"])
+    if wc == 113:   code = 0
+    elif wc in (116,):      code = 1
+    elif wc in (119,122):   code = 3
+    elif wc in (143,248,260): code = 45
+    elif wc in (176,263,266,293,296): code = 61
+    elif wc in (299,302,305,308):     code = 63
+    elif wc in (353,356,359):         code = 80
+    elif wc in (200,386,389,392,395): code = 95
+    else:                   code = 2
+    emoji, desc = _weather_desc_from_code(code)
+    today = d["weather"][0]
+    min_t = round(float(today["mintempC"]))
+    max_t = round(float(today["maxtempC"]))
+    sunrise = today["astronomy"][0]["sunrise"]
+    sunset  = today["astronomy"][0]["sunset"]
+    return {
+        "current": {
+            "temperature_2m": temp,
+            "weathercode": code,
+            "relative_humidity_2m": humid,
+            "wind_speed_10m": vento,
+        },
+        "daily": {
+            "temperature_2m_max": [max_t] * 6,
+            "temperature_2m_min": [min_t] * 6,
+            "weathercode": [code] * 6,
+            "sunrise": [f"2000-01-01T{sunrise}"] * 6,
+            "sunset":  [f"2000-01-01T{sunset}"] * 6,
+            "precipitation_probability_max": [int(cur.get("precipMM", 0) > 1) * 60] * 6,
+        },
+    }
+
+
 @st.cache_data(ttl=1800)
 def get_weather_quirinopolis():
+    import urllib.request, json
+    # Tenta Open-Meteo primeiro
     try:
-        import urllib.request, json
         url = (
             "https://api.open-meteo.com/v1/forecast"
             "?latitude=-18.45&longitude=-50.45"
@@ -59,15 +117,16 @@ def get_weather_quirinopolis():
             data = json.loads(r.read())
         temp = round(data["current"]["temperature_2m"])
         code = data["current"]["weathercode"]
-        if code == 0:              emoji, desc = "☀️", "Céu limpo"
-        elif code in (1, 2):       emoji, desc = "🌤️", "Poucas nuvens"
-        elif code == 3:            emoji, desc = "☁️", "Nublado"
-        elif code in (45, 48):     emoji, desc = "🌫️", "Névoa"
-        elif code in (51,53,55):   emoji, desc = "🌦️", "Chuvisco"
-        elif code in (61,63,65):   emoji, desc = "🌧️", "Chuva"
-        elif code in (80,81,82):   emoji, desc = "🌧️", "Pancadas"
-        elif code in (95,96,99):   emoji, desc = "⛈️", "Tempestade"
-        else:                      emoji, desc = "🌡️", ""
+        emoji, desc = _weather_desc_from_code(code)
+        return temp, emoji, desc
+    except Exception:
+        pass
+    # Reserva: wttr.in
+    try:
+        wd = _get_weather_quirinopolis_wttr()
+        cur = wd["current"]
+        temp = round(cur["temperature_2m"])
+        emoji, desc = _weather_desc_from_code(int(cur["weathercode"]))
         return temp, emoji, desc
     except Exception:
         return None, "🌡️", ""
@@ -76,8 +135,9 @@ def get_weather_quirinopolis():
 @st.cache_data(ttl=1800)
 def get_weather_forecast_quirinopolis():
     """Retorna previsão completa de 6 dias para Quirinópolis."""
+    import urllib.request, json
+    # Tenta Open-Meteo primeiro
     try:
-        import urllib.request, json
         url = (
             "https://api.open-meteo.com/v1/forecast"
             "?latitude=-18.45&longitude=-50.45"
@@ -89,6 +149,11 @@ def get_weather_forecast_quirinopolis():
         )
         with urllib.request.urlopen(url, timeout=5) as r:
             return json.loads(r.read())
+    except Exception:
+        pass
+    # Reserva: wttr.in
+    try:
+        return _get_weather_quirinopolis_wttr()
     except Exception:
         return None
 

@@ -92,11 +92,40 @@ def _wcode_desc(code: int) -> str:
     return "Parcialmente nublado"
 
 
+def _buscar_clima_wttr() -> dict:
+    """API de reserva para clima: wttr.in (gratuita, sem chave)."""
+    import urllib.request, json
+    url = "https://wttr.in/Quirinopolis,GO?format=j1"
+    with urllib.request.urlopen(url, timeout=5) as r:
+        d = json.loads(r.read())
+    cur = d["current_condition"][0]
+    wc  = int(cur["weatherCode"])
+    if wc == 113:                       code = 0
+    elif wc in (116,):                  code = 1
+    elif wc in (119, 122):              code = 3
+    elif wc in (143, 248, 260):         code = 45
+    elif wc in (176,263,266,293,296):   code = 61
+    elif wc in (299,302,305,308):       code = 63
+    elif wc in (353,356,359):           code = 80
+    elif wc in (200,386,389,392,395):   code = 95
+    else:                               code = 2
+    today = d["weather"][0]
+    return {
+        "temp":    round(float(cur["temp_C"])),
+        "desc":    _wcode_desc(code),
+        "umidade": int(cur["humidity"]),
+        "vento":   round(float(cur["windspeedKmph"])),
+        "min":     round(float(today["mintempC"])),
+        "max":     round(float(today["maxtempC"])),
+    }
+
+
 @st.cache_data(ttl=600)
 def buscar_clima() -> dict:
-    """Busca clima atual de Quirinópolis via Open-Meteo (gratuito, sem chave)."""
+    """Busca clima atual de Quirinópolis. Tenta Open-Meteo e usa wttr.in como reserva."""
+    import urllib.request, json
+    # Primário: Open-Meteo
     try:
-        import urllib.request, json
         url = (
             "https://api.open-meteo.com/v1/forecast"
             "?latitude=-18.45&longitude=-50.45"
@@ -117,6 +146,11 @@ def buscar_clima() -> dict:
             "min":     round(d["daily"]["temperature_2m_min"][0]),
             "max":     round(d["daily"]["temperature_2m_max"][0]),
         }
+    except Exception:
+        pass
+    # Reserva: wttr.in
+    try:
+        return _buscar_clima_wttr()
     except Exception:
         return {
             "temp": 29, "desc": "Parcialmente nublado",
