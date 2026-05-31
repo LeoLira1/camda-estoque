@@ -4,7 +4,7 @@ mural_tab.py — Aba "Mural" para o dashboard CAMDA Estoque.
 Renderiza o mural de post-its via st.components.v1.html.
 Os dados são carregados do Python (Turso/libSQL) na montagem inicial e
 as mutações (add/delete) são feitas diretamente pelo JavaScript via
-Turso HTTP API — mesmo padrão do warehouse_tab.py.
+Turso HTTP API.
 """
 
 import json as _json
