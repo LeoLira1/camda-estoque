@@ -9,7 +9,6 @@ import io
 import unicodedata
 from difflib import get_close_matches as _gcm
 import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime, timedelta, date, timezone
 from PIL import Image
 from db_mapa import (
@@ -17,7 +16,6 @@ from db_mapa import (
     get_paletes_rack,
     get_todos_paletes,
     get_produtos_mapa,
-    buscar_produto_no_mapa,
     buscar_produto_todas_ruas,
     get_ocupacao_geral,
     upsert_palete,
@@ -1709,12 +1707,14 @@ def inserir_lancamento(codigo: str, produto: str, categoria: str,
         )
         conn.execute("COMMIT")
         sync_db()
+        listar_lancamentos.clear()
         return True
     except Exception as e:
         st.error(f"❌ Erro ao salvar lançamento: {e}")
         return False
 
 
+@st.cache_data(ttl=60)
 def listar_lancamentos(limit: int = 200) -> pd.DataFrame:
     """Retorna os últimos lançamentos manuais em ordem decrescente."""
     try:
@@ -1739,6 +1739,7 @@ def excluir_lancamento(lancamento_id: int) -> bool:
         conn.execute("DELETE FROM lancamentos_manuais WHERE id = ?", (lancamento_id,))
         conn.execute("COMMIT")
         sync_db()
+        listar_lancamentos.clear()
         return True
     except Exception as e:
         st.error(f"❌ Erro ao excluir lançamento: {e}")
@@ -1762,8 +1763,22 @@ def inserir_pendencia(foto_bytes: bytes, observacao: str = ""):
     )
     conn.commit()
     sync_db()
+    listar_pendencias.clear()
+    listar_pendencias_meta.clear()
 
 
+@st.cache_data(ttl=60)
+def listar_pendencias_meta() -> list:
+    """Versão leve (sem foto_base64) para o banner de alertas que roda a cada rerun."""
+    try:
+        return get_db().execute(
+            "SELECT id, data_registro FROM pendencias_entrega ORDER BY data_registro DESC"
+        ).fetchall()
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=60)
 def listar_pendencias() -> list:
     try:
         rows = get_db().execute(
@@ -1779,6 +1794,8 @@ def deletar_pendencia(pid: int):
     conn.execute("DELETE FROM pendencias_entrega WHERE id = ?", (pid,))
     conn.commit()
     sync_db()
+    listar_pendencias.clear()
+    listar_pendencias_meta.clear()
 
 
 def _dias_desde(data_str: str) -> int:
@@ -1837,8 +1854,8 @@ def checar_e_registrar_alertas() -> dict:
 
     # ── Pendências com mais de 5 dias ─────────────────────────────────────
     try:
-        pendencias = listar_pendencias()
-        for pid, _, data_reg, _obs in pendencias:
+        pendencias = listar_pendencias_meta()
+        for pid, data_reg in pendencias:
             dias_pend = _dias_desde(data_reg)
             if dias_pend > 5:
                 chave = str(pid)
@@ -4599,9 +4616,12 @@ def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int
             (codigo, produto, qtd_anterior, qtd_atual, delta, detectado_em, upload_id, status)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, variacoes)
+        get_variacoes.clear()
+        get_variacoes_pendentes_count.clear()
     return len(variacoes)
 
 
+@st.cache_data(ttl=60)
 def get_variacoes(apenas_pendentes: bool = False) -> pd.DataFrame:
     cols = ["id", "codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"]
     try:
@@ -4621,6 +4641,8 @@ def marcar_variacao_verificada(variacao_id: int):
         conn.execute("UPDATE variacao_estoque SET status = 'verificado' WHERE id = ?", (variacao_id,))
         conn.commit()
         sync_db()
+        get_variacoes.clear()
+        get_variacoes_pendentes_count.clear()
     except Exception as e:
         st.error(f"❌ Erro: {e}")
 
@@ -4634,11 +4656,14 @@ def limpar_variacoes_pendentes() -> int:
         conn.execute("UPDATE variacao_estoque SET status = 'verificado' WHERE status = 'pendente'")
         conn.commit()
         sync_db()
+        get_variacoes.clear()
+        get_variacoes_pendentes_count.clear()
         return n
     except Exception:
         return 0
 
 
+@st.cache_data(ttl=60)
 def get_variacoes_pendentes_count() -> int:
     try:
         row = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE status = 'pendente'").fetchone()

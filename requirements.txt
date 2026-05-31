@@ -3,6 +3,5 @@ pandas>=2.0.0
 openpyxl>=3.1.0
 libsql>=0.0.3
 python-dotenv>=1.0.0
-plotly
-feedparser>=6.0.0
+plotly>=5.18.0
 pdfplumber>=0.11.0
