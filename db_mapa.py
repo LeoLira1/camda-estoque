@@ -18,6 +18,20 @@ import streamlit as st
 
 _BRT = timezone(timedelta(hours=-3))
 
+_update_from_supported = None
+
+
+def _supports_update_from(conn) -> bool:
+    """UPDATE ... FROM (VALUES ...) requer SQLite >= 3.33."""
+    global _update_from_supported
+    if _update_from_supported is None:
+        try:
+            ver = conn.execute("SELECT sqlite_version()").fetchone()[0]
+            _update_from_supported = tuple(int(x) for x in ver.split(".")[:2]) >= (3, 33)
+        except Exception:
+            _update_from_supported = False
+    return _update_from_supported
+
 
 def _install_camda_header_spacing_patch():
     """Aplica ajustes de topo e preserva renderização HTML do dashboard.
@@ -560,6 +574,10 @@ def sync_quantidades_from_estoque(conn) -> dict:
     sem_match:   list = []
     now = datetime.now(tz=_BRT).isoformat()
 
+    # Acumula apenas posições cuja quantidade realmente muda — no Turso
+    # embedded replica cada escrita é um round-trip de rede ao primário.
+    to_write: list = []
+
     for pid, posicoes in posicoes_por_produto.items():
         nome        = nome_por_produto[pid]
         qtd_estoque = estoque_map.get(nome.strip().lower())
@@ -573,13 +591,34 @@ def sync_quantidades_from_estoque(conn) -> dict:
 
         novas_qtds = _distribuir_proporcional(qtd_estoque, qtd_atuais)
 
-        for pos_key, nova_qtd in zip(pos_keys, novas_qtds):
-            conn.execute(
-                "UPDATE mapa_posicoes SET quantidade = ?, atualizado = ? WHERE pos_key = ?",
-                (nova_qtd, now, pos_key),
-            )
+        for pos_key, qtd_atual, nova_qtd in zip(pos_keys, qtd_atuais, novas_qtds):
             atualizadas += 1
+            try:
+                unchanged = abs(float(nova_qtd) - float(qtd_atual or 0)) < 1e-9
+            except (TypeError, ValueError):
+                unchanged = False
+            if not unchanged:
+                to_write.append((pos_key, nova_qtd))
+
+    if to_write:
+        if _supports_update_from(conn):
+            # UPDATE multi-linha: 1 statement por chunk em vez de 1 por posição
+            for i in range(0, len(to_write), 400):
+                chunk = to_write[i:i + 400]
+                ph = ", ".join("(?, ?)" for _ in chunk)
+                flat = [v for row in chunk for v in row]
+                conn.execute(f"""
+                    UPDATE mapa_posicoes AS p
+                    SET quantidade = v.q, atualizado = ?
+                    FROM (SELECT column1 AS pk, column2 AS q FROM (VALUES {ph})) AS v
+                    WHERE p.pos_key = v.pk
+                """, [now, *flat])
+        else:
+            conn.executemany(
+                "UPDATE mapa_posicoes SET quantidade = ?, atualizado = ? WHERE pos_key = ?",
+                [(q, now, pk) for pk, q in to_write],
+            )
 
     conn.commit()
     _clear_mapa_caches()
-    return {"atualizadas": atualizadas, "sem_match": sem_match}
+    return {"atualizadas": atualizadas, "sem_match": sem_match, "alteradas": len(to_write)}
