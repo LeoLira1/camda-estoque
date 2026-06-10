@@ -3,6 +3,8 @@ import pandas as pd
 import libsql
 import re
 import os
+import time
+import logging
 import random
 import base64
 import io
@@ -1158,6 +1160,49 @@ def _lookup_pa_from_index(nome: str, mapa: dict, cat_n: dict, cat_ns: dict,
     if m:
         return cat_ns[m[0]]
     return ""
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BATCH SQL — escrita em lote (1 statement multi-linha em vez de 1 por linha).
+# Crítico no Turso embedded replica: cada statement de escrita é um round-trip
+# de rede ao primário, então executemany de N linhas custa N round-trips.
+# ══════════════════════════════════════════════════════════════════════════════
+
+_BATCH_MAX_PARAMS = 900  # abaixo do limite legado SQLITE_MAX_VARIABLE_NUMBER=999
+
+
+def _chunks(seq, size):
+    for i in range(0, len(seq), size):
+        yield seq[i:i + size]
+
+
+def _insert_many(conn, table: str, cols: list, rows: list) -> None:
+    """INSERT multi-linha em chunks, substituindo executemany (1 round-trip/linha)."""
+    if not rows:
+        return
+    ncols = len(cols)
+    chunk_rows = max(1, _BATCH_MAX_PARAMS // ncols)
+    col_sql = ", ".join(cols)
+    row_ph = "(" + ", ".join("?" * ncols) + ")"
+    for chunk in _chunks(rows, chunk_rows):
+        ph = ", ".join(row_ph for _ in chunk)
+        flat = [v for row in chunk for v in row]
+        conn.execute(f"INSERT INTO {table} ({col_sql}) VALUES {ph}", flat)
+
+
+_update_from_supported: bool | None = None
+
+
+def _supports_update_from(conn) -> bool:
+    """UPDATE ... FROM (VALUES ...) requer SQLite >= 3.33."""
+    global _update_from_supported
+    if _update_from_supported is None:
+        try:
+            ver = conn.execute("SELECT sqlite_version()").fetchone()[0]
+            _update_from_supported = tuple(int(x) for x in ver.split(".")[:2]) >= (3, 33)
+        except Exception:
+            _update_from_supported = False
+    return _update_from_supported
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2572,6 +2617,9 @@ def upsert_principio_ativo(produto: str, principio_ativo: str, categoria: str = 
         return False
 
 
+_PA_IDX_CACHE: dict = {"key": None, "idx": None}
+
+
 def _auto_cache_principios_ativos(produtos: list, conn) -> int:
     """Busca automaticamente o princípio ativo de cada produto via lookup fuzzy e
     persiste no banco caso ainda não exista registro exato para aquele nome.
@@ -2607,7 +2655,12 @@ def _auto_cache_principios_ativos(produtos: list, conn) -> int:
         if not mapa_combinado:
             return 0
 
-        _idx = _build_pa_lookup(mapa_combinado)
+        # Índice fuzzy é caro de construir; cachear enquanto catálogo/banco não mudam de tamanho
+        cache_key = (len(mapa_excel), len(pa_db))
+        if _PA_IDX_CACHE.get("key") != cache_key:
+            _PA_IDX_CACHE["key"] = cache_key
+            _PA_IDX_CACHE["idx"] = _build_pa_lookup(mapa_combinado)
+        _idx = _PA_IDX_CACHE["idx"]
 
         inserir: list[tuple] = []
         for produto in produtos:
@@ -4091,7 +4144,7 @@ def read_excel_to_records(uploaded_file) -> tuple:
 # UPLOADS — batch inserts + sync único no final
 # ══════════════════════════════════════════════════════════════════════════════
 
-def upload_mestre(records: list) -> tuple:
+def upload_mestre(records: list, do_sync: bool = True) -> tuple:
     """Recebe records já parseados (sem re-parsear o arquivo)."""
     try:
         conn = get_db()
@@ -4146,13 +4199,14 @@ def upload_mestre(records: list) -> tuple:
         _auto_cache_principios_ativos([r["produto"] for r in records], conn)
 
         conn.commit()
-        sync_db()  # Sync UMA VEZ no final
+        if do_sync:
+            sync_db()  # Sync UMA VEZ no final
         return (True, f"✅ Mestre: {len(records)} produtos ({n_div} divergências)")
     except Exception as e:
         return (False, f"❌ Erro: {e}")
 
 
-def upload_parcial(records: list, zerados: list = None) -> tuple:
+def upload_parcial(records: list, zerados: list = None, do_sync: bool = True) -> tuple:
     """Recebe records já parseados e lista opcional de códigos com estoque zerado."""
     try:
         conn = get_db()
@@ -4255,7 +4309,8 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
         popular_contagem(records, upload_id, conn, zerados=zerados)
 
         conn.commit()
-        sync_db()  # Sync UMA VEZ no final
+        if do_sync:
+            sync_db()  # Sync UMA VEZ no final
 
         parts = [f"✅ Parcial: {len(records)} produtos"]
         if update_data:
@@ -4273,10 +4328,19 @@ def upload_parcial(records: list, zerados: list = None) -> tuple:
         return (False, f"❌ Erro: {e}")
 
 
-def upload_parcial_estoque(records: list) -> tuple:
+def _num_eq(a, b) -> bool:
+    """Compara valores numéricos com tolerância; None/inválido conta como diferente."""
+    try:
+        return abs(float(a) - float(b)) < 1e-9
+    except (TypeError, ValueError):
+        return False
+
+
+def upload_parcial_estoque(records: list, do_sync: bool = True) -> tuple:
     """Mini mestre — atualiza apenas quantidades dos produtos da planilha.
     Não mexe em vendas, reposição, nem remove produtos ausentes."""
     try:
+        _t0 = time.perf_counter()
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -4289,24 +4353,47 @@ def upload_parcial_estoque(records: list) -> tuple:
             _seen[r["codigo"]] = r
         records = list(_seen.values())
 
-        existing = {row[0] for row in conn.execute("SELECT codigo FROM estoque_mestre").fetchall()}
+        # Scan único: serve para classificar novos/atualizados, pular no-ops
+        # e detectar variações (evita 2º full scan)
+        existing = {row[0]: row for row in conn.execute(
+            "SELECT codigo, qtd_sistema, qtd_fisica, diferenca, nota, status FROM estoque_mestre"
+        ).fetchall()}
 
-        novos_data, update_data, update_nota_data = [], [], []
+        novos_data, update_data, update_nota_data, touch_only = [], [], [], []
         for r in records:
-            if r["codigo"] in existing:
+            old = existing.get(r["codigo"])
+            if old is not None:
                 if r["nota"]:
                     # Tem anotação explícita: aplica nova divergência (sobrescreve)
                     update_nota_data.append((
-                        r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
-                        r["nota"], r["status"], now, r["codigo"],
+                        r["codigo"], r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
+                        r["nota"], r["status"], now,
                     ))
                 else:
-                    # Sem anotação: preserva diferenca/qtd_fisica existentes se há divergência
-                    # qtd_sistema aparece duas vezes: atualiza e serve para recalcular qtd_fisica
-                    update_data.append((
-                        r["qtd_sistema"], r["qtd_sistema"], r["qtd_fisica"], r["diferenca"],
-                        r["status"], now, r["codigo"],
-                    ))
+                    # Sem anotação: preserva diferenca/qtd_fisica existentes se há divergência.
+                    # Simula o CASE do UPDATE em Python: se o resultado seria idêntico ao que
+                    # já está no banco, só registra a contagem (touch_only) — evita escrita remota.
+                    _, old_qs, old_qf, old_dif, _, old_st = old
+                    old_st_n = (old_st or "").strip()
+                    if old_st_n in ("falta", "sobra"):
+                        noop = (
+                            _num_eq(old_qs, r["qtd_sistema"])
+                            and _num_eq(old_qf, r["qtd_sistema"] + (old_dif if old_dif is not None else float("nan")))
+                        )
+                    else:
+                        noop = (
+                            _num_eq(old_qs, r["qtd_sistema"])
+                            and _num_eq(old_qf, r["qtd_fisica"])
+                            and _num_eq(old_dif, r["diferenca"])
+                            and old_st_n == (r["status"] or "").strip()
+                        )
+                    if noop:
+                        touch_only.append(r["codigo"])
+                    else:
+                        update_data.append((
+                            r["codigo"], r["qtd_sistema"], r["qtd_fisica"],
+                            r["diferenca"], r["status"], now,
+                        ))
             else:
                 novos_data.append((
                     r["codigo"], r["produto"], r["categoria"],
@@ -4314,7 +4401,7 @@ def upload_parcial_estoque(records: list) -> tuple:
                     r["nota"], r["status"], now, now,
                 ))
 
-        n_atualizados = len(update_data) + len(update_nota_data)
+        n_atualizados = len(update_data) + len(update_nota_data) + len(touch_only)
         n_div = sum(1 for r in records if r["status"] != "ok")
         conn.execute("""
             INSERT INTO historico_uploads (data, tipo, arquivo, total_produtos_lote, novos, atualizados, divergentes)
@@ -4322,39 +4409,93 @@ def upload_parcial_estoque(records: list) -> tuple:
         """, [now, "PARCIAL_ESTOQUE", "", len(records), len(novos_data), n_atualizados, n_div])
         upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        detectar_e_registrar_variacoes(records, conn, now, upload_id, include_novos=True)
+        detectar_e_registrar_variacoes(
+            records, conn, now, upload_id, include_novos=True,
+            estado_atual={c: row[1] for c, row in existing.items()},
+        )
+
+        batch_ok = _supports_update_from(conn)
 
         if update_data:
-            conn.executemany("""
-                UPDATE estoque_mestre SET
-                    qtd_sistema=?,
-                    qtd_fisica = CASE WHEN status IN ('falta', 'sobra') THEN ? + diferenca ELSE ? END,
-                    diferenca = CASE WHEN status IN ('falta', 'sobra') THEN diferenca ELSE ? END,
-                    status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
-                    ultima_contagem=?
-                WHERE codigo=?
-            """, update_data)
+            if batch_ok:
+                chunk_rows = max(1, _BATCH_MAX_PARAMS // 6)
+                for chunk in _chunks(update_data, chunk_rows):
+                    ph = ", ".join("(?, ?, ?, ?, ?, ?)" for _ in chunk)
+                    flat = [v for row in chunk for v in row]
+                    conn.execute(f"""
+                        UPDATE estoque_mestre AS em SET
+                            qtd_sistema = v.qs,
+                            qtd_fisica = CASE WHEN em.status IN ('falta', 'sobra') THEN v.qs + em.diferenca ELSE v.qf END,
+                            diferenca = CASE WHEN em.status IN ('falta', 'sobra') THEN em.diferenca ELSE v.dif END,
+                            status = CASE WHEN em.status IN ('falta', 'sobra') THEN em.status ELSE v.st END,
+                            ultima_contagem = v.uc
+                        FROM (SELECT column1 AS codigo, column2 AS qs, column3 AS qf,
+                                     column4 AS dif, column5 AS st, column6 AS uc
+                              FROM (VALUES {ph})) AS v
+                        WHERE em.codigo = v.codigo
+                    """, flat)
+            else:
+                conn.executemany("""
+                    UPDATE estoque_mestre SET
+                        qtd_sistema=?,
+                        qtd_fisica = CASE WHEN status IN ('falta', 'sobra') THEN ? + diferenca ELSE ? END,
+                        diferenca = CASE WHEN status IN ('falta', 'sobra') THEN diferenca ELSE ? END,
+                        status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
+                        ultima_contagem=?
+                    WHERE codigo=?
+                """, [(qs, qs, qf, dif, st_, uc, cod) for cod, qs, qf, dif, st_, uc in update_data])
 
         if update_nota_data:
-            conn.executemany("""
-                UPDATE estoque_mestre SET
-                    qtd_sistema=?, qtd_fisica=?, diferenca=?, nota=?,
-                    status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
-                    ultima_contagem=?
-                WHERE codigo=?
-            """, update_nota_data)
+            if batch_ok:
+                chunk_rows = max(1, _BATCH_MAX_PARAMS // 7)
+                for chunk in _chunks(update_nota_data, chunk_rows):
+                    ph = ", ".join("(?, ?, ?, ?, ?, ?, ?)" for _ in chunk)
+                    flat = [v for row in chunk for v in row]
+                    conn.execute(f"""
+                        UPDATE estoque_mestre AS em SET
+                            qtd_sistema = v.qs, qtd_fisica = v.qf, diferenca = v.dif, nota = v.nt,
+                            status = CASE WHEN em.status IN ('falta', 'sobra') THEN em.status ELSE v.st END,
+                            ultima_contagem = v.uc
+                        FROM (SELECT column1 AS codigo, column2 AS qs, column3 AS qf, column4 AS dif,
+                                     column5 AS nt, column6 AS st, column7 AS uc
+                              FROM (VALUES {ph})) AS v
+                        WHERE em.codigo = v.codigo
+                    """, flat)
+            else:
+                conn.executemany("""
+                    UPDATE estoque_mestre SET
+                        qtd_sistema=?, qtd_fisica=?, diferenca=?, nota=?,
+                        status = CASE WHEN status IN ('falta', 'sobra') THEN status ELSE ? END,
+                        ultima_contagem=?
+                    WHERE codigo=?
+                """, [(qs, qf, dif, nt, st_, uc, cod) for cod, qs, qf, dif, nt, st_, uc in update_nota_data])
+
+        if touch_only:
+            # Só registra a data da contagem (1 statement por chunk, não 1 por linha)
+            for chunk in _chunks(touch_only, 400):
+                ph = ",".join("?" * len(chunk))
+                conn.execute(
+                    f"UPDATE estoque_mestre SET ultima_contagem=? WHERE codigo IN ({ph})",
+                    [now, *chunk],
+                )
 
         if novos_data:
-            conn.executemany("""
-                INSERT INTO estoque_mestre
-                    (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, novos_data)
+            _insert_many(conn, "estoque_mestre", [
+                "codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
+                "diferenca", "nota", "status", "ultima_contagem", "criado_em",
+            ], novos_data)
             # Auto-cachear P.A. para produtos que entraram ou voltaram ao estoque
             _auto_cache_principios_ativos([r[1] for r in novos_data], conn)
 
         conn.commit()
-        sync_db()
+        _t1 = time.perf_counter()
+        if do_sync:
+            sync_db()
+        logging.info(
+            "parcial_estoque: %d linhas | %d alterados, %d com nota, %d novos, %d sem mudança | escrita=%.2fs sync=%.2fs",
+            len(records), len(update_data), len(update_nota_data), len(novos_data),
+            len(touch_only), _t1 - _t0, time.perf_counter() - _t1,
+        )
 
         parts = [f"✅ Parcial Estoque: {len(records)} produtos"]
         if n_atualizados:
@@ -4590,11 +4731,13 @@ def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
     return len(to_insert) + len(to_update)
 
 
-def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int, include_novos: bool = False):
-    estado_atual = {
-        row[0]: row[1]
-        for row in conn.execute("SELECT codigo, qtd_sistema FROM estoque_mestre").fetchall()
-    }
+def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int,
+                                   include_novos: bool = False, estado_atual: dict = None):
+    if estado_atual is None:
+        estado_atual = {
+            row[0]: row[1]
+            for row in conn.execute("SELECT codigo, qtd_sistema FROM estoque_mestre").fetchall()
+        }
     variacoes = []
     for r in records:
         cod = r["codigo"]
@@ -4611,11 +4754,10 @@ def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int
                 qtd_nova, now, upload_id, "pendente"
             ))
     if variacoes:
-        conn.executemany("""
-            INSERT INTO variacao_estoque
-            (codigo, produto, qtd_anterior, qtd_atual, delta, detectado_em, upload_id, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, variacoes)
+        _insert_many(conn, "variacao_estoque", [
+            "codigo", "produto", "qtd_anterior", "qtd_atual",
+            "delta", "detectado_em", "upload_id", "status",
+        ], variacoes)
         get_variacoes.clear()
         get_variacoes_pendentes_count.clear()
     return len(variacoes)
@@ -5794,7 +5936,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 # VENDAS — salvar/carregar dados de vendas para gráficos
 # ══════════════════════════════════════════════════════════════════════════════
 
-def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, is_mestre: bool = False, data_ref: str = None):
+def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, is_mestre: bool = False, data_ref: str = None, do_sync: bool = True):
     """Salva dados de vendas no histórico para gráficos.
     - MESTRE: substitui tudo (carga completa)
     - PARCIAL: SUBSTITUI por dia — cada dia gera uma linha separada por produto.
@@ -5831,7 +5973,8 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
             todos_records = list(records or []) + [z for z in (zerados or []) if isinstance(z, dict)]
             if not todos_records:
                 conn.commit()
-                sync_db()
+                if do_sync:
+                    sync_db()
                 return
 
             codigos_hoje_rows = conn.execute(
@@ -5867,7 +6010,8 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
                 """, inserts)
 
         conn.commit()
-        sync_db()
+        if do_sync:
+            sync_db()
         # Invalida caches que dependem de vendas_historico
         get_vendas_historico.clear()
         get_ultima_venda_por_produto.clear()
@@ -11070,12 +11214,14 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
 
                 if st.button("🚀 Processar", type="primary"):
                     with st.spinner("Processando..."):
+                        # do_sync=False: o sync com o Turso acontece UMA vez só,
+                        # após todas as escritas pós-upload (vendas + mapa)
                         if is_mestre_upload:
-                            ok_up, msg = upload_mestre(records)
+                            ok_up, msg = upload_mestre(records, do_sync=False)
                         elif is_parcial_estoque:
-                            ok_up, msg = upload_parcial_estoque(records)
+                            ok_up, msg = upload_parcial_estoque(records, do_sync=False)
                         else:
-                            ok_up, msg = upload_parcial(records, zerados)
+                            ok_up, msg = upload_parcial(records, zerados, do_sync=False)
 
                     if ok_up:
                         _post_errors = []
@@ -11085,6 +11231,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                                     records, _GRUPO_MAP, zerados,
                                     is_mestre=is_mestre_upload,
                                     data_ref=data_planilha.isoformat(),
+                                    do_sync=False,
                                 )
                             except Exception as _e:
                                 _post_errors.append(f"Histórico de vendas não salvo: {_e}")
@@ -11094,6 +11241,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         except Exception as _e:
                             _post_errors.append(f"Sincronização do mapa não concluída: {_e}")
                             _sync_atualizadas = 0
+                        sync_db()
                         _flash_parts = [msg]
                         if _sync_atualizadas > 0:
                             _flash_parts.append(f"🗺️ Mapa do rack atualizado automaticamente ({_sync_atualizadas} posição(ões)).")
