@@ -3560,6 +3560,206 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
 
 
+def build_cobertura_tab(df_cob: pd.DataFrame):
+    """Aba 📉 Cobertura — análise dinâmica de cobertura de estoque por velocidade de venda."""
+    if df_cob.empty:
+        st.info("Sem dados suficientes — carregue o estoque mestre e o histórico de vendas do BI.")
+        return
+
+    contagens = {f: int((df_cob["faixa"] == f).sum()) for f in _FAIXAS_COBERTURA}
+
+    # ── Header (padrão da aba Princípios Ativos) ─────────────────────────────
+    n_analisados = len(df_cob)
+    st.markdown(f"""
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
+      <div style="width:6px;height:36px;border-radius:3px;
+                  background:linear-gradient(180deg,#ff4757,#3b82f6);flex-shrink:0"></div>
+      <div>
+        <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#F9FAFB">
+          Cobertura de Estoque
+        </div>
+        <div style="font-size:12px;color:#6B7280;margin-top:2px">
+          {n_analisados} produtos analisados · velocidade = vendas dos últimos 90 dias ÷ 3 · estoque físico disponível
+        </div>
+      </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # ── 🔥 Escoar com urgência: MORTO/EXCESSO com lote vencendo ≤ 180 dias ───
+    hoje = datetime.now(tz=_BRT).date()
+    df_val = get_validade_lotes()
+    urgentes = []
+    if not df_val.empty and "VENCIMENTO" in df_val.columns:
+        risco = df_cob[df_cob["faixa"].isin(["MORTO", "EXCESSO"])]
+        idx_risco = {_pnorm(str(p)): i for i, p in zip(risco.index, risco["produto"])}
+        # Fallback sem sufixo de tamanho/formulação (mesma cascata dos P. Ativos)
+        idx_risco_s = {_pstrip(k): i for k, i in idx_risco.items()}
+        lim = hoje + timedelta(days=180)
+        lotes = df_val[df_val["VENCIMENTO"].notna() & (df_val["VENCIMENTO"].dt.date <= lim)]
+        for _, lt in lotes.iterrows():
+            chave = _nome_validade_key(lt["PRODUTO"])
+            i = idx_risco.get(chave)
+            if i is None:
+                i = idx_risco_s.get(_pstrip(chave))
+            if i is None:
+                continue
+            r = risco.loc[i]
+            urgentes.append({
+                "produto": r["produto"], "codigo": r["codigo"], "faixa": r["faixa"],
+                "lote": lt["LOTE"], "venc": lt["VENCIMENTO"].date(),
+                "dias": (lt["VENCIMENTO"].date() - hoje).days,
+                "qtd_lote": int(lt["QUANTIDADE"]), "qtd_disp": int(r["qtd_disponivel"]),
+            })
+        urgentes.sort(key=lambda u: u["dias"])
+
+    if urgentes:
+        linhas_urg = ""
+        for u in urgentes[:30]:
+            if u["dias"] < 0:
+                prazo = f'<span style="color:#ff4757;font-weight:700">VENCIDO há {-u["dias"]}d</span>'
+            else:
+                cor_d = "#ff4757" if u["dias"] <= 60 else "#ffa502"
+                prazo = f'<span style="color:{cor_d};font-weight:700">vence em {u["dias"]}d</span>'
+            fx = _FAIXAS_COBERTURA[u["faixa"]]
+            linhas_urg += (
+                f'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
+                f'padding:6px 0;border-bottom:1px solid #1F2937;font-size:12px">'
+                f'<span style="color:#F9FAFB;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+                f'{u["produto"]} <span style="color:#6B7280;font-size:10px">[{u["codigo"]}]</span>'
+                f'<span style="color:{fx["cor"]};font-size:10px;margin-left:6px">{fx["icone"]} {u["faixa"]}</span></span>'
+                f'<span style="white-space:nowrap;font-family:\'JetBrains Mono\',monospace;font-size:11px">'
+                f'<span style="color:#94a3b8">lote {u["lote"]} · {u["qtd_lote"]} un · {u["venc"].strftime("%d/%m/%Y")} · </span>{prazo}</span>'
+                f'</div>'
+            )
+        extra_urg = f'<div style="font-size:11px;color:#6B7280;margin-top:6px">+ {len(urgentes)-30} lote(s) — ver aba 📅 Validade</div>' if len(urgentes) > 30 else ""
+        st.markdown(
+            f'<div style="background:#111827;border:1px solid #ff4757;border-radius:12px;'
+            f'padding:14px 18px;margin-bottom:20px">'
+            f'<div style="font-size:14px;font-weight:800;color:#ff4757;margin-bottom:8px">'
+            f'🔥 Escoar com urgência — {len(urgentes)} lote(s) de itens MORTO/EXCESSO vencendo em ≤ 180 dias</div>'
+            f'{linhas_urg}{extra_urg}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Cards KPI (um por faixa) ─────────────────────────────────────────────
+    cards = ""
+    for f, meta in _FAIXAS_COBERTURA.items():
+        cards += (
+            f'<div style="background:#111827;border:1px solid #1F2937;border-radius:12px;padding:12px 14px">'
+            f'<div style="font-size:10px;color:#6B7280;margin-bottom:4px;text-transform:uppercase;'
+            f'letter-spacing:1px">{meta["icone"]} {f}</div>'
+            f'<div style="font-size:22px;font-weight:700;color:{meta["cor"]};'
+            f'font-family:\'JetBrains Mono\',monospace">{contagens[f]}</div>'
+            f'<div style="font-size:10px;color:#6B7280;margin-top:2px">{meta["desc"]}</div>'
+            f'</div>'
+        )
+    st.markdown(
+        f'<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));'
+        f'gap:10px;margin-bottom:14px">{cards}</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Seleção de faixa + filtros ───────────────────────────────────────────
+    opcoes_faixa = ["Todas"] + [f'{m["icone"]} {f}' for f, m in _FAIXAS_COBERTURA.items()]
+    sel = st.radio("Faixa", opcoes_faixa, key="cob_faixa_sel", horizontal=True,
+                   label_visibility="collapsed")
+    faixa_sel = sel.split(" ", 1)[1] if sel != "Todas" else None
+
+    col_cat, col_busca = st.columns([2, 3])
+    with col_cat:
+        cats = ["Todas as categorias"] + sort_categorias(sorted(df_cob["categoria"].dropna().unique()))
+        cat_sel = st.selectbox("Categoria", cats, key="cob_cat_sel", label_visibility="collapsed")
+    with col_busca:
+        busca = st.text_input("Buscar produto", key="cob_busca",
+                              placeholder="🔎 Buscar por nome ou código…",
+                              label_visibility="collapsed")
+
+    df_view = df_cob
+    if faixa_sel:
+        df_view = df_view[df_view["faixa"] == faixa_sel]
+    if cat_sel != "Todas as categorias":
+        df_view = df_view[df_view["categoria"] == cat_sel]
+    if busca.strip():
+        df_view = df_view[
+            df_view["produto"].str.contains(busca.strip(), case=False, na=False, regex=False)
+            | df_view["codigo"].astype(str).str.contains(busca.strip(), case=False, na=False, regex=False)
+        ]
+
+    if df_view.empty:
+        st.caption("Nenhum produto nesta combinação de filtros.")
+        return
+
+    # ── Ordenação por faixa: RUPTURA = mais urgente primeiro (cobertura asc);
+    #    MORTO = maior quantidade parada primeiro ────────────────────────────
+    _ORD_FAIXA = {f: i for i, f in enumerate(_FAIXAS_COBERTURA)}
+    df_view = df_view.assign(_ord=df_view["faixa"].map(_ORD_FAIXA)).sort_values(
+        ["_ord", "cobertura_meses", "qtd_disponivel"],
+        ascending=[True, True, False],
+        na_position="last",
+    )
+    morto_mask = df_view["faixa"] == "MORTO"
+    if morto_mask.any():
+        df_view = pd.concat([
+            df_view[~morto_mask],
+            df_view[morto_mask].sort_values("qtd_disponivel", ascending=False),
+        ])
+
+    LIMITE = 80
+    max_qtd_morto = int(df_view.loc[morto_mask, "qtd_disponivel"].max()) if morto_mask.any() else 1
+    linhas = ""
+    for _, r in df_view.head(LIMITE).iterrows():
+        meta = _FAIXAS_COBERTURA[r["faixa"]]
+        cor = meta["cor"]
+        disp = int(r["qtd_disponivel"])
+        vel = r["velocidade_mensal"]
+        cob = r["cobertura_meses"]
+        if r["faixa"] == "MORTO":
+            # Sem velocidade: barra proporcional à quantidade parada
+            pct = (disp / max_qtd_morto * 100) if max_qtd_morto > 0 else 0
+            badge = (' <span style="background:rgba(255,165,2,0.15);color:#ffa502;font-size:9px;'
+                     'padding:1px 6px;border-radius:8px;font-weight:700">esfriando</span>'
+                     ) if r["esfriando"] else ""
+            janela = "90" if r["esfriando"] else "180"
+            detalhe = f"{disp} un · sem vendas há {janela}d+"
+        else:
+            pct = min(cob / 6.0, 1.0) * 100 if pd.notna(cob) else 0
+            badge = ""
+            vel_txt = f"{vel:.1f}".rstrip("0").rstrip(".")
+            cob_txt = f"{cob:.1f}".rstrip("0").rstrip(".")
+            detalhe = f"{disp} un · vende {vel_txt}/mês · {cob_txt} meses de cobertura"
+        _cod = str(r["codigo"])
+        _cod_html = (
+            f'<span style="color:#6B7280;font-size:10px;margin-left:6px">[{_cod}]</span>'
+        ) if _cod and not _cod.startswith("AUTO_") else ""
+        # Sem indentação: Markdown trata 4+ espaços como bloco de código
+        linhas += (
+            f'<div style="margin-bottom:10px">'
+            f'<div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-bottom:4px">'
+            f'<span style="color:#F9FAFB;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+            f'{meta["icone"]} {r["produto"]}{_cod_html}{badge}</span>'
+            f'<span style="color:{cor};font-weight:700;white-space:nowrap">{detalhe}</span>'
+            f'</div>'
+            f'<div style="background:#1F2937;border-radius:4px;height:8px;overflow:hidden">'
+            f'<div style="width:{pct:.1f}%;height:100%;background:{cor};'
+            f'border-radius:4px;transition:width 0.5s ease"></div>'
+            f'</div>'
+            f'</div>'
+        )
+
+    titulo_lista = f'{_FAIXAS_COBERTURA[faixa_sel]["icone"]} {faixa_sel}' if faixa_sel else "Todas as faixas"
+    st.markdown(
+        f'<div style="background:#111827;border:1px solid #1F2937;border-radius:16px;'
+        f'padding:20px;margin-top:8px">'
+        f'<div style="display:flex;justify-content:space-between;margin-bottom:14px">'
+        f'<span style="font-size:14px;font-weight:700;color:#F9FAFB">{titulo_lista}</span>'
+        f'<span style="font-size:12px;color:#6B7280">{len(df_view)} produto(s)</span>'
+        f'</div>{linhas}</div>',
+        unsafe_allow_html=True,
+    )
+    if len(df_view) > LIMITE:
+        st.caption(f"Mostrando os {LIMITE} primeiros de {len(df_view)} — refine com os filtros acima.")
+
+
 def reset_db():
     try:
         conn = get_db()
@@ -6741,6 +6941,130 @@ def get_produtos_parados(dias_min: int) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# COBERTURA DE ESTOQUE — velocidade de vendas × estoque disponível
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# SEMÂNTICA DE vendas_historico.qtd_vendida (validada nos dados reais em 06/2026):
+# os valores são INCREMENTAIS por upload, não acumulados. Prova: qtd_estoque do
+# snapshot cai exatamente pelo qtd_vendida entre uploads consecutivos (ex.:
+# HERBICIDA MIRANT 02/03→03/03: vendida=46, estoque 371→325; 03/03→03/04:
+# vendida=26, estoque 325→299) e os valores oscilam para cima e para baixo sem
+# nunca crescer monotonicamente dentro de um período. Logo, a venda de uma
+# janela de tempo é a SOMA direta dos registros dessa janela.
+
+_FAIXAS_COBERTURA = {
+    "RUPTURA":  {"cor": "#ff4757", "icone": "🚨", "desc": "< 1 mês"},
+    "ATENÇÃO":  {"cor": "#ffa502", "icone": "⚠️", "desc": "1–2 meses"},
+    "SAUDÁVEL": {"cor": "#00d68f", "icone": "✅", "desc": "2–6 meses"},
+    "EXCESSO":  {"cor": "#3b82f6", "icone": "📦", "desc": "> 6 meses"},
+    "MORTO":    {"cor": "#64748b", "icone": "💀", "desc": "0 vendas 180d"},
+}
+
+# Nomes em validade_lotes vêm com prefixo de código do BI ("100235440 - FUNGICIDA
+# FOX XPRO 20L"); estoque_mestre guarda só o nome. Remover o prefixo antes do
+# match por _pnorm cobre 265/267 produtos da tabela de validade.
+_RE_VAL_PREFIX = re.compile(r"^\s*[A-Z0-9\-]{3,20}\s*[-–]\s*(.+)$", re.IGNORECASE)
+
+
+def _nome_validade_key(nome: str) -> str:
+    """Chave de match para validade_lotes ↔ estoque_mestre (sem prefixo/acentos)."""
+    s = str(nome).strip()
+    m = _RE_VAL_PREFIX.match(s)
+    return _pnorm(m.group(1) if m else s)
+
+
+@st.cache_data(ttl=300)
+def get_cobertura_estoque() -> pd.DataFrame:
+    """Classifica cada produto do estoque por cobertura (meses de estoque vs. venda).
+
+    Uma única query agregada (padrão anti-N+1): vendas de 90/180 dias e faltas
+    abertas são pré-agregadas em CTEs e juntadas ao estoque_mestre por código.
+
+    ESTOQUE DISPONÍVEL: a intenção é usar o que está fisicamente no armazém
+    (qtd_fisica). Porém divergências de 'falta' registradas manualmente
+    (registrar_divergencia_manual) NÃO baixam qtd_fisica — só a contagem
+    (atualizar_item_contagem) baixa. Por isso: se qtd_fisica ainda é igual a
+    qtd_sistema, aplicamos os deltas de falta abertos por cima; se qtd_fisica
+    já diverge, a contagem já refletiu a falta e usar qtd_fisica direto evita
+    dupla contagem.
+    """
+    cols = ["codigo", "produto", "categoria", "qtd_disponivel", "vendas_90d",
+            "vendas_180d", "velocidade_mensal", "cobertura_meses", "faixa", "esfriando"]
+    hoje = datetime.now(tz=_BRT).date()
+    d90 = (hoje - timedelta(days=90)).isoformat()
+    d180 = (hoje - timedelta(days=180)).isoformat()
+    try:
+        rows = get_db().execute("""
+            WITH vendas_agg AS (
+                SELECT UPPER(TRIM(codigo)) AS cod,
+                       SUM(CASE WHEN data_upload >= ? THEN qtd_vendida ELSE 0 END) AS v90,
+                       SUM(CASE WHEN data_upload >= ? THEN qtd_vendida ELSE 0 END) AS v180
+                  FROM vendas_historico
+                 GROUP BY UPPER(TRIM(codigo))
+            ),
+            faltas_abertas AS (
+                SELECT UPPER(TRIM(codigo)) AS cod, SUM(delta) AS delta_falta
+                  FROM divergencias
+                 WHERE status = 'falta'
+                 GROUP BY UPPER(TRIM(codigo))
+            )
+            SELECT e.codigo, e.produto, e.categoria,
+                   e.qtd_sistema, e.qtd_fisica,
+                   COALESCE(v.v90, 0)  AS vendas_90d,
+                   COALESCE(v.v180, 0) AS vendas_180d,
+                   COALESCE(f.delta_falta, 0) AS delta_falta
+              FROM estoque_mestre e
+              LEFT JOIN vendas_agg    v ON v.cod = UPPER(TRIM(e.codigo))
+              LEFT JOIN faltas_abertas f ON f.cod = UPPER(TRIM(e.codigo))
+        """, (d90, d180)).fetchall()
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao calcular cobertura: {e}")
+        return pd.DataFrame(columns=cols)
+    if not rows:
+        return pd.DataFrame(columns=cols)
+
+    df = pd.DataFrame(rows, columns=["codigo", "produto", "categoria", "qtd_sistema",
+                                     "qtd_fisica", "vendas_90d", "vendas_180d", "delta_falta"])
+    if _PRODUTOS_IGNORADOS:
+        df = df[~df["produto"].str.strip().str.upper().isin(_PRODUTOS_IGNORADOS)]
+
+    def _disponivel(r) -> int:
+        fis = int(r["qtd_fisica"] or 0)
+        if fis != int(r["qtd_sistema"] or 0):
+            return max(fis, 0)  # contagem já baixou a falta em qtd_fisica
+        return max(fis + int(r["delta_falta"] or 0), 0)  # delta_falta é negativo
+
+    df["qtd_disponivel"] = df.apply(_disponivel, axis=1)
+    df["velocidade_mensal"] = df["vendas_90d"] / 3.0
+    df["cobertura_meses"] = df.apply(
+        lambda r: r["qtd_disponivel"] / r["velocidade_mensal"] if r["velocidade_mensal"] > 0 else float("nan"),
+        axis=1,
+    )
+
+    def _classificar(r) -> tuple:
+        disp, vel, cob = r["qtd_disponivel"], r["velocidade_mensal"], r["cobertura_meses"]
+        if r["vendas_90d"] == 0:
+            if disp > 0:
+                # "esfriando" = vendeu entre 90 e 180 dias atrás, mas zerou nos últimos 90
+                return ("MORTO", r["vendas_180d"] > 0)
+            return ("", False)  # sem estoque e sem giro: fora da análise
+        if vel >= 1:
+            if cob < 1:
+                return ("RUPTURA", False)
+            if cob < 2:
+                return ("ATENÇÃO", False)
+            if cob > 6:
+                return ("EXCESSO", False)
+        # Faixa padrão: cobertura 2–6 meses e vendedores lentos (< 1 un/mês),
+        # para os quais RUPTURA/ATENÇÃO/EXCESSO não se aplicam por definição.
+        return ("SAUDÁVEL", False)
+
+    df[["faixa", "esfriando"]] = df.apply(_classificar, axis=1, result_type="expand")
+    df = df[df["faixa"] != ""].copy()
+    return df[cols].reset_index(drop=True)
+
+
 @st.cache_data(ttl=300)
 def get_esquecidos_com_validade(dias_min: int) -> pd.DataFrame:
     """Herbicidas, fungicidas, inseticidas, inoculantes e fertilizantes sem movimentação há ≥ dias_min, com validade."""
@@ -8201,7 +8525,7 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t0, t1, t2, t3, t4, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico"])
+    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico"])
 
     with t0:
         # ── Dados ──────────────────────────────────────────────────────────
@@ -8238,14 +8562,18 @@ if has_mestre:
         if _df_esq_i is None:
             _df_esq_i = pd.DataFrame()
 
+        _df_cob_i = get_cobertura_estoque()
+        _n_ruptura_i = int((_df_cob_i["faixa"] == "RUPTURA").sum()) if not _df_cob_i.empty else 0
+        _n_morto_i = int((_df_cob_i["faixa"] == "MORTO").sum()) if not _df_cob_i.empty else 0
+
         # ── Cards resumo ────────────────────────────────────────────────────
         st.markdown(f"""
         <div class="stat-row">
           <div class="stat-card"><div class="stat-value-lg red">{len(_df_falta_i)}</div><div class="stat-label">Faltando</div></div>
           <div class="stat-card"><div class="stat-value-lg amber">{len(_df_sobra_i)}</div><div class="stat-label">Sobrando</div></div>
           <div class="stat-card"><div class="stat-value-lg amber">{len(_df_venc_i)}</div><div class="stat-label">Vencendo 30d</div></div>
-          <div class="stat-card"><div class="stat-value-lg" style="color:#94a3b8">{len(_df_par_i)}</div><div class="stat-label">Parados 90d+</div></div>
-          <div class="stat-card"><div class="stat-value-lg blue">{len(_df_crit_i)}</div><div class="stat-label">Crítico ≤10</div></div>
+          <div class="stat-card"><div class="stat-value-lg" style="color:#64748b">{_n_morto_i}</div><div class="stat-label">Morto</div></div>
+          <div class="stat-card"><div class="stat-value-lg red">{_n_ruptura_i}</div><div class="stat-label">Ruptura</div></div>
         </div>
         """, unsafe_allow_html=True)
 
@@ -11093,6 +11421,11 @@ new Chart(document.getElementById('coop-chart'),{
                         f'</div></div>',
                         unsafe_allow_html=True,
                     )
+
+
+    # ── TAB: COBERTURA DE ESTOQUE ─────────────────────────────────────────────
+    with t_cobertura:
+        build_cobertura_tab(get_cobertura_estoque())
 
 
     # ── TAB: MURAL ──────────────────────────────────────────────────────────
