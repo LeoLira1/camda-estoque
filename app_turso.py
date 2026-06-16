@@ -1850,6 +1850,199 @@ def _dias_desde(data_str: str) -> int:
         return 0
 
 
+def _registrar_alertas_no_banco():
+    """Verifica condições de alerta e registra no banco (side-effect only).
+    Chamada 1x/dia/sessão via guard de session_state no ponto de chamada."""
+    from datetime import timedelta
+    hoje = datetime.now(tz=_BRT).date()
+    conn = get_db()
+    houve_escrita = False
+
+    try:
+        lotes = conn.execute(
+            "SELECT produto, lote, vencimento FROM validade_lotes"
+        ).fetchall()
+        for produto, lote, venc_str in lotes:
+            try:
+                venc = date.fromisoformat(str(venc_str)[:10])
+                if 0 <= (venc - hoje).days <= 30:
+                    chave = f"{produto}|{lote}"
+                    rec = conn.execute(
+                        "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                        ("validade_30d", chave),
+                    ).fetchone()
+                    if rec is None:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                            ("validade_30d", chave, hoje.isoformat()),
+                        )
+                        houve_escrita = True
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    try:
+        pendencias = listar_pendencias_meta()
+        for pid, data_reg in pendencias:
+            if _dias_desde(data_reg) > 5:
+                chave = str(pid)
+                rec = conn.execute(
+                    "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                    ("pendencia_5d", chave),
+                ).fetchone()
+                if rec is None:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                        ("pendencia_5d", chave, hoje.isoformat()),
+                    )
+                    houve_escrita = True
+    except Exception:
+        pass
+
+    try:
+        divergencias_gv = checar_reconciliacao_gv()
+        for item in divergencias_gv:
+            chave = f"{item['cooperado']}|{item['data_ref']}"
+            rec = conn.execute(
+                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                ("reconciliacao_gv", chave),
+            ).fetchone()
+            if rec is None:
+                conn.execute(
+                    "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                    ("reconciliacao_gv", chave, hoje.isoformat()),
+                )
+                houve_escrita = True
+    except Exception:
+        pass
+
+    try:
+        aumentos = conn.execute(
+            "SELECT codigo, produto, delta, detectado_em FROM variacao_estoque "
+            "WHERE delta > 0 AND status = 'pendente'"
+        ).fetchall()
+        for codigo, produto, delta, detectado_em in aumentos:
+            chave = f"{codigo}|{str(detectado_em)[:10]}"
+            rec = conn.execute(
+                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                ("aumento_estoque", chave),
+            ).fetchone()
+            if rec is None:
+                conn.execute(
+                    "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                    ("aumento_estoque", chave, hoje.isoformat()),
+                )
+                houve_escrita = True
+    except Exception:
+        pass
+
+    try:
+        cutoff = (hoje - timedelta(days=5)).isoformat()
+        conn.execute("DELETE FROM alertas_disparados WHERE data_disparo < ?", (cutoff,))
+        houve_escrita = True
+    except Exception:
+        pass
+
+    if houve_escrita:
+        try:
+            conn.commit()
+            sync_db()
+        except Exception:
+            pass
+
+
+@st.cache_data(ttl=3600)
+def _ler_alertas_para_exibir() -> dict:
+    """Lê alertas ativos de alertas_disparados e monta o dict de exibição.
+    Cache compartilhado entre sessões (ttl=3600) — sem side-effects."""
+    hoje = datetime.now(tz=_BRT).date()
+    conn = get_db()
+    result = {"validade_30d": [], "pendencia_5d": [], "reconciliacao_gv": [], "aumento_estoque": []}
+
+    try:
+        ads = conn.execute(
+            "SELECT tipo, ref_chave, data_disparo FROM alertas_disparados"
+        ).fetchall()
+    except Exception:
+        return result
+
+    ativos: dict = {}
+    for tipo, ref_chave, data_disparo_str in ads:
+        try:
+            data_disp = date.fromisoformat(data_disparo_str)
+        except Exception:
+            continue
+        janela = 2 if tipo == "reconciliacao_gv" else 1
+        if (hoje - data_disp).days <= janela:
+            ativos.setdefault(tipo, set()).add(ref_chave)
+
+    if "validade_30d" in ativos:
+        chaves = ativos["validade_30d"]
+        try:
+            lotes = conn.execute(
+                "SELECT produto, lote, vencimento FROM validade_lotes"
+            ).fetchall()
+            for produto, lote, venc_str in lotes:
+                if f"{produto}|{lote}" in chaves:
+                    try:
+                        venc = date.fromisoformat(str(venc_str)[:10])
+                        dias_rest = (venc - hoje).days
+                        if 0 <= dias_rest <= 30:
+                            nome_curto = produto.split(" - ")[-1][:40] if " - " in produto else produto[:40]
+                            result["validade_30d"].append({
+                                "produto": nome_curto,
+                                "lote": lote,
+                                "dias_restantes": dias_rest,
+                            })
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    if "pendencia_5d" in ativos:
+        chaves = ativos["pendencia_5d"]
+        try:
+            for pid, data_reg in listar_pendencias_meta():
+                if str(pid) in chaves:
+                    result["pendencia_5d"].append({
+                        "pid": pid,
+                        "dias": _dias_desde(data_reg),
+                        "data_reg": data_reg,
+                    })
+        except Exception:
+            pass
+
+    if "reconciliacao_gv" in ativos:
+        chaves = ativos["reconciliacao_gv"]
+        try:
+            for item in checar_reconciliacao_gv():
+                if f"{item['cooperado']}|{item['data_ref']}" in chaves:
+                    result["reconciliacao_gv"].append(item)
+        except Exception:
+            pass
+
+    if "aumento_estoque" in ativos:
+        chaves = ativos["aumento_estoque"]
+        try:
+            aumentos = conn.execute(
+                "SELECT codigo, produto, delta, detectado_em FROM variacao_estoque "
+                "WHERE delta > 0 AND status = 'pendente'"
+            ).fetchall()
+            for codigo, produto, delta, detectado_em in aumentos:
+                if f"{codigo}|{str(detectado_em)[:10]}" in chaves:
+                    nome_curto = produto.split(" - ")[-1][:40] if " - " in produto else produto[:40]
+                    result["aumento_estoque"].append({
+                        "codigo": codigo,
+                        "produto": nome_curto,
+                        "delta": int(delta),
+                    })
+        except Exception:
+            pass
+
+    return result
+
+
 def checar_e_registrar_alertas() -> dict:
     """
     Verifica condições de alerta, registra primeira detecção no banco e
@@ -2456,7 +2649,7 @@ _STOCK_COLS = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
                "status_ciclo", "qtd_contada_ciclo", "qtd_sistema_na_contagem", "contado_ciclo_em"]
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=600)
 def get_current_stock() -> pd.DataFrame:
     try:
         rows = get_db().execute("SELECT * FROM estoque_mestre ORDER BY categoria, produto").fetchall()
@@ -2469,7 +2662,7 @@ def get_current_stock() -> pd.DataFrame:
         return pd.DataFrame(columns=_STOCK_COLS)
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=600)
 def get_stock_count() -> int:
     try:
         row = get_db().execute("SELECT COUNT(*) FROM estoque_mestre").fetchone()
@@ -6265,7 +6458,7 @@ def save_faturamento_gv(records: list, data_ref: str):
         return False, f"Erro ao salvar faturamento GV: {e}"
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_faturamento_gv(data_ref: str = None) -> pd.DataFrame:
     """Retorna dados de faturamento GV. Se data_ref for None, usa o mais recente."""
     cols = ["id", "codigo", "produto", "cooperado", "qtd_faturada", "data_ref", "uploaded_em"]
@@ -6367,7 +6560,7 @@ _NOMES_INVALIDOS_COOP = {
 }
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def checar_reconciliacao_gv() -> list:
     """
     Dois checks independentes retornam alertas por cooperado:
@@ -6525,7 +6718,7 @@ def checar_reconciliacao_gv() -> list:
         return []
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_resumo_reconciliacao_gv() -> pd.DataFrame:
     """
     Retorna DataFrame completo da reconciliação GV vs Vendas
@@ -6575,7 +6768,7 @@ def get_resumo_reconciliacao_gv() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_data_ref_faturamento_gv() -> str:
     """Retorna o data_ref mais recente do faturamento GV, ou '' se não houver."""
     try:
@@ -6585,14 +6778,20 @@ def get_data_ref_faturamento_gv() -> str:
         return ""
 
 
-@st.cache_data(ttl=300)
+# Janela máxima de vendas_historico para análises de agregação (dias).
+# Funções que precisam do histórico completo usam a tabela diretamente sem este filtro.
+_JANELA_VENDAS_DIAS = 180
+
+
+@st.cache_data(ttl=1800)
 def get_vendas_historico() -> pd.DataFrame:
-    """Retorna vendas ACUMULADAS por produto (soma de todos os dias)."""
+    """Retorna vendas ACUMULADAS por produto (soma dos últimos _JANELA_VENDAS_DIAS dias)."""
     try:
-        rows = get_db().execute("""
+        rows = get_db().execute(f"""
             WITH last_upload AS (
                 SELECT codigo, MAX(data_upload) AS max_date
                   FROM vendas_historico
+                 WHERE data_upload >= date('now', '-{_JANELA_VENDAS_DIAS} days')
                  GROUP BY codigo
             ),
             last_estoque AS (
@@ -6609,6 +6808,7 @@ def get_vendas_historico() -> pd.DataFrame:
               FROM vendas_historico v
               LEFT JOIN estoque_mestre em ON em.codigo = v.codigo
               LEFT JOIN last_estoque le   ON le.codigo = v.codigo
+             WHERE v.data_upload >= date('now', '-{_JANELA_VENDAS_DIAS} days')
              GROUP BY v.codigo
              ORDER BY SUM(v.qtd_vendida) DESC
         """).fetchall()
@@ -6619,7 +6819,7 @@ def get_vendas_historico() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_ultima_venda_por_produto() -> pd.DataFrame:
     """Retorna, para cada produto, a data da última venda registrada e a quantidade vendida naquele dia."""
     try:
@@ -6656,7 +6856,7 @@ def get_ultima_venda_por_produto() -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_periodo_vendas() -> int:
     """Retorna o número de dias distintos com vendas registradas."""
     try:
@@ -6670,7 +6870,7 @@ def get_periodo_vendas() -> int:
     return 1
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_vendas_por_dia() -> pd.DataFrame:
     """Retorna total de unidades vendidas por dia (para o gráfico de histórico).
 
@@ -6678,13 +6878,14 @@ def get_vendas_por_dia() -> pd.DataFrame:
     antes de somar por dia.
     """
     try:
-        rows = get_db().execute("""
+        rows = get_db().execute(f"""
             SELECT DATE(data_upload) AS dia,
                    codigo,
                    produto,
                    grupo,
                    SUM(qtd_vendida) AS qtd_vendida
               FROM vendas_historico
+             WHERE data_upload >= date('now', '-{_JANELA_VENDAS_DIAS} days')
              GROUP BY DATE(data_upload), codigo
              ORDER BY DATE(data_upload) ASC
         """).fetchall()
@@ -6716,7 +6917,7 @@ def get_vendas_por_dia() -> pd.DataFrame:
 _RE_LONA_DIM = re.compile(r'(\d+(?:[.,]\d+)?)\s*[xX]\s*(\d+(?:[.,]\d+)?)')
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
     """Retorna os top N produtos mais vendidos no período acumulado.
 
@@ -6759,7 +6960,7 @@ def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
 # INFOGRÁFICOS — funções de dados
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_datas_vendas_range() -> tuple:
     """Retorna (data_min, data_max) das vendas registradas."""
     try:
@@ -6786,7 +6987,7 @@ def get_grupos_vendas() -> list:
         return []
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_vendas_heatmap(data_inicio: str, data_fim: str) -> pd.DataFrame:
     """Retorna vendas por produto e dia da semana para o heatmap."""
     try:
@@ -6811,7 +7012,7 @@ def get_vendas_heatmap(data_inicio: str, data_fim: str) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_mais_menos_movimentados(data_inicio: str, data_fim: str, grupo: str = "Todos") -> pd.DataFrame:
     """Retorna produtos ordenados por volume de vendas no período (excluindo zerados)."""
     try:
@@ -6844,7 +7045,7 @@ def get_mais_menos_movimentados(data_inicio: str, data_fim: str, grupo: str = "T
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_produtos_sem_principio_ativo() -> list:
     """Retorna defensivos do estoque que não têm princípio ativo resolvível,
     usando o mesmo matching fuzzy multi-etapa da aba P. Ativos."""
@@ -6883,12 +7084,12 @@ def get_produtos_sem_principio_ativo() -> list:
         return []
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_produtos_parados(dias_min: int) -> pd.DataFrame:
     """Retorna produtos sem movimentação de vendas há mais de X dias."""
     try:
         hoje = datetime.now(tz=_BRT).date()
-        rows = get_db().execute("""
+        rows = get_db().execute(f"""
             SELECT
                 e.codigo,
                 e.produto,
@@ -6897,6 +7098,7 @@ def get_produtos_parados(dias_min: int) -> pd.DataFrame:
                 COALESCE(MAX(v.data_upload), '') AS ultima_venda
             FROM estoque_mestre e
             LEFT JOIN vendas_historico v ON v.codigo = e.codigo
+              AND v.data_upload >= date('now', '-{_JANELA_VENDAS_DIAS} days')
             WHERE e.qtd_sistema > 0
             GROUP BY e.codigo
         """).fetchall()
@@ -6974,7 +7176,7 @@ def _nome_validade_key(nome: str) -> str:
     return _pnorm(m.group(1) if m else s)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_cobertura_estoque() -> pd.DataFrame:
     """Classifica cada produto do estoque por cobertura (meses de estoque vs. venda).
 
@@ -7065,7 +7267,7 @@ def get_cobertura_estoque() -> pd.DataFrame:
     return df[cols].reset_index(drop=True)
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_esquecidos_com_validade(dias_min: int) -> pd.DataFrame:
     """Herbicidas, fungicidas, inseticidas, inoculantes e fertilizantes sem movimentação há ≥ dias_min, com validade."""
     _GRUPOS_ALVO = ("HERBICID", "FUNGICID", "INSETICID", "INOCULAN", "BIOLOGIC", "ADUBO", "FERTILIZ", "MATURAD")
@@ -7174,7 +7376,7 @@ def get_esquecidos_com_validade(dias_min: int) -> pd.DataFrame:
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=1800)
 def get_giro_ruptura_grupos(data_inicio: str, data_fim: str) -> pd.DataFrame:
     """Retorna taxa de giro e % de ruptura por grupo de produtos."""
     try:
@@ -8237,11 +8439,17 @@ else:
     _whtml = ""
 
 # ── Alertas automáticos (computados aqui, renderizados abaixo da busca) ──────
-if "alertas_cache" not in st.session_state or st.session_state.get("alertas_cache_date") != datetime.now(tz=_BRT).date().isoformat():
-    st.session_state["alertas_cache"] = checar_e_registrar_alertas()
-    st.session_state["alertas_cache_date"] = datetime.now(tz=_BRT).date().isoformat()
+if (
+    "alertas_reg_date" not in st.session_state
+    or "alertas_cache" not in st.session_state  # pop() nos uploads força re-registro
+    or st.session_state.get("alertas_reg_date") != datetime.now(tz=_BRT).date().isoformat()
+):
+    _registrar_alertas_no_banco()
+    _ler_alertas_para_exibir.clear()  # invalida cache de leitura após escrita
+    st.session_state["alertas_reg_date"] = datetime.now(tz=_BRT).date().isoformat()
+    st.session_state["alertas_cache"] = True  # sentinela para que os pop() nos uploads continuem funcionando
 
-_alertas = st.session_state["alertas_cache"]
+_alertas = _ler_alertas_para_exibir()
 _al_val    = _alertas.get("validade_30d", [])
 _al_pend   = _alertas.get("pendencia_5d", [])
 _al_reconc = _alertas.get("reconciliacao_gv", [])
