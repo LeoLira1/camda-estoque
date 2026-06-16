@@ -8525,7 +8525,10 @@ if has_mestre:
     n_pendentes = len(pendentes_pa)
     label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
-    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico"])
+    _n_entradas_pending = len(_al_aumento)
+    label_entradas = f"📥 Entradas  🟢 {_n_entradas_pending}" if _n_entradas_pending > 0 else "📥 Entradas"
+
+    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_entradas = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", label_entradas])
 
     with t0:
         # ── Dados ──────────────────────────────────────────────────────────
@@ -11870,6 +11873,209 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
     with t_ciclico:
         _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name,
                             get_divergencias=get_divergencias, get_historico_divergencias=get_historico_divergencias)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB ENTRADAS — Histórico de produtos que entraram no estoque
+    # ══════════════════════════════════════════════════════════════════════════
+    with t_entradas:
+        st.markdown("""
+        <style>
+        .ent-kpi-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+        .ent-kpi{flex:1;min-width:90px;background:linear-gradient(135deg,#111827,#1a2332);
+                 border:1px solid #1e293b;border-radius:10px;padding:8px 10px;text-align:center;}
+        .ent-kpi-v{font-family:'JetBrains Mono',monospace;font-size:1.15rem;font-weight:700;color:#22c55e;}
+        .ent-kpi-v.amber{color:#ffa502;}
+        .ent-kpi-l{font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+        .ent-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
+                     color:#64748b;margin:14px 0 5px;padding:0 2px;border-bottom:1px solid #1e293b;padding-bottom:4px;}
+        .ent-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
+                 border-radius:8px;padding:7px 10px;margin-bottom:3px;
+                 display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+        .ent-prod{font-weight:600;font-size:0.83rem;color:#e0e6ed;flex:1;min-width:160px;}
+        .ent-cod{font-family:'JetBrains Mono',monospace;font-size:0.70rem;color:#3b82f6;min-width:75px;}
+        .ent-delta{font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;
+                   color:#22c55e;min-width:55px;text-align:right;}
+        .ent-qty{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#94a3b8;min-width:100px;text-align:right;}
+        .ent-date{font-size:0.67rem;color:#64748b;min-width:88px;text-align:right;}
+        .ent-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;}
+        .ent-pend{background:rgba(255,165,2,.12);color:#ffa502;border:1px solid rgba(255,165,2,.3);}
+        .ent-verif{background:rgba(0,214,143,.10);color:#00d68f;border:1px solid rgba(0,214,143,.25);}
+        .ent-manual{background:rgba(59,130,246,.10);color:#60a5fa;border:1px solid rgba(59,130,246,.25);}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown(
+            '<div style="font-size:1.05rem;font-weight:700;color:#e0e6ed;margin-bottom:10px;">'
+            '📥 Histórico de Entradas no Estoque</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Filtros ──────────────────────────────────────────────────────────
+        _ent_c1, _ent_c2 = st.columns([3, 1])
+        with _ent_c1:
+            _ent_search = st.text_input(
+                "Buscar produto", key="ent_search",
+                placeholder="Nome ou código…", label_visibility="collapsed",
+            )
+        with _ent_c2:
+            _ent_periodo = st.selectbox(
+                "Período", ["Hoje", "7 dias", "30 dias", "90 dias", "Tudo"],
+                key="ent_periodo", label_visibility="collapsed",
+            )
+
+        _hoje_ent = datetime.now(tz=_BRT).date()
+        _dias_map = {"Hoje": 0, "7 dias": 7, "30 dias": 30, "90 dias": 90, "Tudo": 3650}
+        _dias_ent = _dias_map[_ent_periodo]
+        _corte_ent = (_hoje_ent - timedelta(days=_dias_ent)).isoformat()
+
+        # ── Carregar variacao_estoque (apenas delta > 0 = entradas) ──────────
+        try:
+            _sql_var = (
+                "SELECT codigo, produto, qtd_anterior, qtd_atual, delta, detectado_em, status "
+                "FROM variacao_estoque WHERE delta > 0"
+            )
+            if _dias_ent < 3650:
+                _sql_var += f" AND detectado_em >= '{_corte_ent}'"
+            _sql_var += " ORDER BY detectado_em DESC LIMIT 400"
+            _rows_var = get_db().execute(_sql_var).fetchall()
+            _df_var = pd.DataFrame(
+                _rows_var,
+                columns=["codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"],
+            )
+        except Exception:
+            _df_var = pd.DataFrame(columns=["codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"])
+
+        # ── Carregar lancamentos_manuais ─────────────────────────────────────
+        try:
+            _sql_lanc = (
+                "SELECT codigo, produto, categoria, tipo, quantidade, motivo, registrado_em "
+                "FROM lancamentos_manuais"
+            )
+            if _dias_ent < 3650:
+                _sql_lanc += f" WHERE registrado_em >= '{_corte_ent}'"
+            _sql_lanc += " ORDER BY registrado_em DESC LIMIT 400"
+            _rows_lanc = get_db().execute(_sql_lanc).fetchall()
+            _df_lanc = pd.DataFrame(
+                _rows_lanc,
+                columns=["codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"],
+            )
+        except Exception:
+            _df_lanc = pd.DataFrame(columns=["codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"])
+
+        # ── Filtro de busca ──────────────────────────────────────────────────
+        if _ent_search.strip():
+            _s = _ent_search.strip().lower()
+            if not _df_var.empty:
+                _mask_var = (
+                    _df_var["produto"].str.lower().str.contains(_s, na=False) |
+                    _df_var["codigo"].str.lower().str.contains(_s, na=False)
+                )
+                _df_var = _df_var[_mask_var]
+            if not _df_lanc.empty:
+                _mask_lanc = (
+                    _df_lanc["produto"].str.lower().str.contains(_s, na=False) |
+                    _df_lanc["codigo"].str.lower().str.contains(_s, na=False)
+                )
+                _df_lanc = _df_lanc[_mask_lanc]
+
+        # ── KPIs ─────────────────────────────────────────────────────────────
+        _hoje_str = _hoje_ent.isoformat()
+        _7d_str   = (_hoje_ent - timedelta(days=7)).isoformat()
+        _30d_str  = (_hoje_ent - timedelta(days=30)).isoformat()
+
+        def _ent_count(df, col, desde):
+            if df.empty:
+                return 0
+            return int((df[col].str[:10] >= desde).sum())
+
+        try:
+            _kpi_var_hoje  = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_hoje_str,)).fetchone()[0]
+            _kpi_var_7d    = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_7d_str,)).fetchone()[0]
+            _kpi_var_30d   = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_30d_str,)).fetchone()[0]
+            _kpi_pend      = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND status='pendente'").fetchone()[0]
+            _kpi_lanc_30d  = get_db().execute("SELECT COUNT(*) FROM lancamentos_manuais WHERE registrado_em>=?", (_30d_str,)).fetchone()[0]
+        except Exception:
+            _kpi_var_hoje = _kpi_var_7d = _kpi_var_30d = _kpi_pend = _kpi_lanc_30d = 0
+
+        _pend_cls = "amber" if _kpi_pend > 0 else ""
+        st.markdown(
+            f'<div class="ent-kpi-row">'
+            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_hoje}</div>'
+            f'<div class="ent-kpi-l">Entradas hoje</div></div>'
+            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_7d}</div>'
+            f'<div class="ent-kpi-l">Últimos 7 dias</div></div>'
+            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_30d}</div>'
+            f'<div class="ent-kpi-l">Últimos 30 dias</div></div>'
+            f'<div class="ent-kpi"><div class="ent-kpi-v {_pend_cls}">{_kpi_pend}</div>'
+            f'<div class="ent-kpi-l">Pendentes verificação</div></div>'
+            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_lanc_30d}</div>'
+            f'<div class="ent-kpi-l">Lançamentos (30d)</div></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Botão marcar pendentes como verificados ───────────────────────────
+        if _kpi_pend > 0:
+            if st.button(f"✅ Marcar {_kpi_pend} entrada(s) pendente(s) como verificadas", key="ent_limpar_pend"):
+                n_ok = limpar_variacoes_pendentes()
+                st.success(f"✅ {n_ok} entrada(s) marcada(s) como verificada(s).")
+                st.rerun()
+
+        # ── Seção: Variações de Estoque (entradas automáticas) ────────────────
+        st.markdown('<div class="ent-section">📊 Variações Detectadas (Upload de Estoque)</div>', unsafe_allow_html=True)
+
+        if _df_var.empty:
+            st.markdown(
+                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhuma entrada detectada no período.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _html_var = []
+            for _, _rv in _df_var.iterrows():
+                _nome_v = short_name(_rv["produto"], 55)
+                _data_v = str(_rv["detectado_em"])[:16].replace("T", " ")
+                _badge_v = (
+                    '<span class="ent-badge ent-pend">pendente</span>'
+                    if _rv["status"] == "pendente"
+                    else '<span class="ent-badge ent-verif">verificado</span>'
+                )
+                _qty_info = f'{int(_rv["qtd_anterior"])} → {int(_rv["qtd_atual"])}'
+                _html_var.append(
+                    f'<div class="ent-row">'
+                    f'<span class="ent-cod">{_rv["codigo"]}</span>'
+                    f'<span class="ent-prod">{_nome_v}</span>'
+                    f'<span class="ent-qty">{_qty_info}</span>'
+                    f'<span class="ent-delta">+{int(_rv["delta"])}</span>'
+                    f'<span class="ent-date">{_data_v}</span>'
+                    f'{_badge_v}'
+                    f'</div>'
+                )
+            st.markdown("".join(_html_var), unsafe_allow_html=True)
+
+        # ── Seção: Lançamentos Manuais ────────────────────────────────────────
+        st.markdown('<div class="ent-section">📋 Lançamentos Manuais</div>', unsafe_allow_html=True)
+
+        if _df_lanc.empty:
+            st.markdown(
+                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhum lançamento no período.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _html_lanc = []
+            for _, _rl in _df_lanc.iterrows():
+                _nome_l = short_name(_rl["produto"], 55)
+                _data_l = str(_rl["registrado_em"])[:16].replace("T", " ")
+                _motivo_l = f' — {_rl["motivo"]}' if _rl.get("motivo", "").strip() else ""
+                _html_lanc.append(
+                    f'<div class="ent-row">'
+                    f'<span class="ent-cod">{_rl["codigo"]}</span>'
+                    f'<span class="ent-prod">{_nome_l}{_motivo_l}</span>'
+                    f'<span class="ent-badge ent-manual">{_rl["tipo"]}</span>'
+                    f'<span class="ent-delta">+{int(_rl["quantidade"])}</span>'
+                    f'<span class="ent-date">{_data_l}</span>'
+                    f'</div>'
+                )
+            st.markdown("".join(_html_lanc), unsafe_allow_html=True)
 
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
