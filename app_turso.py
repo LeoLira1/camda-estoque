@@ -12032,7 +12032,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         else:
             _html_var = []
             for _, _rv in _df_var.iterrows():
-                _nome_v = short_name(_rv["produto"], 55)
+                _nome_v = short_name(_rv["produto"])
                 _data_v = str(_rv["detectado_em"])[:16].replace("T", " ")
                 _badge_v = (
                     '<span class="ent-badge ent-pend">pendente</span>'
@@ -12063,7 +12063,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         else:
             _html_lanc = []
             for _, _rl in _df_lanc.iterrows():
-                _nome_l = short_name(_rl["produto"], 55)
+                _nome_l = short_name(_rl["produto"])
                 _data_l = str(_rl["registrado_em"])[:16].replace("T", " ")
                 _motivo_l = f' — {_rl["motivo"]}' if _rl.get("motivo", "").strip() else ""
                 _html_lanc.append(
