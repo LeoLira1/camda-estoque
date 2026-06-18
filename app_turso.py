@@ -6416,6 +6416,11 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
         get_produtos_parados.clear()
         get_esquecidos_com_validade.clear()
         get_giro_ruptura_grupos.clear()
+        # CHECK 2 "Possível faturamento" depende de vendas_historico (data_upload
+        # mais recente). Sem invalidar estes caches, o alerta usaria o resultado
+        # antigo (ttl 1800s) e não dispararia após o upload da planilha de vendas.
+        checar_reconciliacao_gv.clear()
+        get_resumo_reconciliacao_gv.clear()
     except Exception:
         pass
 
