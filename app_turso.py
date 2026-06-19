@@ -6725,6 +6725,92 @@ def checar_reconciliacao_gv() -> list:
         return []
 
 
+def diagnosticar_possivel_faturamento() -> dict:
+    """Espelha o CHECK 2 de checar_reconciliacao_gv, mas em vez de filtrar
+    silenciosamente registra POR QUE cada cooperado qualifica ou não.
+    Usado no painel de Conferência para depurar o alerta 'Possível faturamento'.
+    """
+    out = {"data_ref_vend": None, "n_vend": 0, "n_div_window": 0,
+           "cooperados": [], "erro": None}
+    try:
+        conn = get_db()
+        vend_ref_row = conn.execute("SELECT MAX(data_upload) FROM vendas_historico").fetchone()
+        data_ref_vend = vend_ref_row[0] if vend_ref_row and vend_ref_row[0] else None
+        out["data_ref_vend"] = data_ref_vend
+        if not data_ref_vend:
+            return out
+
+        vend_qtd: dict = {}
+        for r in conn.execute(
+            "SELECT codigo, qtd_vendida FROM vendas_historico WHERE data_upload = ?",
+            (data_ref_vend,),
+        ).fetchall():
+            _ck = _codigo_key(r[0])
+            if _ck:
+                vend_qtd[_ck] = int(r[1])
+        out["n_vend"] = len(vend_qtd)
+
+        cutoff = (datetime.now(tz=_BRT) - timedelta(days=_POSSIVEL_FAT_MAX_DIAS_DIV)).date().isoformat()
+        div_rows = conn.execute(
+            "SELECT cooperado, codigo, produto, delta, status, criado_em FROM divergencias"
+            " WHERE cooperado != '' AND criado_em >= ?",
+            (cutoff,),
+        ).fetchall()
+        out["n_div_window"] = len(div_rows)
+
+        por_coop: dict = {}
+        for coop, cod, prod, delta, _st, _criado in div_rows:
+            coop = (coop or "").strip()
+            if not coop or coop.lower() in _NOMES_INVALIDOS_COOP:
+                continue
+            por_coop.setdefault(coop, []).append({
+                "produto": prod, "codigo": _codigo_key(cod), "delta": int(delta or 0),
+            })
+
+        for coop, items in por_coop.items():
+            detalhes, n_eleg, n_match = [], 0, 0
+            for it in items:
+                cod, ad = it["codigo"], abs(it["delta"])
+                in_vend = cod in vend_qtd
+                qv = vend_qtd.get(cod)
+                eleg = ad != 0 and in_vend
+                match = False
+                if eleg:
+                    n_eleg += 1
+                    if abs(qv - ad) / ad <= _QTD_MATCH_TOLERANCIA:
+                        match = True
+                        n_match += 1
+                detalhes.append({
+                    "produto": it["produto"], "codigo": cod, "delta": it["delta"],
+                    "qtd_vend": qv if in_vend else None,
+                    "elegivel": eleg, "match": match,
+                })
+
+            if n_eleg < _POSSIVEL_FAT_MIN_ELEGIVEIS:
+                motivo = f"produtos elegíveis insuficientes ({n_eleg} < {_POSSIVEL_FAT_MIN_ELEGIVEIS})"
+                ok = False
+            elif n_match == 0:
+                motivo = "nenhum produto com qtd vendida ≈ divergência"
+                ok = False
+            elif n_match / n_eleg < _POSSIVEL_FAT_MIN_MATCH_PCT:
+                motivo = (f"% de match abaixo do mínimo "
+                          f"({n_match}/{n_eleg} = {n_match / n_eleg:.0%} < {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%})")
+                ok = False
+            else:
+                motivo = "✅ qualifica"
+                ok = True
+
+            out["cooperados"].append({
+                "cooperado": coop, "n_itens": len(items),
+                "n_elegiveis": n_eleg, "n_matches": n_match,
+                "qualifica": ok, "motivo": motivo, "detalhes": detalhes,
+            })
+        return out
+    except Exception as e:
+        out["erro"] = str(e)
+        return out
+
+
 @st.cache_data(ttl=1800)
 def get_resumo_reconciliacao_gv() -> pd.DataFrame:
     """
@@ -9666,6 +9752,49 @@ new Chart(document.getElementById('coop-chart'),{
             )
         else:
             st.caption("Nenhum possível faturamento detectado no último lançamento.")
+
+        # ── Diagnóstico: por que não disparou? ────────────────────────────────
+        with st.expander("🔎 Diagnóstico — por que não disparou?", expanded=False):
+            _diag = diagnosticar_possivel_faturamento()
+            if _diag.get("erro"):
+                st.error(f"Erro no diagnóstico: {_diag['erro']}")
+            st.caption(
+                f"Último lançamento de vendas: **{_diag.get('data_ref_vend') or '—'}** · "
+                f"{_diag.get('n_vend', 0)} código(s) vendidos · "
+                f"{_diag.get('n_div_window', 0)} divergência(s) com cooperado nos últimos "
+                f"{_POSSIVEL_FAT_MAX_DIAS_DIV} dias."
+            )
+            st.caption(
+                f"Regra atual: ≥ {_POSSIVEL_FAT_MIN_ELEGIVEIS} produtos elegíveis e "
+                f"≥ {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%} deles com qtd vendida dentro de "
+                f"±{_QTD_MATCH_TOLERANCIA:.0%} do delta da divergência."
+            )
+            _coops = _diag.get("cooperados", [])
+            if not _coops:
+                st.info(
+                    "Nenhum cooperado com divergência aberta (com nome de cooperado) "
+                    "nos últimos dias. Verifique se a divergência foi registrada com o "
+                    "cooperado e se o lançamento de vendas é o mais recente."
+                )
+            for _c in _coops:
+                _icon = "✅" if _c["qualifica"] else "❌"
+                st.markdown(
+                    f"{_icon} **{_c['cooperado']}** — {_c['motivo']} "
+                    f"· elegíveis: {_c['n_elegiveis']}, match: {_c['n_matches']}, "
+                    f"itens: {_c['n_itens']}"
+                )
+                _rows_diag = []
+                for _d in _c["detalhes"]:
+                    _rows_diag.append({
+                        "Produto": (_d["produto"] or "")[:35],
+                        "Código": _d["codigo"],
+                        "Delta": _d["delta"],
+                        "Qtd vendida": "sem venda" if _d["qtd_vend"] is None else _d["qtd_vend"],
+                        "Elegível": "sim" if _d["elegivel"] else "não",
+                        "Match": "sim" if _d["match"] else "não",
+                    })
+                if _rows_diag:
+                    st.dataframe(pd.DataFrame(_rows_diag), hide_index=True, use_container_width=True)
 
         _data_gv = get_data_ref_faturamento_gv()
         with st.expander(
