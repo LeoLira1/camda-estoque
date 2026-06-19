@@ -6674,28 +6674,42 @@ def checar_reconciliacao_gv() -> list:
                     })
 
                 for coop, div_items in todos_por_coop.items():
-                    matches_qtd = []
+                    # A tabela divergencias pode ter várias linhas para o mesmo
+                    # produto (contagens parciais), mas a qtd vendida é única por
+                    # código. Por isso somamos os deltas por código antes de
+                    # comparar com a quantidade vendida desse produto.
+                    delta_por_cod: dict = {}
+                    prod_por_cod: dict = {}
                     for item in div_items:
                         cod = item["codigo"]
-                        abs_delta = abs(item["delta"])
+                        if not cod:
+                            continue
+                        delta_por_cod[cod] = delta_por_cod.get(cod, 0) + item["delta"]
+                        prod_por_cod.setdefault(cod, item["produto"])
+
+                    matches_qtd = []
+                    n_elegiveis = 0
+                    for cod, delta_tot in delta_por_cod.items():
+                        abs_delta = abs(delta_tot)
                         if abs_delta == 0 or cod not in vend_qtd:
                             continue
+                        n_elegiveis += 1
                         qtd_vend = vend_qtd[cod]
-                        # Verifica se qtd_vendida é similar ao delta da divergência
-                        diff_pct = abs(qtd_vend - abs_delta) / abs_delta
-                        if diff_pct <= _QTD_MATCH_TOLERANCIA:
-                            matches_qtd.append({**item, "qtd_vendida": qtd_vend})
+                        # Verifica se qtd_vendida é similar ao delta agregado
+                        if abs(qtd_vend - abs_delta) / abs_delta <= _QTD_MATCH_TOLERANCIA:
+                            matches_qtd.append({
+                                "produto": prod_por_cod[cod],
+                                "codigo": cod,
+                                "delta": delta_tot,
+                                "qtd_vendida": qtd_vend,
+                            })
 
                     if not matches_qtd:
                         continue
 
-                    # Verifica se ao menos _POSSIVEL_FAT_MIN_MATCH_PCT dos produtos
-                    # elegíveis (com delta > 0 e presentes nas vendas) têm match,
-                    # e se há pelo menos _POSSIVEL_FAT_MIN_ELEGIVEIS produtos elegíveis
-                    n_elegiveis = sum(
-                        1 for item in div_items
-                        if abs(item["delta"]) != 0 and item["codigo"] in vend_qtd
-                    )
+                    # Exige pelo menos _POSSIVEL_FAT_MIN_ELEGIVEIS produtos
+                    # elegíveis (delta agregado != 0 e presentes nas vendas) e
+                    # que ao menos _POSSIVEL_FAT_MIN_MATCH_PCT deles tenham match.
                     if (
                         n_elegiveis < _POSSIVEL_FAT_MIN_ELEGIVEIS
                         or len(matches_qtd) / n_elegiveis < _POSSIVEL_FAT_MIN_MATCH_PCT
@@ -6768,9 +6782,19 @@ def diagnosticar_possivel_faturamento() -> dict:
             })
 
         for coop, items in por_coop.items():
-            detalhes, n_eleg, n_match = [], 0, 0
+            # Agrega deltas por código (mesma lógica do CHECK 2 real).
+            delta_por_cod: dict = {}
+            prod_por_cod: dict = {}
             for it in items:
-                cod, ad = it["codigo"], abs(it["delta"])
+                cod = it["codigo"]
+                if not cod:
+                    continue
+                delta_por_cod[cod] = delta_por_cod.get(cod, 0) + it["delta"]
+                prod_por_cod.setdefault(cod, it["produto"])
+
+            detalhes, n_eleg, n_match = [], 0, 0
+            for cod, delta_tot in delta_por_cod.items():
+                ad = abs(delta_tot)
                 in_vend = cod in vend_qtd
                 qv = vend_qtd.get(cod)
                 eleg = ad != 0 and in_vend
@@ -6781,7 +6805,7 @@ def diagnosticar_possivel_faturamento() -> dict:
                         match = True
                         n_match += 1
                 detalhes.append({
-                    "produto": it["produto"], "codigo": cod, "delta": it["delta"],
+                    "produto": prod_por_cod[cod], "codigo": cod, "delta": delta_tot,
                     "qtd_vend": qv if in_vend else None,
                     "elegivel": eleg, "match": match,
                 })
