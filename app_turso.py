@@ -6606,11 +6606,11 @@ def checar_reconciliacao_gv() -> list:
 
                 fat_by_coop: dict = {}
                 for coop, cod, qtd in fat_rows:
-                    fat_by_coop.setdefault(coop.strip(), {})[cod.strip()] = qtd
+                    fat_by_coop.setdefault(coop.strip(), {})[_codigo_key(cod)] = qtd
 
                 vend_by_nota: dict = {}
                 for cod, qtd, c_nota in vend_rows:
-                    vend_by_nota.setdefault(c_nota.strip(), {})[cod.strip()] = int(qtd)
+                    vend_by_nota.setdefault(c_nota.strip(), {})[_codigo_key(cod)] = int(qtd)
 
                 for coop, fat_dict in fat_by_coop.items():
                     qtd_fat = sum(fat_dict.values())
@@ -6638,14 +6638,16 @@ def checar_reconciliacao_gv() -> list:
 
         if data_ref_vend:
             # codigo → qtd_vendida no lançamento mais recente
-            vend_qtd: dict = {
-                r[0].strip(): int(r[1])
-                for r in conn.execute(
-                    "SELECT codigo, qtd_vendida FROM vendas_historico WHERE data_upload = ?",
-                    (data_ref_vend,),
-                ).fetchall()
-                if r[0]
-            }
+            # Usa _codigo_key para casar com divergencias mesmo que as tabelas
+            # gravem o código em formatos diferentes (ex.: "12345" vs "12345.0").
+            vend_qtd: dict = {}
+            for r in conn.execute(
+                "SELECT codigo, qtd_vendida FROM vendas_historico WHERE data_upload = ?",
+                (data_ref_vend,),
+            ).fetchall():
+                _ck = _codigo_key(r[0])
+                if _ck:
+                    vend_qtd[_ck] = int(r[1])
 
             if vend_qtd:
                 # Apenas divergências criadas nos últimos _POSSIVEL_FAT_MAX_DIAS_DIV dias
@@ -6666,7 +6668,7 @@ def checar_reconciliacao_gv() -> list:
                         continue
                     todos_por_coop.setdefault(coop, []).append({
                         "produto": prod,
-                        "codigo": (cod or "").strip(),
+                        "codigo": _codigo_key(cod),
                         "delta": int(delta or 0),
                         "status": st,
                     })
