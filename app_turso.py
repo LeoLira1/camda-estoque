@@ -9423,15 +9423,21 @@ new Chart(document.getElementById('coop-chart'),{
             import streamlit.components.v1 as _stcv1_divbar
             _stcv1_divbar.html(_html_divbar, height=_chart_h + 140)
 
-            # --- Filtro / Agrupamento por cooperado ---
+            # --- Filtro / Agrupamento por cooperado e produto ---
             coop_unicos = sorted([
                 c for c in df_div["cooperado"].dropna().astype(str).unique()
                 if c.strip()
             ])
-            _c1, _c2 = st.columns([3, 1])
+            prod_unicos = sorted([
+                p for p in df_div["produto"].dropna().astype(str).unique()
+                if p.strip()
+            ])
+            _c1, _c2, _c3 = st.columns([2, 2, 1])
             with _c1:
                 _filtro_obs = st.selectbox("Cooperado", ["Todos"] + coop_unicos, key="div_filtro_obs")
             with _c2:
+                _filtro_prod = st.selectbox("Produto", ["Todos"] + prod_unicos, key="div_filtro_prod")
+            with _c3:
                 _agrupar = st.checkbox("Agrupar", value=True, key="div_agrupar")
             # Injeta JS local para suprimir popup de gerenciador de senhas no selectbox
             import streamlit.components.v1 as _stc_div
@@ -9459,6 +9465,8 @@ new Chart(document.getElementById('coop-chart'),{
 
             if _filtro_obs != "Todos":
                 df_div = df_div[df_div["cooperado"].fillna("").astype(str).str.strip() == _filtro_obs]
+            if _filtro_prod != "Todos":
+                df_div = df_div[df_div["produto"].fillna("").astype(str).str.strip() == _filtro_prod]
 
             if _agrupar:
                 df_div = df_div.copy()
