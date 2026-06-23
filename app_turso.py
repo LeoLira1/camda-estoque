@@ -9,6 +9,7 @@ import random
 import base64
 import io
 import unicodedata
+import calendar as _cal_mod
 from difflib import get_close_matches as _gcm
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, date, timezone
@@ -538,6 +539,168 @@ if not st.session_state.authenticated:
             )
 
     st.stop()
+
+
+# ── Calendar Popup ────────────────────────────────────────────────────────────
+if "show_cal_popup" not in st.session_state:
+    st.session_state.show_cal_popup = True
+if "cal_popup_year" not in st.session_state:
+    st.session_state.cal_popup_year = datetime.now(tz=_BRT).year
+if "cal_popup_month" not in st.session_state:
+    st.session_state.cal_popup_month = datetime.now(tz=_BRT).month
+
+_MESES_PT_CAL = [
+    "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
+    "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
+]
+_DIAS_ABBR_CAL = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]
+
+@st.dialog(" ", width="small")
+def _show_calendar_popup():
+    _today = datetime.now(tz=_BRT).date()
+    _year  = st.session_state.cal_popup_year
+    _month = st.session_state.cal_popup_month
+
+    _cal_weeks = _cal_mod.monthcalendar(_year, _month)
+
+    _headers_html = "".join(
+        f'<div class="cal-hdr">{d}</div>' for d in _DIAS_ABBR_CAL
+    )
+    _cells_html = ""
+    for _week in _cal_weeks:
+        for _d in _week:
+            if _d == 0:
+                _cells_html += '<div class="cal-cell"></div>'
+            else:
+                _dt = date(_year, _month, _d)
+                if _year == _today.year and _month == _today.month and _d == _today.day:
+                    _cls = "cal-today"
+                elif _dt < _today:
+                    _cls = "cal-past"
+                else:
+                    _cls = "cal-future"
+                _cells_html += (
+                    f'<div class="cal-cell">'
+                    f'<div class="{_cls}">{_d}</div>'
+                    f'</div>'
+                )
+
+    _big_day = _today.day if (_year == _today.year and _month == _today.month) else ""
+    _dow_label = _DIAS_ABBR_CAL[_today.weekday()]
+
+    st.markdown(f"""
+<style>
+.cal-wrap {{
+    font-family:'DM Sans','Outfit',sans-serif;
+    background:#f0ede8;
+    border-radius:20px;
+    padding:24px 24px 16px;
+    color:#1a1a1a;
+    user-select:none;
+}}
+.cal-big-day {{
+    font-size:5.5rem;
+    font-weight:900;
+    line-height:1;
+    color:#1a1a1a;
+    letter-spacing:-3px;
+}}
+.cal-month {{
+    font-size:1rem;
+    font-weight:700;
+    letter-spacing:.12em;
+    color:#1a1a1a;
+    text-transform:uppercase;
+    margin-top:4px;
+}}
+.cal-year-dow {{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    font-size:.85rem;
+    color:#999;
+    margin-top:2px;
+}}
+.cal-grid {{
+    display:grid;
+    grid-template-columns:repeat(7,1fr);
+    gap:5px;
+    margin-top:18px;
+}}
+.cal-hdr {{
+    text-align:center;
+    font-size:.62rem;
+    font-weight:600;
+    color:#bbb;
+    padding-bottom:4px;
+    letter-spacing:.04em;
+}}
+.cal-cell {{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    aspect-ratio:1;
+}}
+.cal-past,.cal-today,.cal-future {{
+    width:88%;
+    aspect-ratio:1;
+    border-radius:50%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:.72rem;
+    font-weight:500;
+}}
+.cal-past {{background:#1a1a1a;color:#fff;}}
+.cal-today {{background:#e85d04;color:#fff;font-weight:700;}}
+.cal-future {{background:transparent;border:1.5px solid #ddd;color:#ccc;}}
+.cal-tagline {{
+    text-align:center;
+    font-size:.6rem;
+    letter-spacing:.18em;
+    color:#bbb;
+    margin-top:16px;
+    text-transform:uppercase;
+}}
+</style>
+<div class="cal-wrap">
+  <div class="cal-big-day">{_big_day or _today.day}</div>
+  <div class="cal-month">{_MESES_PT_CAL[_month - 1]}</div>
+  <div class="cal-year-dow"><span>{_year}</span><span>{_dow_label}</span></div>
+  <div class="cal-grid">
+    {_headers_html}
+    {_cells_html}
+  </div>
+  <div class="cal-tagline">Menos, mas melhor</div>
+</div>
+""", unsafe_allow_html=True)
+
+    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+    _c1, _c2, _c_sp, _c3 = st.columns([1, 1, 4, 1])
+    with _c1:
+        if st.button("‹", key="cal_prev_btn", help="Mês anterior"):
+            _m, _y = _month - 1, _year
+            if _m < 1:
+                _m, _y = 12, _y - 1
+            st.session_state.cal_popup_month = _m
+            st.session_state.cal_popup_year  = _y
+            st.rerun()
+    with _c2:
+        if st.button("›", key="cal_next_btn", help="Próximo mês"):
+            _m, _y = _month + 1, _year
+            if _m > 12:
+                _m, _y = 1, _y + 1
+            st.session_state.cal_popup_month = _m
+            st.session_state.cal_popup_year  = _y
+            st.rerun()
+    with _c3:
+        if st.button("✕", key="cal_close_btn", help="Fechar"):
+            st.session_state.show_cal_popup = False
+            st.rerun()
+
+if st.session_state.show_cal_popup:
+    _show_calendar_popup()
 
 
 # ── CSS ──────────────────────────────────────────────────────────────────────
