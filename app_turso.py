@@ -542,27 +542,29 @@ if not st.session_state.authenticated:
 
 
 # ── Calendar Popup ────────────────────────────────────────────────────────────
+import streamlit.components.v1 as _stc_cal
+
 # Token único por sessão Python — garante que novo login exibe o popup novamente
 if "cal_session_token" not in st.session_state:
     st.session_state.cal_session_token = str(int(time.time() * 1000))
 
-_CAL_TODAY  = datetime.now(tz=_BRT).date()
-_CAL_TOKEN  = st.session_state.cal_session_token
-_CAL_MESES  = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho",
-               "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]
-_CAL_DIAS   = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]
+_CAL_TODAY = datetime.now(tz=_BRT).date()
+_CAL_TOKEN = st.session_state.cal_session_token
+_CAL_MESES = '["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"]'
+_CAL_DIAS  = '["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]'
 
-st.markdown(f"""
+# CSS + estrutura HTML do overlay (st.markdown permite <style> e <div>, mas bloqueia <script>)
+st.markdown("""
 <style>
-#camda-cal-overlay{{
+#camda-cal-overlay{
     display:none;
     position:fixed;top:0;left:0;width:100%;height:100%;
     z-index:99999;
     background:rgba(0,0,0,0.55);
     align-items:center;justify-content:center;
     backdrop-filter:blur(3px);
-}}
-#camda-cal-card{{
+}
+#camda-cal-card{
     font-family:'DM Sans','Outfit',sans-serif;
     background:#f0ede8;
     border-radius:24px;
@@ -572,33 +574,32 @@ st.markdown(f"""
     width:300px;
     box-shadow:0 24px 64px rgba(0,0,0,0.35);
     position:relative;
-}}
-#camda-cal-close{{
+}
+#camda-cal-close{
     position:absolute;top:14px;right:16px;
     background:none;border:none;
     font-size:1rem;color:#aaa;cursor:pointer;padding:4px 6px;
     border-radius:6px;transition:background .15s,color .15s;
-}}
-#camda-cal-close:hover{{background:rgba(0,0,0,0.08);color:#1a1a1a;}}
-#camda-cal-bigday{{font-size:5.5rem;font-weight:900;line-height:1;letter-spacing:-3px;}}
-#camda-cal-monthname{{font-size:1rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-top:4px;}}
-#camda-cal-yeardow{{display:flex;justify-content:space-between;font-size:.85rem;color:#999;margin-top:2px;}}
-.camda-cal-nav{{display:flex;gap:6px;margin-top:14px;}}
-.camda-cal-navbtn{{background:none;border:none;font-size:1.1rem;color:#888;cursor:pointer;
-    padding:2px 8px;border-radius:6px;transition:background .15s,color .15s;}}
-.camda-cal-navbtn:hover{{background:rgba(0,0,0,0.08);color:#1a1a1a;}}
-#camda-cal-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:14px;}}
-.c-hdr{{text-align:center;font-size:.6rem;font-weight:600;color:#bbb;padding-bottom:4px;letter-spacing:.04em;}}
-.c-cell{{display:flex;align-items:center;justify-content:center;aspect-ratio:1;}}
-.c-day{{width:88%;aspect-ratio:1;border-radius:50%;display:flex;align-items:center;
-    justify-content:center;font-size:.7rem;font-weight:500;}}
-.c-past{{background:#1a1a1a;color:#fff;}}
-.c-today{{background:#e85d04;color:#fff;font-weight:700;}}
-.c-future{{background:transparent;border:1.5px solid #ddd;color:#ccc;}}
-#camda-cal-tagline{{text-align:center;font-size:.58rem;letter-spacing:.18em;
-    color:#bbb;margin-top:16px;text-transform:uppercase;}}
+}
+#camda-cal-close:hover{background:rgba(0,0,0,0.08);color:#1a1a1a;}
+#camda-cal-bigday{font-size:5.5rem;font-weight:900;line-height:1;letter-spacing:-3px;}
+#camda-cal-monthname{font-size:1rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-top:4px;}
+#camda-cal-yeardow{display:flex;justify-content:space-between;font-size:.85rem;color:#999;margin-top:2px;}
+.camda-cal-nav{display:flex;gap:6px;margin-top:14px;}
+.camda-cal-navbtn{background:none;border:none;font-size:1.1rem;color:#888;cursor:pointer;
+    padding:2px 8px;border-radius:6px;transition:background .15s,color .15s;}
+.camda-cal-navbtn:hover{background:rgba(0,0,0,0.08);color:#1a1a1a;}
+#camda-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:14px;}
+.c-hdr{text-align:center;font-size:.6rem;font-weight:600;color:#bbb;padding-bottom:4px;letter-spacing:.04em;}
+.c-cell{display:flex;align-items:center;justify-content:center;aspect-ratio:1;}
+.c-day{width:88%;aspect-ratio:1;border-radius:50%;display:flex;align-items:center;
+    justify-content:center;font-size:.7rem;font-weight:500;}
+.c-past{background:#1a1a1a;color:#fff;}
+.c-today{background:#e85d04;color:#fff;font-weight:700;}
+.c-future{background:transparent;border:1.5px solid #ddd;color:#ccc;}
+#camda-cal-tagline{text-align:center;font-size:.58rem;letter-spacing:.18em;
+    color:#bbb;margin-top:16px;text-transform:uppercase;}
 </style>
-
 <div id="camda-cal-overlay">
   <div id="camda-cal-card">
     <button id="camda-cal-close" onclick="camdaCalClose()">✕</button>
@@ -613,69 +614,91 @@ st.markdown(f"""
     <div id="camda-cal-tagline">Menos, mas melhor</div>
   </div>
 </div>
+""", unsafe_allow_html=True)
 
+# JavaScript via components.v1.html (roda em iframe same-origin, acessa DOM pai por window.parent)
+_stc_cal.html(f"""
 <script>
 (function(){{
-  var MESES   = {str(_CAL_MESES).replace("'", '"')};
-  var DIAS    = {str(_CAL_DIAS).replace("'", '"')};
-  var TY = {_CAL_TODAY.year}, TM = {_CAL_TODAY.month}, TD = {_CAL_TODAY.day};
-  var SESSION = '{_CAL_TOKEN}';
-  var VY = TY, VM = TM;
+  try {{
+    var P   = window.parent;
+    var pDoc = P.document;
+    var pSS  = P.sessionStorage;
+    var SESSION = '{_CAL_TOKEN}';
+    var MESES   = {_CAL_MESES};
+    var DIAS    = {_CAL_DIAS};
+    var TY = {_CAL_TODAY.year}, TM = {_CAL_TODAY.month}, TD = {_CAL_TODAY.day};
 
-  function render(){{
-    var firstWd = new Date(VY, VM-1, 1).getDay();
-    var offset  = (firstWd + 6) % 7;
-    var dim     = new Date(VY, VM, 0).getDate();
-    var todayWd = new Date(TY, TM-1, TD).getDay();
-    var dowIdx  = todayWd === 0 ? 6 : todayWd - 1;
+    var dismissed   = pSS.getItem('camda_cal_dismissed') === '1';
+    var sameSession = pSS.getItem('camda_cal_session')   === SESSION;
 
-    document.getElementById('camda-cal-bigday').textContent =
-      (VY===TY && VM===TM) ? TD : '';
-    document.getElementById('camda-cal-monthname').textContent = MESES[VM-1];
-    document.getElementById('camda-cal-year').textContent = VY;
-    document.getElementById('camda-cal-dow').textContent  = DIAS[dowIdx];
+    var overlay = pDoc.getElementById('camda-cal-overlay');
+    if (!overlay) return;
 
-    var h = DIAS.map(function(d){{return '<div class="c-hdr">'+d+'</div>';}}).join('');
-    for(var i=0;i<offset;i++) h+='<div class="c-cell"></div>';
-    for(var d=1;d<=dim;d++){{
-      var cls='';
-      if(VY===TY && VM===TM){{
-        cls = d===TD?'c-today':d<TD?'c-past':'c-future';
-      }}else{{
-        var dt=new Date(VY,VM-1,d), today=new Date(TY,TM-1,TD);
-        cls = dt<today?'c-past':'c-future';
+    if (dismissed && sameSession) {{
+      overlay.style.display = 'none';
+      return;
+    }}
+
+    // Nova sessão de login — limpa estado anterior
+    if (!sameSession) {{
+      pSS.removeItem('camda_cal_dismissed');
+      pSS.setItem('camda_cal_session', SESSION);
+      pSS.setItem('camda_cal_vy', TY);
+      pSS.setItem('camda_cal_vm', TM);
+    }}
+
+    var VY = parseInt(pSS.getItem('camda_cal_vy') || TY);
+    var VM = parseInt(pSS.getItem('camda_cal_vm') || TM);
+
+    function render() {{
+      var firstWd = new Date(VY, VM-1, 1).getDay();
+      var offset  = (firstWd + 6) % 7;
+      var dim     = new Date(VY, VM, 0).getDate();
+      var todayWd = new Date(TY, TM-1, TD).getDay();
+      var dowIdx  = todayWd === 0 ? 6 : todayWd - 1;
+
+      pDoc.getElementById('camda-cal-bigday').textContent =
+        (VY===TY && VM===TM) ? TD : '';
+      pDoc.getElementById('camda-cal-monthname').textContent = MESES[VM-1];
+      pDoc.getElementById('camda-cal-year').textContent = VY;
+      pDoc.getElementById('camda-cal-dow').textContent  = DIAS[dowIdx];
+
+      var h = DIAS.map(function(d){{ return '<div class="c-hdr">'+d+'</div>'; }}).join('');
+      for (var i = 0; i < offset; i++) h += '<div class="c-cell"></div>';
+      for (var d = 1; d <= dim; d++) {{
+        var cls;
+        if (VY===TY && VM===TM) {{
+          cls = d===TD ? 'c-today' : d<TD ? 'c-past' : 'c-future';
+        }} else {{
+          cls = new Date(VY,VM-1,d) < new Date(TY,TM-1,TD) ? 'c-past' : 'c-future';
+        }}
+        h += '<div class="c-cell"><div class="c-day '+cls+'">'+d+'</div></div>';
       }}
-      h+='<div class="c-cell"><div class="c-day '+cls+'">'+d+'</div></div>';
+      pDoc.getElementById('camda-cal-grid').innerHTML = h;
     }}
-    document.getElementById('camda-cal-grid').innerHTML = h;
-  }}
 
-  window.camdaCalShift = function(delta){{
-    VM+=delta;
-    if(VM<1){{VM=12;VY--;}} if(VM>12){{VM=1;VY++;}}
+    P.camdaCalClose = function() {{
+      pSS.setItem('camda_cal_dismissed', '1');
+      pSS.setItem('camda_cal_session', SESSION);
+      overlay.style.display = 'none';
+    }};
+
+    P.camdaCalShift = function(delta) {{
+      VM += delta;
+      if (VM < 1)  {{ VM = 12; VY--; }}
+      if (VM > 12) {{ VM = 1;  VY++; }}
+      pSS.setItem('camda_cal_vy', VY);
+      pSS.setItem('camda_cal_vm', VM);
+      render();
+    }};
+
     render();
-  }};
-
-  window.camdaCalClose = function(){{
-    sessionStorage.setItem('camda_cal_dismissed','1');
-    sessionStorage.setItem('camda_cal_session', SESSION);
-    document.getElementById('camda-cal-overlay').style.display='none';
-  }};
-
-  var dismissed  = sessionStorage.getItem('camda_cal_dismissed')==='1';
-  var sameSession= sessionStorage.getItem('camda_cal_session')===SESSION;
-
-  if(!(dismissed && sameSession)){{
-    if(!sameSession){{
-      sessionStorage.removeItem('camda_cal_dismissed');
-      sessionStorage.setItem('camda_cal_session',SESSION);
-    }}
-    render();
-    document.getElementById('camda-cal-overlay').style.display='flex';
-  }}
+    overlay.style.display = 'flex';
+  }} catch(e) {{ console.warn('cal popup:', e); }}
 }})();
 </script>
-""", unsafe_allow_html=True)
+""", height=0)
 
 
 # ── CSS ──────────────────────────────────────────────────────────────────────
