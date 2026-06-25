@@ -12030,17 +12030,49 @@ new Chart(document.getElementById('coop-chart'),{
                     _resumo["total"] = _resumo["saldo"].apply(sum)
                     _resumo = _resumo.sort_values("descricao")
 
-                    # cabeçalho do parceiro
-                    st.markdown(
-                        f'<div style="margin:18px 0 6px;padding:8px 14px;'
-                        f'background:#1e293b;border-left:4px solid #3b82f6;border-radius:4px;">'
-                        f'<span style="color:#93c5fd;font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
-                        f'<span style="color:#64748b;font-size:0.73rem;margin-left:10px;">'
-                        f'{len(_resumo)} produto(s) · '
-                        f'Saldo total: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un.'
-                        f'</span></div>',
-                        unsafe_allow_html=True,
-                    )
+                    # gera imagem antes do cabeçalho para colocar botão no header
+                    import datetime as _dt
+                    _data_hoje = _dt.date.today().strftime("%d/%m/%Y")
+                    try:
+                        _png_bytes = gerar_imagem_resumo_matr(_parceiro, _resumo, _data_hoje)
+                        _nome_arquivo = (
+                            "resumo_" + _parceiro[:30].lower()
+                            .replace(" ", "_")
+                            .replace("/", "-") + ".png"
+                        )
+                        _img_ok = True
+                    except Exception as _e:
+                        _img_ok = False
+                        _img_err = _e
+
+                    # cabeçalho do parceiro com botão de download à direita
+                    _col_header, _col_btn = st.columns([9, 1])
+                    with _col_header:
+                        st.markdown(
+                            f'<div style="margin:18px 0 6px;padding:8px 14px;'
+                            f'background:#1e293b;border-left:4px solid #3b82f6;border-radius:4px;">'
+                            f'<span style="color:#93c5fd;font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
+                            f'<span style="color:#64748b;font-size:0.73rem;margin-left:10px;">'
+                            f'{len(_resumo)} produto(s) · '
+                            f'Saldo total: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un.'
+                            f'</span></div>',
+                            unsafe_allow_html=True,
+                        )
+                    with _col_btn:
+                        st.markdown('<div style="margin-top:18px;">', unsafe_allow_html=True)
+                        if _img_ok:
+                            st.download_button(
+                                label="📥",
+                                data=_png_bytes,
+                                file_name=_nome_arquivo,
+                                mime="image/png",
+                                key=f"dl_resumo_{_parceiro}",
+                                help="Baixar resumo (imagem)",
+                                use_container_width=True,
+                            )
+                        else:
+                            st.caption("⚠️")
+                        st.markdown('</div>', unsafe_allow_html=True)
 
                     # tabela
                     _rows_html = ""
@@ -12066,26 +12098,6 @@ new Chart(document.getElementById('coop-chart'),{
                         f'</table>',
                         unsafe_allow_html=True,
                     )
-
-                    # ── Botão de download da imagem ────────────────────────
-                    try:
-                        import datetime as _dt
-                        _data_hoje = _dt.date.today().strftime("%d/%m/%Y")
-                        _png_bytes = gerar_imagem_resumo_matr(_parceiro, _resumo, _data_hoje)
-                        _nome_arquivo = (
-                            "resumo_" + _parceiro[:30].lower()
-                            .replace(" ", "_")
-                            .replace("/", "-") + ".png"
-                        )
-                        st.download_button(
-                            label="📥 Baixar resumo (imagem)",
-                            data=_png_bytes,
-                            file_name=_nome_arquivo,
-                            mime="image/png",
-                            key=f"dl_resumo_{_parceiro}",
-                        )
-                    except Exception as _e:
-                        st.caption(f"⚠️ Não foi possível gerar imagem: {_e}")
 
             else:
                 # ── Modo Detalhado: cards individuais ─────────────────────
