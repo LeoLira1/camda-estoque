@@ -3315,6 +3315,90 @@ def get_materiais_descricoes_por_cooperado(cooperado: str) -> list:
         return []
 
 
+def gerar_imagem_resumo_matr(parceiro: str, df_resumo, data_ref: str) -> bytes:
+    """Gera imagem PNG da tabela de resumo de materiais de um cooperado."""
+    from PIL import Image as PilImage, ImageDraw, ImageFont
+
+    _FONT_DIR = "/usr/share/fonts/truetype/dejavu/"
+    _FONT_REGULAR = _FONT_DIR + "DejaVuSans.ttf"
+    _FONT_BOLD    = _FONT_DIR + "DejaVuSans-Bold.ttf"
+
+    def _font(bold: bool = False, size: int = 14):
+        try:
+            return ImageFont.truetype(_FONT_BOLD if bold else _FONT_REGULAR, size)
+        except Exception:
+            return ImageFont.load_default()
+
+    W = 960
+    MARGIN = 28
+    ROW_H = 36
+    HEADER_H = 108
+    COL_PROD_X = MARGIN
+    COL_PROD_W = 500
+    COL_LIN_X = COL_PROD_X + COL_PROD_W + 10
+    COL_LIN_W = 220
+    COL_TOT_X = COL_LIN_X + COL_LIN_W + 10
+    TH_H = 34  # table-header height
+
+    n_rows = len(df_resumo)
+    total_h = HEADER_H + TH_H + n_rows * ROW_H + 52
+
+    img = PilImage.new("RGB", (W, total_h), (255, 255, 255))
+    draw = ImageDraw.Draw(img)
+
+    # ── Faixa de cabeçalho ─────────────────────────────────────────
+    draw.rectangle([0, 0, W, HEADER_H], fill=(15, 23, 42))
+    draw.text((MARGIN, 16), "CAMDA — Materiais em Poder de Terceiros", fill=(147, 197, 253), font=_font(True, 17))
+    draw.text((MARGIN, 46), parceiro, fill=(224, 230, 237), font=_font(True, 20))
+    draw.text((MARGIN, 82), f"Emitido em: {data_ref}", fill=(100, 116, 139), font=_font(False, 12))
+
+    # ── Cabeçalho da tabela ─────────────────────────────────────────
+    y_th = HEADER_H
+    draw.rectangle([0, y_th, W, y_th + TH_H], fill=(30, 41, 59))
+    draw.text((COL_PROD_X, y_th + 9), "PRODUTO", fill=(148, 163, 184), font=_font(True, 12))
+    draw.text((COL_LIN_X,  y_th + 9), "LINHAS (SALDO)",  fill=(148, 163, 184), font=_font(True, 12))
+    draw.text((COL_TOT_X,  y_th + 9), "TOTAL",           fill=(148, 163, 184), font=_font(True, 12))
+
+    # ── Linhas da tabela ────────────────────────────────────────────
+    y = HEADER_H + TH_H
+    for i, (_, row) in enumerate(df_resumo.iterrows()):
+        bg = (255, 255, 255) if i % 2 == 0 else (248, 250, 252)
+        draw.rectangle([0, y, W, y + ROW_H - 1], fill=bg)
+
+        prod_txt = str(row["descricao"])
+        # trunca produto se for muito longo
+        f_prod = _font(False, 13)
+        while prod_txt and draw.textlength(prod_txt, font=f_prod) > COL_PROD_W - 8:
+            prod_txt = prod_txt[:-1]
+        if prod_txt != str(row["descricao"]):
+            prod_txt = prod_txt[:-1] + "…"
+
+        lin_txt = str(row["linhas"])
+        f_lin = _font(False, 11)
+        while lin_txt and draw.textlength(lin_txt, font=f_lin) > COL_LIN_W - 4:
+            lin_txt = lin_txt[:-1]
+        if lin_txt != str(row["linhas"]):
+            lin_txt = lin_txt[:-1] + "…"
+
+        tot_str = f"{int(row['total']):,} un.".replace(",", ".")
+
+        draw.text((COL_PROD_X, y + 10), prod_txt,  fill=(15, 23, 42),    font=f_prod)
+        draw.text((COL_LIN_X,  y + 11), lin_txt,   fill=(100, 116, 139), font=f_lin)
+        draw.text((COL_TOT_X,  y + 10), tot_str,   fill=(185, 28, 28),   font=_font(True, 13))
+
+        y += ROW_H
+
+    # ── Separador e rodapé ──────────────────────────────────────────
+    draw.rectangle([0, y, W, y + 2], fill=(226, 232, 240))
+    total_geral = int(df_resumo["total"].sum())
+    rodape = f"Total geral: {total_geral:,} un. · {n_rows} produto(s)".replace(",", ".")
+    draw.text((MARGIN, y + 12), rodape, fill=(51, 65, 85), font=_font(True, 13))
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG", dpi=(150, 150))
+    return buf.getvalue()
+
+
 @st.cache_data(ttl=120)
 def get_materiais_resumo() -> dict:
     """Retorna dict com totalizadores: parceiros, itens, saldo_total."""
@@ -11982,6 +12066,26 @@ new Chart(document.getElementById('coop-chart'),{
                         f'</table>',
                         unsafe_allow_html=True,
                     )
+
+                    # ── Botão de download da imagem ────────────────────────
+                    try:
+                        import datetime as _dt
+                        _data_hoje = _dt.date.today().strftime("%d/%m/%Y")
+                        _png_bytes = gerar_imagem_resumo_matr(_parceiro, _resumo, _data_hoje)
+                        _nome_arquivo = (
+                            "resumo_" + _parceiro[:30].lower()
+                            .replace(" ", "_")
+                            .replace("/", "-") + ".png"
+                        )
+                        st.download_button(
+                            label="📥 Baixar resumo (imagem)",
+                            data=_png_bytes,
+                            file_name=_nome_arquivo,
+                            mime="image/png",
+                            key=f"dl_resumo_{_parceiro}",
+                        )
+                    except Exception as _e:
+                        st.caption(f"⚠️ Não foi possível gerar imagem: {_e}")
 
             else:
                 # ── Modo Detalhado: cards individuais ─────────────────────
