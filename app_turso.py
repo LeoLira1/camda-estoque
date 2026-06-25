@@ -11973,7 +11973,7 @@ new Chart(document.getElementById('coop-chart'),{
 
         _modo_view = st.radio(
             "Visualização",
-            ["Detalhado", "Resumo"],
+            ["Resumo", "Detalhado"],
             horizontal=True,
             key="mat_modo_view",
         )
