@@ -11887,6 +11887,13 @@ new Chart(document.getElementById('coop-chart'),{
             help="Clique e digite para filtrar por nome do produto",
         )
 
+        _modo_view = st.radio(
+            "Visualização",
+            ["Detalhado", "Resumo"],
+            horizontal=True,
+            key="mat_modo_view",
+        )
+
         # Grupos de equipamentos sempre ocultos
         _GRUPOS_OCULTOS_PADRAO = (
             "MAQUINARIOS E FERRAMENTAS",
@@ -11919,48 +11926,103 @@ new Chart(document.getElementById('coop-chart'),{
                 f"Armazém: {_arm_sel} · Tipo: {_tipo_sel} · Cooperado: {_coop_sel}"
             )
 
-            # ── Tabela agrupada por Razão Social ──────────────────────────
             _parceiros_ordenados = sorted(_df_mat["razao_social"].dropna().unique().tolist())
 
-            for _parceiro in _parceiros_ordenados:
-                _df_p = _df_mat[_df_mat["razao_social"] == _parceiro].copy()
-                _tot_saldo = _df_p["saldo"].sum()
-                _n_itens = len(_df_p)
+            if _modo_view == "Resumo":
+                # ── Modo Resumo: tabela por parceiro ──────────────────────
+                for _parceiro in _parceiros_ordenados:
+                    _df_p = _df_mat[_df_mat["razao_social"] == _parceiro].copy()
+                    _tot_saldo = _df_p["saldo"].sum()
 
-                # Cabeçalho do grupo
-                st.markdown(
-                    f'<div style="margin:14px 0 4px;padding:8px 14px;'
-                    f'background:#1e293b;border-left:4px solid #3b82f6;border-radius:4px;">'
-                    f'<span style="color:#93c5fd;font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
-                    f'<span style="color:#64748b;font-size:0.72rem;margin-left:10px;">'
-                    f'{_n_itens} item(s) · '
-                    f'Saldo: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un.'
-                    f'</span></div>',
-                    unsafe_allow_html=True,
-                )
+                    # agrupa por produto
+                    _resumo = (
+                        _df_p.groupby("descricao", sort=True)["saldo"]
+                        .apply(list)
+                        .reset_index()
+                    )
+                    _resumo["linhas"] = _resumo["saldo"].apply(
+                        lambda vals: " + ".join(str(int(v)) for v in vals)
+                    )
+                    _resumo["total"] = _resumo["saldo"].apply(sum)
+                    _resumo = _resumo.sort_values("descricao")
 
-                for _, _mrow in _df_p.iterrows():
-                    _saldo_cor = "#ef4444" if _mrow["saldo"] > 0 else "#22c55e"
-                    _tm_label = "📤 Saída" if _mrow["tm"] == "D" else "📥 Entrada"
+                    # cabeçalho do parceiro
                     st.markdown(
-                        f'<div style="background:#0f172a;border:1px solid #1e293b;'
-                        f'border-left:3px solid #3b82f688;border-radius:6px;'
-                        f'padding:8px 12px;margin-bottom:3px;font-size:0.8rem;">'
-                        f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span style="color:#e0e6ed;font-weight:600;">{_mrow["descricao"]}</span>'
-                        f'<span style="color:{_saldo_cor};font-weight:700;">'
-                        f'Saldo: {_mrow["saldo"]:,.0f} un.</span></div>'
-                        f'<div style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;color:#64748b;">'
-                        f'<span>Cod: <b style="color:#94a3b8">{_mrow["codigo_produto"]}</b></span>'
-                        f'<span>Arm: <b style="color:#94a3b8">{_mrow["armazem"]}</b></span>'
-                        f'<span>Doc: <b style="color:#94a3b8">{_mrow["doc_origin"]}</b></span>'
-                        f'<span>Emissão: <b style="color:#94a3b8">{_mrow["dt_emissao"]}</b></span>'
-                        f'<span>Orig: <b style="color:#94a3b8">{_mrow["qtd_original"]:,.0f}</b> '
-                        f'→ Entregue: <b style="color:#94a3b8">{_mrow["qtd_entregue"]:,.0f}</b></span>'
-                        f'<span style="color:#64748b">{_tm_label}</span>'
-                        f'</div></div>',
+                        f'<div style="margin:18px 0 6px;padding:8px 14px;'
+                        f'background:#1e293b;border-left:4px solid #3b82f6;border-radius:4px;">'
+                        f'<span style="color:#93c5fd;font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
+                        f'<span style="color:#64748b;font-size:0.73rem;margin-left:10px;">'
+                        f'{len(_resumo)} produto(s) · '
+                        f'Saldo total: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un.'
+                        f'</span></div>',
                         unsafe_allow_html=True,
                     )
+
+                    # tabela
+                    _rows_html = ""
+                    for _, _r in _resumo.iterrows():
+                        _rows_html += (
+                            f'<tr>'
+                            f'<td style="padding:7px 10px;color:#e0e6ed;">{_r["descricao"]}</td>'
+                            f'<td style="padding:7px 10px;color:#94a3b8;font-size:0.78rem;">{_r["linhas"]}</td>'
+                            f'<td style="padding:7px 10px;color:#f87171;font-weight:700;text-align:right;">'
+                            f'{int(_r["total"]):,} un.</td>'
+                            f'</tr>'
+                        )
+
+                    st.markdown(
+                        f'<table style="width:100%;border-collapse:collapse;'
+                        f'background:#0f172a;border-radius:6px;overflow:hidden;margin-bottom:4px;">'
+                        f'<thead><tr style="background:#1e293b;">'
+                        f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">PRODUTO</th>'
+                        f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">LINHAS (SALDO)</th>'
+                        f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">TOTAL</th>'
+                        f'</tr></thead>'
+                        f'<tbody>{_rows_html}</tbody>'
+                        f'</table>',
+                        unsafe_allow_html=True,
+                    )
+
+            else:
+                # ── Modo Detalhado: cards individuais ─────────────────────
+                for _parceiro in _parceiros_ordenados:
+                    _df_p = _df_mat[_df_mat["razao_social"] == _parceiro].copy()
+                    _tot_saldo = _df_p["saldo"].sum()
+                    _n_itens = len(_df_p)
+
+                    st.markdown(
+                        f'<div style="margin:14px 0 4px;padding:8px 14px;'
+                        f'background:#1e293b;border-left:4px solid #3b82f6;border-radius:4px;">'
+                        f'<span style="color:#93c5fd;font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
+                        f'<span style="color:#64748b;font-size:0.72rem;margin-left:10px;">'
+                        f'{_n_itens} item(s) · '
+                        f'Saldo: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un.'
+                        f'</span></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    for _, _mrow in _df_p.iterrows():
+                        _saldo_cor = "#ef4444" if _mrow["saldo"] > 0 else "#22c55e"
+                        _tm_label = "📤 Saída" if _mrow["tm"] == "D" else "📥 Entrada"
+                        st.markdown(
+                            f'<div style="background:#0f172a;border:1px solid #1e293b;'
+                            f'border-left:3px solid #3b82f688;border-radius:6px;'
+                            f'padding:8px 12px;margin-bottom:3px;font-size:0.8rem;">'
+                            f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                            f'<span style="color:#e0e6ed;font-weight:600;">{_mrow["descricao"]}</span>'
+                            f'<span style="color:{_saldo_cor};font-weight:700;">'
+                            f'Saldo: {_mrow["saldo"]:,.0f} un.</span></div>'
+                            f'<div style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;color:#64748b;">'
+                            f'<span>Cod: <b style="color:#94a3b8">{_mrow["codigo_produto"]}</b></span>'
+                            f'<span>Arm: <b style="color:#94a3b8">{_mrow["armazem"]}</b></span>'
+                            f'<span>Doc: <b style="color:#94a3b8">{_mrow["doc_origin"]}</b></span>'
+                            f'<span>Emissão: <b style="color:#94a3b8">{_mrow["dt_emissao"]}</b></span>'
+                            f'<span>Orig: <b style="color:#94a3b8">{_mrow["qtd_original"]:,.0f}</b> '
+                            f'→ Entregue: <b style="color:#94a3b8">{_mrow["qtd_entregue"]:,.0f}</b></span>'
+                            f'<span style="color:#64748b">{_tm_label}</span>'
+                            f'</div></div>',
+                            unsafe_allow_html=True,
+                        )
 
 
     # ── TAB: COBERTURA DE ESTOQUE ─────────────────────────────────────────────
