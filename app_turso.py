@@ -12059,20 +12059,18 @@ new Chart(document.getElementById('coop-chart'),{
                             unsafe_allow_html=True,
                         )
                     with _col_btn:
-                        st.markdown('<div style="margin-top:18px;">', unsafe_allow_html=True)
                         if _img_ok:
-                            st.download_button(
-                                label="📥",
-                                data=_png_bytes,
-                                file_name=_nome_arquivo,
-                                mime="image/png",
-                                key=f"dl_resumo_{_parceiro}",
-                                help="Baixar resumo (imagem)",
-                                use_container_width=True,
+                            import base64 as _b64mod
+                            _b64 = _b64mod.b64encode(_png_bytes).decode()
+                            st.markdown(
+                                f'<div style="margin-top:22px;text-align:right;">'
+                                f'<a href="data:image/png;base64,{_b64}" download="{_nome_arquivo}" '
+                                f'title="Baixar resumo (imagem)" '
+                                f'style="color:#475569;font-size:0.75rem;text-decoration:none;'
+                                f'border:1px solid #334155;border-radius:4px;padding:2px 6px;'
+                                f'background:transparent;">📥</a></div>',
+                                unsafe_allow_html=True,
                             )
-                        else:
-                            st.caption("⚠️")
-                        st.markdown('</div>', unsafe_allow_html=True)
 
                     # tabela
                     _rows_html = ""
