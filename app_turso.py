@@ -3300,6 +3300,22 @@ def get_materiais_descricoes() -> list:
 
 
 @st.cache_data(ttl=120)
+def get_materiais_descricoes_por_cooperado(cooperado: str) -> list:
+    """Retorna lista de descrições do cooperado específico em materiais_terceiros."""
+    try:
+        rows = get_db().execute(
+            "SELECT DISTINCT descricao FROM materiais_terceiros"
+            " WHERE descricao IS NOT NULL AND descricao != ''"
+            " AND razao_social = ?"
+            " ORDER BY descricao",
+            (cooperado,)
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=120)
 def get_materiais_resumo() -> dict:
     """Retorna dict com totalizadores: parceiros, itens, saldo_total."""
     try:
@@ -11854,8 +11870,16 @@ new Chart(document.getElementById('coop-chart'),{
             help="Digite para filtrar por nome do cooperado",
         )
 
-        _prod_lista = get_materiais_descricoes()
+        if _coop_sel != "Todos":
+            _prod_lista = get_materiais_descricoes_por_cooperado(_coop_sel)
+        else:
+            _prod_lista = get_materiais_descricoes()
         _prod_opts = ["Todos"] + _prod_lista
+
+        # Reseta produto se o valor salvo não pertence à lista filtrada
+        if st.session_state.get("mat_busca_produto", "Todos") not in _prod_opts:
+            st.session_state["mat_busca_produto"] = "Todos"
+
         _prod_sel = st.selectbox(
             "Produto",
             _prod_opts,
