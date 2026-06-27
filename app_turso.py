@@ -5140,7 +5140,7 @@ def upload_parcial_estoque(records: list, do_sync: bool = True) -> tuple:
 
 
 def popular_contagem(records: list, upload_id: int, conn, zerados: list = None) -> None:
-    """Mantém itens pendentes anteriores e atualiza/insere itens do upload filtrados por categoria.
+    """Mantém itens pendentes anteriores e atualiza/insere todos os itens do upload.
 
     - Se o produto já existe na lista (mesmo código): atualiza com dados mais recentes e volta para 'pendente'.
     - Se é produto novo: insere normalmente.
@@ -5152,17 +5152,15 @@ def popular_contagem(records: list, upload_id: int, conn, zerados: list = None) 
         (upload_id, r["codigo"], r["produto"], r["categoria"],
          r["qtd_sistema"], "pendente", "", 0, now)
         for r in records
-        if r["categoria"] in CATEGORIAS_CONTAGEM
     ]
-    # Inclui itens zerados cujo grupo pertence às categorias de contagem
+    # Inclui todos os itens zerados da planilha
     if zerados:
         for z in zerados:
             categoria = z.get("grupo", z.get("categoria", ""))
-            if categoria in CATEGORIAS_CONTAGEM:
-                itens_novos.append((
-                    upload_id, z["codigo"], z["produto"], categoria,
-                    0, "pendente", "", 0, now
-                ))
+            itens_novos.append((
+                upload_id, z["codigo"], z["produto"], categoria,
+                0, "pendente", "", 0, now
+            ))
     if not itens_novos:
         return
 
