@@ -1732,6 +1732,32 @@ def _get_connection():
                 WHERE codigo = NEW.codigo;
             END
         """)
+        # Trigger em estoque_mestre: captura divergências registradas diretamente
+        # (ex: Flutter atualiza estoque_mestre sem passar por contagem_itens)
+        conn.execute("DROP TRIGGER IF EXISTS trig_estoque_div_to_cicli")
+        conn.execute("""
+            CREATE TRIGGER trig_estoque_div_to_cicli
+            AFTER UPDATE OF status ON estoque_mestre
+            WHEN NEW.status IN ('falta', 'sobra') AND OLD.status NOT IN ('falta', 'sobra')
+            BEGIN
+                INSERT OR REPLACE INTO inventario_cicli
+                    (data_contagem, produto_id, produto_nome, categoria_id, categoria_label,
+                     categoria_cor, qtd_sistema, qtd_contada, divergencia, contado_em, observacao)
+                VALUES (
+                    date(datetime('now', '-3 hours')),
+                    NEW.codigo,
+                    NEW.produto,
+                    NEW.categoria,
+                    NEW.categoria,
+                    '#888888',
+                    CAST(COALESCE(NEW.qtd_sistema_na_contagem, NEW.qtd_sistema) AS REAL),
+                    CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL),
+                    CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL) - CAST(COALESCE(NEW.qtd_sistema_na_contagem, NEW.qtd_sistema) AS REAL),
+                    datetime('now', '-3 hours'),
+                    COALESCE(NEW.nota, '')
+                );
+            END
+        """)
         conn.commit()
     except Exception:
         pass
