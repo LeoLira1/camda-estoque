@@ -32,6 +32,7 @@ from db_mapa import (
 from mapa_3d_component import render_rack_3d
 from mural_tab import mural_tab as _render_mural_tab
 from inventario_ciclico_tab import build_inventario_ciclico_tab as _render_ciclico_tab
+from historico_contagem_tab import build_historico_contagem_tab as _render_historico_contagem_tab
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -9088,7 +9089,7 @@ if has_mestre:
     _n_entradas_pending = len(_al_aumento)
     label_entradas = f"📥 Entradas  🟢 {_n_entradas_pending}" if _n_entradas_pending > 0 else "📥 Entradas"
 
-    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_entradas = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", label_entradas])
+    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_hist_contagem, t_entradas = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", "📋 Hist. Contagem", label_entradas])
 
     with t0:
         # ── Dados ──────────────────────────────────────────────────────────
@@ -12584,6 +12585,12 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
     with t_ciclico:
         _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name,
                             get_divergencias=get_divergencias, get_historico_divergencias=get_historico_divergencias)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB HISTÓRICO DE CONTAGEM — lista por dia das contagens do inventário cíclico
+    # ══════════════════════════════════════════════════════════════════════════
+    with t_hist_contagem:
+        _render_historico_contagem_tab(get_db)
 
     # ══════════════════════════════════════════════════════════════════════════
     # TAB ENTRADAS — Histórico de produtos que entraram no estoque
