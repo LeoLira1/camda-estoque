@@ -1683,37 +1683,41 @@ def _get_connection():
     # ── Triggers: sincroniza contagem_itens → inventario_cicli + status_ciclo ──
     # Dispara para qualquer cliente (Flutter, Streamlit) que altere o status.
     try:
+        # Recria os triggers para garantir versão atualizada
+        conn.execute("DROP TRIGGER IF EXISTS trig_contagem_to_cicli")
+        conn.execute("DROP TRIGGER IF EXISTS trig_contagem_status_ciclo")
         conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS trig_contagem_to_cicli
+            CREATE TRIGGER trig_contagem_to_cicli
             AFTER UPDATE OF status ON contagem_itens
             WHEN NEW.status IN ('certa', 'divergencia') AND OLD.status != NEW.status
             BEGIN
                 INSERT OR REPLACE INTO inventario_cicli
                     (data_contagem, produto_id, produto_nome, categoria_id, categoria_label,
                      categoria_cor, qtd_sistema, qtd_contada, divergencia, contado_em, observacao)
-                VALUES (
+                SELECT
                     date(datetime('now', '-3 hours')),
                     NEW.codigo,
-                    COALESCE((SELECT produto FROM estoque_mestre WHERE codigo = NEW.codigo), NEW.produto),
-                    COALESCE((SELECT categoria FROM estoque_mestre WHERE codigo = NEW.codigo), NEW.categoria),
-                    COALESCE((SELECT categoria FROM estoque_mestre WHERE codigo = NEW.codigo), NEW.categoria),
+                    COALESCE(em.produto, NEW.produto),
+                    COALESCE(em.categoria, NEW.categoria),
+                    COALESCE(em.categoria, NEW.categoria),
                     '#888888',
                     CAST(NEW.qtd_estoque AS REAL),
                     CASE NEW.status
                         WHEN 'certa' THEN CAST(NEW.qtd_estoque AS REAL)
-                        ELSE CAST(NEW.qtd_estoque AS REAL) - CAST(NEW.qtd_divergencia AS REAL)
+                        ELSE CAST(COALESCE(em.qtd_fisica, NEW.qtd_estoque) AS REAL)
                     END,
                     CASE NEW.status
                         WHEN 'certa' THEN 0.0
-                        ELSE -CAST(NEW.qtd_divergencia AS REAL)
+                        ELSE CAST(COALESCE(em.qtd_fisica, NEW.qtd_estoque) AS REAL) - CAST(NEW.qtd_estoque AS REAL)
                     END,
                     datetime('now', '-3 hours'),
                     COALESCE(NEW.motivo, '')
-                );
+                FROM estoque_mestre em
+                WHERE em.codigo = NEW.codigo;
             END
         """)
         conn.execute("""
-            CREATE TRIGGER IF NOT EXISTS trig_contagem_status_ciclo
+            CREATE TRIGGER trig_contagem_status_ciclo
             AFTER UPDATE OF status ON contagem_itens
             WHEN NEW.status IN ('certa', 'divergencia') AND OLD.status != NEW.status
             BEGIN
@@ -1721,7 +1725,7 @@ def _get_connection():
                 SET status_ciclo = CASE NEW.status WHEN 'certa' THEN 'ok' ELSE 'divergencia' END,
                     qtd_contada_ciclo = CASE NEW.status
                         WHEN 'certa' THEN CAST(NEW.qtd_estoque AS REAL)
-                        ELSE CAST(NEW.qtd_estoque AS REAL) - CAST(NEW.qtd_divergencia AS REAL)
+                        ELSE qtd_fisica
                     END,
                     qtd_sistema_na_contagem = CAST(NEW.qtd_estoque AS REAL),
                     contado_ciclo_em = datetime('now', '-3 hours')
