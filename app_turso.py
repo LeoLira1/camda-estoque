@@ -31,7 +31,7 @@ from db_mapa import (
 )
 from mapa_3d_component import render_rack_3d
 from mural_tab import mural_tab as _render_mural_tab
-from inventario_ciclico_tab import build_inventario_ciclico_tab as _render_ciclico_tab
+from inventario_ciclico_tab import build_inventario_ciclico_tab as _render_ciclico_tab, _upsert_inventario_cicli as _cicli_upsert
 from historico_contagem_tab import build_historico_contagem_tab as _render_historico_contagem_tab
 
 # ── Page Config ──────────────────────────────────────────────────────────────
@@ -5308,6 +5308,27 @@ def atualizar_item_contagem(
             """, [now, codigo])
             # Remove da tabela de divergências para sair da lista do cooperado na aba Divergências
             conn.execute("DELETE FROM divergencias WHERE codigo = ?", [codigo])
+
+    # Grava no histórico de contagem (inventario_cicli) para aparecer na aba Hist. Contagem
+    if codigo and status in ("certa", "divergencia"):
+        try:
+            meta = conn.execute(
+                "SELECT produto, categoria FROM estoque_mestre WHERE codigo = ?", [codigo]
+            ).fetchone()
+            if meta:
+                _prod_nome, _cat = meta
+                data_hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
+                if status == "certa":
+                    qtd_contada_hist = float(qtd_sistema)
+                else:
+                    if tipo_div == "sobra":
+                        qtd_contada_hist = float(qtd_sistema + qtd_divergencia)
+                    else:
+                        qtd_contada_hist = float(max(0, qtd_sistema - qtd_divergencia))
+                _cicli_upsert(conn, data_hoje, codigo, _prod_nome, _cat,
+                              float(qtd_sistema), qtd_contada_hist, now)
+        except Exception:
+            pass
 
     # Só commit local — não chama sync_db() aqui para evitar que o pull
     # do Turso sobrescreva o write antes de ele ser confirmado no remoto.
