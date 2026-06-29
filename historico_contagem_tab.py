@@ -1,19 +1,16 @@
 """Aba de Histórico de Contagem — lista por dia das contagens realizadas."""
 from datetime import datetime, timedelta, timezone, date
 
-import pandas as pd
 import streamlit as st
 
 _BRT = timezone(timedelta(hours=-3))
 
 _CSS = """<style>
-.hc-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
-.hc-title{font-size:1.05rem;font-weight:700;color:#e0e6ed;}
+.hc-title{font-size:1.05rem;font-weight:700;color:#e0e6ed;margin-bottom:12px;}
 .hc-kpi-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
 .hc-kpi{flex:1;min-width:80px;background:linear-gradient(135deg,#111827,#1a2332);
          border:1px solid #1e293b;border-radius:10px;padding:8px 10px;text-align:center;}
 .hc-kpi-v{font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:#22c55e;}
-.hc-kpi-v.amber{color:#ffa502;}
 .hc-kpi-v.red{color:#ff4757;}
 .hc-kpi-v.blue{color:#3b82f6;}
 .hc-kpi-l{font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
@@ -36,6 +33,9 @@ _CSS = """<style>
 .hc-empty{text-align:center;padding:40px 20px;color:#475569;font-size:0.85rem;}
 .hc-section{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
              color:#64748b;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #1e293b;}
+/* Destaque nos dias com contagem no calendário */
+.hc-cal-legend{display:flex;gap:16px;font-size:0.7rem;color:#64748b;
+               margin:4px 0 10px;font-family:'JetBrains Mono',monospace;}
 </style>"""
 
 
@@ -62,7 +62,7 @@ def _get_contagem_do_dia(conn, data: str) -> list[dict]:
             {
                 "codigo": r[0],
                 "produto": r[1],
-                "categoria": r[2],
+                "categoria": r[2] or "Sem categoria",
                 "qtd_sistema": r[3],
                 "qtd_contada": r[4],
                 "divergencia": r[5],
@@ -88,18 +88,14 @@ def _fmt_data_br(data_iso: str) -> str:
     try:
         d = date.fromisoformat(data_iso)
         dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
-        dia_semana = dias[d.weekday()]
-        return f"{dia_semana}, {d.strftime('%d/%m/%Y')}"
+        return f"{dias[d.weekday()]}, {d.strftime('%d/%m/%Y')}"
     except Exception:
         return data_iso
 
 
 def build_historico_contagem_tab(get_db):
     st.markdown(_CSS, unsafe_allow_html=True)
-    st.markdown(
-        '<div class="hc-header"><div class="hc-title">📅 Histórico de Contagem</div></div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="hc-title">📅 Histórico de Contagem</div>', unsafe_allow_html=True)
 
     conn = get_db()
     dias = _get_dias_com_contagem(conn)
@@ -112,41 +108,74 @@ def build_historico_contagem_tab(get_db):
         )
         return
 
-    # Seletor de dia
-    hoje_iso = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
-    dia_default = dias[0] if dias else hoje_iso
+    dias_set = set(dias)
+    datas_disponiveis = sorted([date.fromisoformat(d) for d in dias], reverse=True)
+    data_mais_recente = datas_disponiveis[0]
+    data_mais_antiga  = datas_disponiveis[-1]
 
-    opcoes_label = {d: _fmt_data_br(d) for d in dias}
-    labels = list(opcoes_label.values())
-    idx_default = 0
+    # ── Seletor de data (calendário) ─────────────────────────────────────────
+    col_cal, col_filtros = st.columns([1, 2])
 
-    col_sel, col_info = st.columns([2, 3])
-    with col_sel:
-        label_selecionado = st.selectbox(
+    with col_cal:
+        data_sel = st.date_input(
             "Selecione o dia",
-            labels,
-            index=idx_default,
-            key="hc_dia_sel",
+            value=data_mais_recente,
+            min_value=data_mais_antiga,
+            max_value=date.today(),
+            format="DD/MM/YYYY",
+            key="hc_data_cal",
         )
 
-    dia_selecionado = dias[labels.index(label_selecionado)]
+    dia_selecionado = data_sel.isoformat() if data_sel else dias[0]
 
-    items = _get_contagem_do_dia(conn, dia_selecionado)
+    # Aviso se o dia selecionado não tem contagem
+    sem_contagem = dia_selecionado not in dias_set
 
+    # ── Itens do dia ─────────────────────────────────────────────────────────
+    items = [] if sem_contagem else _get_contagem_do_dia(conn, dia_selecionado)
+
+    # ── Seletor de categoria ──────────────────────────────────────────────────
+    cats_disponiveis = sorted({i["categoria"] for i in items if i["categoria"]})
+
+    with col_filtros:
+        col_cat, col_status = st.columns(2)
+        with col_cat:
+            filtro_cat = st.selectbox(
+                "Categoria",
+                ["Todas"] + cats_disponiveis,
+                key="hc_filtro_cat",
+                disabled=not items,
+            )
+        with col_status:
+            filtro_status = st.radio(
+                "Status",
+                ["Todos", "✅ OK", "⚠️ Divergência"],
+                horizontal=True,
+                key="hc_filtro_status",
+            )
+
+    # ── Aplica filtros ────────────────────────────────────────────────────────
+    if filtro_cat != "Todas":
+        items = [i for i in items if i["categoria"] == filtro_cat]
+
+    if filtro_status == "✅ OK":
+        items = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) < 0.01]
+    elif filtro_status == "⚠️ Divergência":
+        items = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) >= 0.01]
+
+    # ── KPIs ──────────────────────────────────────────────────────────────────
     total = len(items)
-    n_ok = sum(1 for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) < 0.01)
-    n_div = sum(1 for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) >= 0.01)
-    cobertura = f"{(total / max(total, 1)) * 100:.0f}%" if total else "0%"
+    n_ok  = sum(1 for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) < 0.01)
+    n_div = total - n_ok
 
-    with col_info:
-        st.markdown(
-            f'<div style="padding-top:28px;font-size:0.78rem;color:#64748b;">'
-            f'<b style="color:#e0e6ed">{total}</b> produtos contados em {_fmt_data_br(dia_selecionado)}'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
+    if sem_contagem:
+        st.info(f"Nenhuma contagem registrada em {_fmt_data_br(dia_selecionado)}. Escolha outro dia no calendário.")
+        # Mostra os dias disponíveis mais próximos
+        proximos = [d for d in datas_disponiveis if d <= data_sel][:3]
+        if proximos:
+            st.caption("Dias com contagem mais próximos: " + " · ".join(_fmt_data_br(d.isoformat()) for d in proximos))
+        return
 
-    # KPIs
     st.markdown(f"""
     <div class="hc-kpi-row">
         <div class="hc-kpi"><div class="hc-kpi-v blue">{total}</div><div class="hc-kpi-l">Contados</div></div>
@@ -155,44 +184,30 @@ def build_historico_contagem_tab(get_db):
     </div>""", unsafe_allow_html=True)
 
     if not items:
-        st.markdown(
-            '<div class="hc-empty">Nenhum item contado neste dia.</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown('<div class="hc-empty">Nenhum item para os filtros selecionados.</div>', unsafe_allow_html=True)
         return
 
-    # Filtro de status
-    filtro = st.radio(
-        "Filtrar por",
-        ["Todos", "✅ OK", "⚠️ Divergências"],
-        horizontal=True,
-        key="hc_filtro_status",
-    )
-
-    if filtro == "✅ OK":
-        items = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) < 0.01]
-    elif filtro == "⚠️ Divergências":
-        items = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) >= 0.01]
-
-    # Divergências primeiro, depois OK
+    # ── Lista de produtos ─────────────────────────────────────────────────────
     items_div = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) >= 0.01]
     items_ok  = [i for i in items if i not in items_div]
 
     def _render_section(section_items, label):
         if not section_items:
             return
-        st.markdown(f'<div class="hc-section">{label}</div>', unsafe_allow_html=True)
+        if label:
+            st.markdown(f'<div class="hc-section">{label}</div>', unsafe_allow_html=True)
         rows_html = ""
         for item in section_items:
             div = item["divergencia"]
             is_ok = div is not None and abs(float(div)) < 0.01
-            row_cls = "ok" if is_ok else "div"
+            row_cls   = "ok" if is_ok else "div"
             badge_cls = "ok" if is_ok else "div"
             badge_txt = "OK" if is_ok else "Divergência"
 
             qtd_s = f"{item['qtd_sistema']:.0f}" if item["qtd_sistema"] is not None else "—"
             qtd_c = f"{item['qtd_contada']:.0f}" if item["qtd_contada"] is not None else "—"
-            hora = _fmt_hora(item["contado_em"])
+            hora  = _fmt_hora(item["contado_em"])
+            cat   = item["categoria"]
 
             if div is None:
                 delta_html = '<span class="hc-delta">—</span>'
@@ -208,14 +223,15 @@ def build_historico_contagem_tab(get_db):
                 <span class="hc-badge {badge_cls}">{badge_txt}</span>
                 <span class="hc-prod">{item['produto'] or item['codigo']}</span>
                 <span class="hc-cod">{item['codigo']}</span>
+                <span style="font-size:0.65rem;color:#475569;flex:0 0 auto;">{cat}</span>
                 <span class="hc-qtd" title="Sistema / Contado">Sis:{qtd_s} · Cnt:{qtd_c}</span>
                 {delta_html}
                 <span class="hc-hora">{hora}</span>
             </div>"""
         st.markdown(rows_html, unsafe_allow_html=True)
 
-    if filtro == "Todos":
+    if filtro_status == "Todos":
         _render_section(items_div, f"⚠️ Divergências ({len(items_div)})")
-        _render_section(items_ok, f"✅ Conferidos OK ({len(items_ok)})")
+        _render_section(items_ok,  f"✅ Conferidos OK ({len(items_ok)})")
     else:
         _render_section(items, label="")
