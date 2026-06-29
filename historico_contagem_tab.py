@@ -1,0 +1,221 @@
+"""Aba de Histórico de Contagem — lista por dia das contagens realizadas."""
+from datetime import datetime, timedelta, timezone, date
+
+import pandas as pd
+import streamlit as st
+
+_BRT = timezone(timedelta(hours=-3))
+
+_CSS = """<style>
+.hc-header{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+.hc-title{font-size:1.05rem;font-weight:700;color:#e0e6ed;}
+.hc-kpi-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
+.hc-kpi{flex:1;min-width:80px;background:linear-gradient(135deg,#111827,#1a2332);
+         border:1px solid #1e293b;border-radius:10px;padding:8px 10px;text-align:center;}
+.hc-kpi-v{font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:#22c55e;}
+.hc-kpi-v.amber{color:#ffa502;}
+.hc-kpi-v.red{color:#ff4757;}
+.hc-kpi-v.blue{color:#3b82f6;}
+.hc-kpi-l{font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+.hc-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
+         border-radius:8px;padding:7px 12px;margin-bottom:3px;
+         display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.hc-row.ok{border-left:3px solid #00d68f;}
+.hc-row.div{border-left:3px solid #ff4757;}
+.hc-prod{font-weight:600;font-size:0.83rem;color:#e0e6ed;flex:1;min-width:160px;}
+.hc-cod{font-family:'JetBrains Mono',monospace;font-size:0.70rem;color:#3b82f6;min-width:75px;}
+.hc-qtd{font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#94a3b8;min-width:80px;text-align:right;}
+.hc-delta{font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;min-width:60px;text-align:right;}
+.hc-delta.ok{color:#00d68f;}
+.hc-delta.neg{color:#ff4757;}
+.hc-delta.pos{color:#ffa502;}
+.hc-hora{font-size:0.65rem;color:#64748b;min-width:75px;text-align:right;}
+.hc-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;min-width:60px;text-align:center;}
+.hc-badge.ok{background:rgba(0,214,143,.12);color:#00d68f;border:1px solid rgba(0,214,143,.3);}
+.hc-badge.div{background:rgba(255,71,87,.12);color:#ff4757;border:1px solid rgba(255,71,87,.3);}
+.hc-empty{text-align:center;padding:40px 20px;color:#475569;font-size:0.85rem;}
+.hc-section{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
+             color:#64748b;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #1e293b;}
+</style>"""
+
+
+def _get_dias_com_contagem(conn) -> list[str]:
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT data_contagem FROM inventario_cicli ORDER BY data_contagem DESC"
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+def _get_contagem_do_dia(conn, data: str) -> list[dict]:
+    try:
+        rows = conn.execute("""
+            SELECT produto_id, produto_nome, categoria_label,
+                   qtd_sistema, qtd_contada, divergencia, contado_em
+            FROM inventario_cicli
+            WHERE data_contagem = ?
+            ORDER BY contado_em DESC
+        """, (data,)).fetchall()
+        return [
+            {
+                "codigo": r[0],
+                "produto": r[1],
+                "categoria": r[2],
+                "qtd_sistema": r[3],
+                "qtd_contada": r[4],
+                "divergencia": r[5],
+                "contado_em": r[6],
+            }
+            for r in rows
+        ]
+    except Exception:
+        return []
+
+
+def _fmt_hora(contado_em: str) -> str:
+    if not contado_em:
+        return ""
+    try:
+        dt = datetime.strptime(contado_em, "%Y-%m-%d %H:%M:%S")
+        return dt.strftime("%H:%M")
+    except Exception:
+        return contado_em[:5] if len(contado_em) >= 5 else contado_em
+
+
+def _fmt_data_br(data_iso: str) -> str:
+    try:
+        d = date.fromisoformat(data_iso)
+        dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+        dia_semana = dias[d.weekday()]
+        return f"{dia_semana}, {d.strftime('%d/%m/%Y')}"
+    except Exception:
+        return data_iso
+
+
+def build_historico_contagem_tab(get_db):
+    st.markdown(_CSS, unsafe_allow_html=True)
+    st.markdown(
+        '<div class="hc-header"><div class="hc-title">📅 Histórico de Contagem</div></div>',
+        unsafe_allow_html=True,
+    )
+
+    conn = get_db()
+    dias = _get_dias_com_contagem(conn)
+
+    if not dias:
+        st.markdown(
+            '<div class="hc-empty">Nenhuma contagem registrada ainda.<br>'
+            'Realize contagens na aba <b>🔄 Inv. Cíclico</b> para ver o histórico aqui.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    # Seletor de dia
+    hoje_iso = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
+    dia_default = dias[0] if dias else hoje_iso
+
+    opcoes_label = {d: _fmt_data_br(d) for d in dias}
+    labels = list(opcoes_label.values())
+    idx_default = 0
+
+    col_sel, col_info = st.columns([2, 3])
+    with col_sel:
+        label_selecionado = st.selectbox(
+            "Selecione o dia",
+            labels,
+            index=idx_default,
+            key="hc_dia_sel",
+        )
+
+    dia_selecionado = dias[labels.index(label_selecionado)]
+
+    items = _get_contagem_do_dia(conn, dia_selecionado)
+
+    total = len(items)
+    n_ok = sum(1 for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) < 0.01)
+    n_div = sum(1 for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) >= 0.01)
+    cobertura = f"{(total / max(total, 1)) * 100:.0f}%" if total else "0%"
+
+    with col_info:
+        st.markdown(
+            f'<div style="padding-top:28px;font-size:0.78rem;color:#64748b;">'
+            f'<b style="color:#e0e6ed">{total}</b> produtos contados em {_fmt_data_br(dia_selecionado)}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    # KPIs
+    st.markdown(f"""
+    <div class="hc-kpi-row">
+        <div class="hc-kpi"><div class="hc-kpi-v blue">{total}</div><div class="hc-kpi-l">Contados</div></div>
+        <div class="hc-kpi"><div class="hc-kpi-v">{n_ok}</div><div class="hc-kpi-l">OK</div></div>
+        <div class="hc-kpi"><div class="hc-kpi-v red">{n_div}</div><div class="hc-kpi-l">Divergência</div></div>
+    </div>""", unsafe_allow_html=True)
+
+    if not items:
+        st.markdown(
+            '<div class="hc-empty">Nenhum item contado neste dia.</div>',
+            unsafe_allow_html=True,
+        )
+        return
+
+    # Filtro de status
+    filtro = st.radio(
+        "Filtrar por",
+        ["Todos", "✅ OK", "⚠️ Divergências"],
+        horizontal=True,
+        key="hc_filtro_status",
+    )
+
+    if filtro == "✅ OK":
+        items = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) < 0.01]
+    elif filtro == "⚠️ Divergências":
+        items = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) >= 0.01]
+
+    # Divergências primeiro, depois OK
+    items_div = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) >= 0.01]
+    items_ok  = [i for i in items if i not in items_div]
+
+    def _render_section(section_items, label):
+        if not section_items:
+            return
+        st.markdown(f'<div class="hc-section">{label}</div>', unsafe_allow_html=True)
+        rows_html = ""
+        for item in section_items:
+            div = item["divergencia"]
+            is_ok = div is not None and abs(float(div)) < 0.01
+            row_cls = "ok" if is_ok else "div"
+            badge_cls = "ok" if is_ok else "div"
+            badge_txt = "OK" if is_ok else "Divergência"
+
+            qtd_s = f"{item['qtd_sistema']:.0f}" if item["qtd_sistema"] is not None else "—"
+            qtd_c = f"{item['qtd_contada']:.0f}" if item["qtd_contada"] is not None else "—"
+            hora = _fmt_hora(item["contado_em"])
+
+            if div is None:
+                delta_html = '<span class="hc-delta">—</span>'
+            elif is_ok:
+                delta_html = '<span class="hc-delta ok">±0</span>'
+            else:
+                dv = float(div)
+                delta_cls = "neg" if dv < 0 else "pos"
+                delta_html = f'<span class="hc-delta {delta_cls}">{dv:+.0f}</span>'
+
+            rows_html += f"""
+            <div class="hc-row {row_cls}">
+                <span class="hc-badge {badge_cls}">{badge_txt}</span>
+                <span class="hc-prod">{item['produto'] or item['codigo']}</span>
+                <span class="hc-cod">{item['codigo']}</span>
+                <span class="hc-qtd" title="Sistema / Contado">Sis:{qtd_s} · Cnt:{qtd_c}</span>
+                {delta_html}
+                <span class="hc-hora">{hora}</span>
+            </div>"""
+        st.markdown(rows_html, unsafe_allow_html=True)
+
+    if filtro == "Todos":
+        _render_section(items_div, f"⚠️ Divergências ({len(items_div)})")
+        _render_section(items_ok, f"✅ Conferidos OK ({len(items_ok)})")
+    else:
+        _render_section(items, label="")
