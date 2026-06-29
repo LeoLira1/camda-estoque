@@ -8293,7 +8293,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
         if grupo_sel != "TODOS":
             df_prod = df_prod[df_prod["grupo"] == grupo_sel]
 
-        df_top_prod = df_prod.nlargest(15, "qtd_vendida")
+        df_top_prod = df_prod.nlargest(15, "qtd_vendida").reset_index(drop=True)
 
         if not df_top_prod.empty:
             nomes = df_top_prod["produto"].apply(lambda p: p[:40] + "…" if len(p) > 40 else p)
