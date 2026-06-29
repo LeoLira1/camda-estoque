@@ -5309,7 +5309,7 @@ def atualizar_item_contagem(
             # Remove da tabela de divergências para sair da lista do cooperado na aba Divergências
             conn.execute("DELETE FROM divergencias WHERE codigo = ?", [codigo])
 
-    # Grava no histórico de contagem (inventario_cicli) para aparecer na aba Hist. Contagem
+    # Atualiza inventário cíclico (status_ciclo em estoque_mestre + histórico inventario_cicli)
     if codigo and status in ("certa", "divergencia"):
         try:
             meta = conn.execute(
@@ -5320,11 +5320,20 @@ def atualizar_item_contagem(
                 data_hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
                 if status == "certa":
                     qtd_contada_hist = float(qtd_sistema)
+                    status_ciclo = "ok"
                 else:
                     if tipo_div == "sobra":
                         qtd_contada_hist = float(qtd_sistema + qtd_divergencia)
                     else:
                         qtd_contada_hist = float(max(0, qtd_sistema - qtd_divergencia))
+                    status_ciclo = "divergencia"
+                # Atualiza campos do cíclico em estoque_mestre
+                conn.execute("""
+                    UPDATE estoque_mestre
+                    SET status_ciclo=?, qtd_contada_ciclo=?, qtd_sistema_na_contagem=?, contado_ciclo_em=?
+                    WHERE codigo=?
+                """, (status_ciclo, qtd_contada_hist, float(qtd_sistema), now, codigo))
+                # Grava no histórico de contagem
                 _cicli_upsert(conn, data_hoje, codigo, _prod_nome, _cat,
                               float(qtd_sistema), qtd_contada_hist, now)
         except Exception:
