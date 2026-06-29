@@ -1616,6 +1616,13 @@ def _get_connection():
         )
     """)
     conn.execute("""
+        CREATE TABLE IF NOT EXISTS materiais_separacao (
+            razao_social  TEXT PRIMARY KEY,
+            separado      INTEGER DEFAULT 0,
+            separado_em   TEXT    DEFAULT ''
+        )
+    """)
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS mural_recados (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
             autor     TEXT    NOT NULL DEFAULT 'Anônimo',
@@ -3295,6 +3302,8 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     # Remove TODOS os registros anteriores (qualquer data de referência)
     cur = conn.execute("DELETE FROM materiais_terceiros")
     removidos = getattr(cur, "rowcount", 0) or 0
+    # Nova foto do relatório → reseta marcações de separação dos clientes
+    conn.execute("DELETE FROM materiais_separacao")
     # Insere todos os registros novos
     for r in records:
         conn.execute("""
@@ -3319,7 +3328,34 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     get_materiais_grupos.clear()
     get_materiais_descricoes.clear()
     get_materiais_resumo.clear()
+    get_materiais_separacao.clear()
     return len(records), removidos
+
+
+@st.cache_data(ttl=120)
+def get_materiais_separacao() -> dict:
+    """Retorna {razao_social: separado_em} dos parceiros já marcados como separados."""
+    try:
+        rows = get_db().execute(
+            "SELECT razao_social, separado_em FROM materiais_separacao WHERE separado = 1"
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
+    except Exception:
+        return {}
+
+
+def set_materiais_separado(razao_social: str, separado: bool) -> None:
+    """Marca ou desmarca um parceiro como já tendo os produtos separados."""
+    conn = get_db()
+    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S") if separado else ""
+    conn.execute(
+        "INSERT OR REPLACE INTO materiais_separacao (razao_social, separado, separado_em)"
+        " VALUES (?, ?, ?)",
+        (razao_social, int(separado), now),
+    )
+    conn.commit()
+    sync_db()
+    get_materiais_separacao.clear()
 
 
 @st.cache_data(ttl=120)
@@ -12071,6 +12107,30 @@ new Chart(document.getElementById('coop-chart'),{
         _fc2.metric("Itens", _resumo["itens"])
         _fc3.metric("Saldo total (un.)", f"{_resumo['saldo_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
+        # Grupos de equipamentos sempre ocultos
+        _GRUPOS_OCULTOS_PADRAO = (
+            "MAQUINARIOS E FERRAMENTAS",
+            "EQUIPAMENTOS DE INFORMATICA",
+            "MAQUINAS E IMPLEMENTOS AGRICOLAS",
+        )
+
+        # ── Aviso de separação pendente (considera TODOS os clientes, sem filtro) ──
+        _df_mat_todos = get_materiais_terceiros(grupos_excluir=_GRUPOS_OCULTOS_PADRAO)
+        if not _df_mat_todos.empty:
+            _parceiros_todos = sorted(_df_mat_todos["razao_social"].dropna().unique().tolist())
+            _sep_status = get_materiais_separacao()
+            _parceiros_pendentes = [p for p in _parceiros_todos if p not in _sep_status]
+            if _parceiros_pendentes:
+                _lista_pend = ", ".join(_parceiros_pendentes[:8])
+                if len(_parceiros_pendentes) > 8:
+                    _lista_pend += f" e mais {len(_parceiros_pendentes) - 8}"
+                st.warning(
+                    f"⚠️ **Falta separar os produtos de {len(_parceiros_pendentes)} de "
+                    f"{len(_parceiros_todos)} cliente(s):** {_lista_pend}"
+                )
+            else:
+                st.success(f"✅ Todos os {len(_parceiros_todos)} clientes já tiveram os produtos separados!")
+
         st.markdown('<div style="margin:10px 0 6px;"></div>', unsafe_allow_html=True)
         _mf1, _mf2 = st.columns(2)
         with _mf1:
@@ -12113,13 +12173,6 @@ new Chart(document.getElementById('coop-chart'),{
             key="mat_modo_view",
         )
 
-        # Grupos de equipamentos sempre ocultos
-        _GRUPOS_OCULTOS_PADRAO = (
-            "MAQUINARIOS E FERRAMENTAS",
-            "EQUIPAMENTOS DE INFORMATICA",
-            "MAQUINAS E IMPLEMENTOS AGRICOLAS",
-        )
-
         _arm_filter = None if _arm_sel == "Todos" else _arm_sel.split(" ")[0]
         _tipo_filter = None if _tipo_sel == "Todos" else _tipo_sel
         _coop_filter = None if _coop_sel == "Todos" else _coop_sel
@@ -12146,6 +12199,7 @@ new Chart(document.getElementById('coop-chart'),{
             )
 
             _parceiros_ordenados = sorted(_df_mat["razao_social"].dropna().unique().tolist())
+            _sep_status = get_materiais_separacao()
 
             if _modo_view == "Resumo":
                 # ── Modo Resumo: tabela por parceiro ──────────────────────
@@ -12180,19 +12234,37 @@ new Chart(document.getElementById('coop-chart'),{
                         _img_ok = False
                         _img_err = _e
 
-                    # cabeçalho do parceiro com botão de download à direita
-                    _col_header, _col_btn = st.columns([9, 1])
+                    _ja_separado = _parceiro in _sep_status
+                    _cor_borda = "#22c55e" if _ja_separado else "#f97316"
+                    _status_txt = (
+                        f'<span style="color:#4ade80;font-weight:700;">✅ Separado</span>'
+                        if _ja_separado else
+                        f'<span style="color:#fb923c;font-weight:700;">⚠️ Falta separar</span>'
+                    )
+
+                    # cabeçalho do parceiro com checkbox de separação e botão de download
+                    _col_header, _col_chk, _col_btn = st.columns([7, 2, 1])
                     with _col_header:
                         st.markdown(
                             f'<div style="margin:18px 0 6px;padding:8px 14px;'
-                            f'background:#1e293b;border-left:4px solid #3b82f6;border-radius:4px;">'
+                            f'background:#1e293b;border-left:4px solid {_cor_borda};border-radius:4px;">'
                             f'<span style="color:#93c5fd;font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
                             f'<span style="color:#64748b;font-size:0.73rem;margin-left:10px;">'
                             f'{len(_resumo)} produto(s) · '
-                            f'Saldo total: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un.'
+                            f'Saldo total: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un. · '
+                            f'{_status_txt}'
                             f'</span></div>',
                             unsafe_allow_html=True,
                         )
+                    with _col_chk:
+                        _novo_sep = st.checkbox(
+                            "Já separei",
+                            value=_ja_separado,
+                            key=f"mat_sep_resumo_{_parceiro}",
+                        )
+                        if _novo_sep != _ja_separado:
+                            set_materiais_separado(_parceiro, _novo_sep)
+                            st.rerun()
                     with _col_btn:
                         if _img_ok:
                             import base64 as _b64mod
@@ -12239,16 +12311,36 @@ new Chart(document.getElementById('coop-chart'),{
                     _tot_saldo = _df_p["saldo"].sum()
                     _n_itens = len(_df_p)
 
-                    st.markdown(
-                        f'<div style="margin:14px 0 4px;padding:8px 14px;'
-                        f'background:#1e293b;border-left:4px solid #3b82f6;border-radius:4px;">'
-                        f'<span style="color:#93c5fd;font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
-                        f'<span style="color:#64748b;font-size:0.72rem;margin-left:10px;">'
-                        f'{_n_itens} item(s) · '
-                        f'Saldo: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un.'
-                        f'</span></div>',
-                        unsafe_allow_html=True,
+                    _ja_separado = _parceiro in _sep_status
+                    _cor_borda = "#22c55e" if _ja_separado else "#f97316"
+                    _status_txt = (
+                        f'<span style="color:#4ade80;font-weight:700;">✅ Separado</span>'
+                        if _ja_separado else
+                        f'<span style="color:#fb923c;font-weight:700;">⚠️ Falta separar</span>'
                     )
+
+                    _col_header_d, _col_chk_d = st.columns([8, 2])
+                    with _col_header_d:
+                        st.markdown(
+                            f'<div style="margin:14px 0 4px;padding:8px 14px;'
+                            f'background:#1e293b;border-left:4px solid {_cor_borda};border-radius:4px;">'
+                            f'<span style="color:#93c5fd;font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
+                            f'<span style="color:#64748b;font-size:0.72rem;margin-left:10px;">'
+                            f'{_n_itens} item(s) · '
+                            f'Saldo: <b style="color:#e0e6ed">{_tot_saldo:,.0f}</b> un. · '
+                            f'{_status_txt}'
+                            f'</span></div>',
+                            unsafe_allow_html=True,
+                        )
+                    with _col_chk_d:
+                        _novo_sep_d = st.checkbox(
+                            "Já separei",
+                            value=_ja_separado,
+                            key=f"mat_sep_detalhado_{_parceiro}",
+                        )
+                        if _novo_sep_d != _ja_separado:
+                            set_materiais_separado(_parceiro, _novo_sep_d)
+                            st.rerun()
 
                     for _, _mrow in _df_p.iterrows():
                         _saldo_cor = "#ef4444" if _mrow["saldo"] > 0 else "#22c55e"
