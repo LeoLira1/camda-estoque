@@ -40,10 +40,9 @@ _CSS = """<style>
 
 
 def _get_dias_com_contagem(conn) -> list[str]:
-    """Retorna dias com contagem, unindo contagem_itens (hoje) e inventario_cicli (histórico)."""
+    """Dias com contagem: une inventario_cicli (histórico) + contagem_itens por confirmado_em."""
     dias = set()
     try:
-        # Dias históricos já gravados em inventario_cicli
         rows = conn.execute(
             "SELECT DISTINCT data_contagem FROM inventario_cicli"
         ).fetchall()
@@ -52,17 +51,15 @@ def _get_dias_com_contagem(conn) -> list[str]:
     except Exception:
         pass
     try:
-        # Dia atual: se contagem_itens tem itens confirmados, inclui hoje
-        row = conn.execute(
-            "SELECT date(MIN(registrado_em)) FROM contagem_itens WHERE status IN ('certa','divergencia')"
-        ).fetchone()
-        if row and row[0]:
-            dias.add(row[0])
-        # Também inclui a data de hoje caso haja qualquer item
-        row2 = conn.execute("SELECT COUNT(*) FROM contagem_itens WHERE status != 'pendente'").fetchone()
-        if row2 and row2[0]:
-            hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
-            dias.add(hoje)
+        # Dias com itens confirmados no contagem_itens, agrupados por data de confirmação
+        rows = conn.execute("""
+            SELECT DISTINCT date(COALESCE(NULLIF(confirmado_em,''), registrado_em))
+            FROM contagem_itens
+            WHERE status IN ('certa', 'divergencia')
+        """).fetchall()
+        for r in rows:
+            if r[0]:
+                dias.add(r[0])
     except Exception:
         pass
     return sorted(dias, reverse=True)
@@ -70,91 +67,63 @@ def _get_dias_com_contagem(conn) -> list[str]:
 
 def _get_contagem_do_dia(conn, data: str) -> list[dict]:
     """
-    Para o dia de hoje: lê de contagem_itens (dados ao vivo, já sincronizados do Flutter).
-    Para dias anteriores: lê de inventario_cicli (histórico gravado).
+    Lê itens confirmados de contagem_itens filtrando por data de confirmação (confirmado_em).
+    Complementa com inventario_cicli para itens do Inv. Cíclico do mesmo dia.
     """
-    hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
     items = []
+    codigos_vistos = set()
 
-    if data == hoje:
-        # Lê ao vivo de contagem_itens — reflete imediatamente o que o Flutter gravou
-        try:
-            rows = conn.execute("""
-                SELECT ci.codigo, ci.produto, ci.categoria,
-                       ci.qtd_estoque,
-                       CASE ci.status
-                           WHEN 'certa' THEN CAST(ci.qtd_estoque AS REAL)
-                           ELSE CAST(COALESCE(em.qtd_fisica, ci.qtd_estoque) AS REAL)
-                       END AS qtd_contada,
-                       CASE ci.status
-                           WHEN 'certa' THEN 0.0
-                           ELSE CAST(COALESCE(em.qtd_fisica, ci.qtd_estoque) AS REAL) - CAST(ci.qtd_estoque AS REAL)
-                       END AS divergencia,
-                       ci.registrado_em
-                FROM contagem_itens ci
-                LEFT JOIN estoque_mestre em ON em.codigo = ci.codigo
-                WHERE ci.status IN ('certa', 'divergencia')
-                ORDER BY ci.registrado_em DESC
-            """).fetchall()
-            items = [
-                {
-                    "codigo": r[0],
-                    "produto": r[1],
+    # 1. contagem_itens — filtra pelo DIA DE CONFIRMAÇÃO
+    try:
+        rows = conn.execute("""
+            SELECT ci.codigo, ci.produto, ci.categoria,
+                   ci.qtd_estoque,
+                   CASE ci.status
+                       WHEN 'certa' THEN CAST(ci.qtd_estoque AS REAL)
+                       ELSE CAST(COALESCE(em.qtd_fisica, ci.qtd_estoque) AS REAL)
+                   END AS qtd_contada,
+                   CASE ci.status
+                       WHEN 'certa' THEN 0.0
+                       ELSE CAST(COALESCE(em.qtd_fisica, ci.qtd_estoque) AS REAL) - CAST(ci.qtd_estoque AS REAL)
+                   END AS divergencia,
+                   COALESCE(NULLIF(ci.confirmado_em,''), ci.registrado_em)
+            FROM contagem_itens ci
+            LEFT JOIN estoque_mestre em ON em.codigo = ci.codigo
+            WHERE ci.status IN ('certa', 'divergencia')
+              AND date(COALESCE(NULLIF(ci.confirmado_em,''), ci.registrado_em)) = ?
+            ORDER BY COALESCE(NULLIF(ci.confirmado_em,''), ci.registrado_em) DESC
+        """, (data,)).fetchall()
+        for r in rows:
+            items.append({
+                "codigo": r[0], "produto": r[1],
+                "categoria": r[2] or "Sem categoria",
+                "qtd_sistema": r[3], "qtd_contada": r[4],
+                "divergencia": r[5], "contado_em": r[6],
+            })
+            codigos_vistos.add(r[0])
+    except Exception:
+        pass
+
+    # 2. inventario_cicli — itens do Inv. Cíclico (sem duplicar códigos já lidos)
+    try:
+        rows = conn.execute("""
+            SELECT produto_id, produto_nome, categoria_label,
+                   qtd_sistema, qtd_contada, divergencia, contado_em
+            FROM inventario_cicli
+            WHERE data_contagem = ?
+            ORDER BY contado_em DESC
+        """, (data,)).fetchall()
+        for r in rows:
+            if r[0] not in codigos_vistos:
+                items.append({
+                    "codigo": r[0], "produto": r[1],
                     "categoria": r[2] or "Sem categoria",
-                    "qtd_sistema": r[3],
-                    "qtd_contada": r[4],
-                    "divergencia": r[5],
-                    "contado_em": r[6],
-                }
-                for r in rows
-            ]
-        except Exception:
-            pass
-        # Complementa com inventario_cicli para itens confirmados via Inv. Cíclico
-        # (evita duplicatas pelo mesmo código)
-        codigos_ci = {i["codigo"] for i in items}
-        try:
-            rows2 = conn.execute("""
-                SELECT produto_id, produto_nome, categoria_label,
-                       qtd_sistema, qtd_contada, divergencia, contado_em
-                FROM inventario_cicli
-                WHERE data_contagem = ?
-                ORDER BY contado_em DESC
-            """, (data,)).fetchall()
-            for r in rows2:
-                if r[0] not in codigos_ci:
-                    items.append({
-                        "codigo": r[0], "produto": r[1],
-                        "categoria": r[2] or "Sem categoria",
-                        "qtd_sistema": r[3], "qtd_contada": r[4],
-                        "divergencia": r[5], "contado_em": r[6],
-                    })
-        except Exception:
-            pass
-    else:
-        # Dias anteriores: lê do histórico
-        try:
-            rows = conn.execute("""
-                SELECT produto_id, produto_nome, categoria_label,
-                       qtd_sistema, qtd_contada, divergencia, contado_em
-                FROM inventario_cicli
-                WHERE data_contagem = ?
-                ORDER BY contado_em DESC
-            """, (data,)).fetchall()
-            items = [
-                {
-                    "codigo": r[0],
-                    "produto": r[1],
-                    "categoria": r[2] or "Sem categoria",
-                    "qtd_sistema": r[3],
-                    "qtd_contada": r[4],
-                    "divergencia": r[5],
-                    "contado_em": r[6],
-                }
-                for r in rows
-            ]
-        except Exception:
-            pass
+                    "qtd_sistema": r[3], "qtd_contada": r[4],
+                    "divergencia": r[5], "contado_em": r[6],
+                })
+    except Exception:
+        pass
+
     return items
 
 
