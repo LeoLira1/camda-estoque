@@ -1762,6 +1762,30 @@ def _get_connection():
     except Exception:
         pass
 
+    # ── Migração: coluna confirmado_em em contagem_itens para isolar dias ──
+    try:
+        conn.execute("ALTER TABLE contagem_itens ADD COLUMN confirmado_em TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass
+
+    # Trigger que seta confirmado_em ao confirmar item (Streamlit UI)
+    try:
+        conn.execute("DROP TRIGGER IF EXISTS trig_contagem_confirmado_em")
+        conn.execute("""
+            CREATE TRIGGER trig_contagem_confirmado_em
+            AFTER UPDATE OF status ON contagem_itens
+            WHEN NEW.status IN ('certa', 'divergencia') AND NEW.confirmado_em = ''
+            BEGIN
+                UPDATE contagem_itens
+                SET confirmado_em = datetime('now', '-3 hours')
+                WHERE id = NEW.id;
+            END
+        """)
+        conn.commit()
+    except Exception:
+        pass
+
     # ── Migração: adiciona coluna imagem em mural_recados se ausente ──
     try:
         conn.execute("ALTER TABLE mural_recados ADD COLUMN imagem TEXT")
@@ -5333,8 +5357,8 @@ def atualizar_item_contagem(
     rows_afetadas = 0
 
     conn.execute(
-        "UPDATE contagem_itens SET status=?, motivo=?, qtd_divergencia=? WHERE id=?",
-        [status, motivo, qtd_divergencia, item_id]
+        "UPDATE contagem_itens SET status=?, motivo=?, qtd_divergencia=?, confirmado_em=? WHERE id=?",
+        [status, motivo, qtd_divergencia, now, item_id]
     )
 
     if codigo:
