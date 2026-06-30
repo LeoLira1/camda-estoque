@@ -5377,6 +5377,41 @@ def popular_contagem(records: list, upload_id: int, conn, zerados: list = None) 
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, insert_data)
 
+    _injetar_divergencias_sem_cooperado(conn, upload_id, now)
+
+
+def _injetar_divergencias_sem_cooperado(conn, upload_id: int, now: str) -> int:
+    """Adiciona à contagem itens com divergência Sobrando/Faltando sem cooperado real.
+
+    Pula itens que já estão em contagem_itens (incluídos pelo upload normal).
+    Retorna número de itens injetados.
+    """
+    nomes_lista = list(_NOMES_INVALIDOS_COOP)
+    ph = ",".join(["?"] * len(nomes_lista))
+
+    rows = conn.execute(f"""
+        SELECT DISTINCT d.codigo, d.produto, d.categoria,
+               COALESCE(em.qtd_sistema, 0) AS qtd_estoque
+        FROM divergencias d
+        LEFT JOIN estoque_mestre em ON UPPER(TRIM(em.codigo)) = UPPER(TRIM(d.codigo))
+        WHERE LOWER(TRIM(COALESCE(d.cooperado, ''))) IN ({ph})
+          AND NOT EXISTS (
+              SELECT 1 FROM contagem_itens ci
+              WHERE UPPER(TRIM(ci.codigo)) = UPPER(TRIM(d.codigo))
+          )
+    """, nomes_lista).fetchall()
+
+    if not rows:
+        return 0
+
+    conn.executemany("""
+        INSERT INTO contagem_itens
+            (upload_id, codigo, produto, categoria, qtd_estoque, status, motivo, qtd_divergencia, registrado_em)
+        VALUES (?, ?, ?, ?, ?, 'pendente', '', 0, ?)
+    """, [(upload_id, r[0], r[1], r[2], r[3], now) for r in rows])
+
+    return len(rows)
+
 
 def _invalidar_cache_contagem() -> None:
     """Invalida o cache em session_state da aba Contagem."""
