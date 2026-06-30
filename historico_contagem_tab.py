@@ -3,6 +3,11 @@ from datetime import datetime, timedelta, timezone, date
 
 import streamlit as st
 
+_NOMES_INVALIDOS_COOP = {
+    "faltando", "falta", "sobra", "sobrando", "ok", "none", "nan",
+    "", "sem cooperado", "sem vínculo", "sem vinculo",
+}
+
 _BRT = timezone(timedelta(hours=-3))
 
 _CSS = """<style>
@@ -37,6 +42,29 @@ _CSS = """<style>
 .hc-cal-legend{display:flex;gap:16px;font-size:0.7rem;color:#64748b;
                margin:4px 0 10px;font-family:'JetBrains Mono',monospace;}
 </style>"""
+
+
+def _get_divergencias_abertas_sem_cooperado(conn) -> list[dict]:
+    """Retorna divergências Sobrando/Faltando sem cooperado real ainda em aberto."""
+    nomes_lista = list(_NOMES_INVALIDOS_COOP)
+    ph = ",".join(["?"] * len(nomes_lista))
+    try:
+        rows = conn.execute(f"""
+            SELECT d.codigo, d.produto, d.categoria, d.delta, d.status, d.criado_em
+            FROM divergencias d
+            WHERE LOWER(TRIM(COALESCE(d.cooperado, ''))) IN ({ph})
+            ORDER BY d.criado_em DESC
+        """, nomes_lista).fetchall()
+        return [
+            {
+                "codigo": r[0], "produto": r[1],
+                "categoria": r[2] or "Sem categoria",
+                "delta": r[3], "status": r[4], "criado_em": r[5],
+            }
+            for r in rows
+        ]
+    except Exception:
+        return []
 
 
 def _get_dias_com_contagem(conn) -> list[str]:
@@ -288,3 +316,35 @@ def build_historico_contagem_tab(get_db):
         _render_section(items_ok,  f"✅ Conferidos OK ({len(items_ok)})")
     else:
         _render_section(items, label="")
+
+    # ── Divergências em aberto: Sobrando / Faltando (sem cooperado) ──────────
+    divs_abertas = _get_divergencias_abertas_sem_cooperado(conn)
+    if divs_abertas:
+        st.markdown(
+            '<div class="hc-section">📋 Divergências em aberto — Sobrando / Faltando</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption("Itens com divergência sem cooperado vinculado. Somem desta lista ao serem contados como certos.")
+        rows_html = ""
+        for item in divs_abertas:
+            delta = item["delta"]
+            is_sobra = item["status"] == "sobra"
+            badge_txt = "Sobrando" if is_sobra else "Faltando"
+            badge_cls = "pos" if is_sobra else "neg"
+            delta_cls  = "pos" if is_sobra else "neg"
+            delta_html = f'<span class="hc-delta {delta_cls}">{delta:+d}</span>'
+            try:
+                dt = datetime.strptime(item["criado_em"][:16], "%Y-%m-%d %H:%M")
+                data_fmt = dt.strftime("%d/%m %H:%M")
+            except Exception:
+                data_fmt = (item["criado_em"] or "")[:10]
+            rows_html += f"""
+            <div class="hc-row div">
+                <span class="hc-badge div">{badge_txt}</span>
+                <span class="hc-prod">{item['produto'] or item['codigo']}</span>
+                <span class="hc-cod">{item['codigo']}</span>
+                <span style="font-size:0.65rem;color:#475569;flex:0 0 auto;">{item['categoria']}</span>
+                {delta_html}
+                <span class="hc-hora">{data_fmt}</span>
+            </div>"""
+        st.markdown(rows_html, unsafe_allow_html=True)
