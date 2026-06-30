@@ -3299,11 +3299,50 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
         return 0, 0
     conn = get_db()
     now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+
+    # Captura docs atuais por cliente antes de apagar, para preservar "separado"
+    # quando nenhum documento novo surgir para aquele cliente.
+    docs_anteriores: dict[str, set] = {}
+    try:
+        for razao, doc in conn.execute(
+            "SELECT razao_social, doc_origin FROM materiais_terceiros"
+        ).fetchall():
+            docs_anteriores.setdefault(razao, set()).add(doc)
+    except Exception:
+        pass
+
+    # Calcula docs novos por cliente a partir dos registros que serão inseridos
+    docs_novos: dict[str, set] = {}
+    for r in records:
+        razao = r.get("razao_social", "")
+        doc = r.get("doc_origin", "")
+        if razao:
+            docs_novos.setdefault(razao, set()).add(doc)
+
     # Remove TODOS os registros anteriores (qualquer data de referência)
     cur = conn.execute("DELETE FROM materiais_terceiros")
     removidos = getattr(cur, "rowcount", 0) or 0
-    # Nova foto do relatório → reseta marcações de separação dos clientes
-    conn.execute("DELETE FROM materiais_separacao")
+
+    # Reset seletivo: só desmarca clientes que ganharam documentos novos.
+    # Clientes cujos docs são idênticos (ou subset) mantêm o "separado".
+    clientes_separados = {
+        r[0] for r in conn.execute(
+            "SELECT razao_social FROM materiais_separacao WHERE separado = 1"
+        ).fetchall()
+    }
+    for razao in clientes_separados:
+        anteriores = docs_anteriores.get(razao, set())
+        novos = docs_novos.get(razao, set())
+        if novos - anteriores:  # há documentos que não existiam antes
+            conn.execute(
+                "DELETE FROM materiais_separacao WHERE razao_social = ?", (razao,)
+            )
+    # Clientes que sumiram completamente do relatório também são removidos
+    for razao in clientes_separados:
+        if razao not in docs_novos:
+            conn.execute(
+                "DELETE FROM materiais_separacao WHERE razao_social = ?", (razao,)
+            )
     # Insere todos os registros novos
     for r in records:
         conn.execute("""
