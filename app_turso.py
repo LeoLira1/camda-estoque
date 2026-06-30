@@ -8980,6 +8980,22 @@ _al_pend   = _alertas.get("pendencia_5d", [])
 _al_reconc = _alertas.get("reconciliacao_gv", [])
 _al_aumento = _alertas.get("aumento_estoque", [])
 
+# ── Separação de estocados pendente ──────────────────────────────────────────
+_GRUPOS_EQUIP = (
+    "MAQUINARIOS E FERRAMENTAS",
+    "EQUIPAMENTOS DE INFORMATICA",
+    "MAQUINAS E IMPLEMENTOS AGRICOLAS",
+)
+try:
+    _df_mat_home = get_materiais_terceiros(grupos_excluir=_GRUPOS_EQUIP)
+    _al_sep_pendentes: list[str] = []
+    if not _df_mat_home.empty:
+        _sep_dict_home = get_materiais_separacao()
+        _parceiros_home = sorted(_df_mat_home["razao_social"].dropna().unique().tolist())
+        _al_sep_pendentes = [p for p in _parceiros_home if p not in _sep_dict_home]
+except Exception:
+    _al_sep_pendentes = []
+
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
 
@@ -9114,8 +9130,14 @@ if has_mestre:
     </script>""", height=0)
 
     # ── Alertas (abaixo da busca, compacto) ──────────────────────────────────
-    if _al_val or _al_pend or _al_reconc or _al_aumento:
+    if _al_val or _al_pend or _al_reconc or _al_aumento or _al_sep_pendentes:
         _pills = []
+        if _al_sep_pendentes:
+            _n_sep = len(_al_sep_pendentes)
+            _pills.append(
+                f'<div class="al-pill al-sep">📦 <b>{_n_sep} cliente{"s" if _n_sep > 1 else ""}'
+                f' com produtos para separar</b></div>'
+            )
         if _al_pend:
             n = len(_al_pend)
             _pills.append(
@@ -9174,6 +9196,7 @@ if has_mestre:
             .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
             .al-gv{background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);}
             .al-aumento{background:rgba(34,197,94,0.12);color:#22c55e;border:1px solid rgba(34,197,94,0.35);}
+            .al-sep{background:rgba(249,115,22,0.12);color:#fb923c;border:1px solid rgba(249,115,22,0.4);}
             </style>
             """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
             unsafe_allow_html=True,
