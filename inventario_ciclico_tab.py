@@ -395,10 +395,25 @@ def _get_divergencias_cicli(get_db) -> dict:
 def _get_progresso_ciclo(get_db) -> dict:
     try:
         conn = get_db()
+        # Uma contagem só é divergência de fato se a quantidade contada difere da
+        # do sistema. Se vieram iguais (ex: clique errado no botão "Divergência"
+        # em qualquer app sincronizado), contamos como OK.
         row = conn.execute("""
             SELECT COUNT(*),
-                SUM(CASE WHEN status_ciclo='ok'          THEN 1 ELSE 0 END),
-                SUM(CASE WHEN status_ciclo='divergencia' THEN 1 ELSE 0 END),
+                SUM(CASE
+                    WHEN status_ciclo='ok' THEN 1
+                    WHEN status_ciclo='divergencia'
+                         AND qtd_contada_ciclo IS NOT NULL
+                         AND qtd_sistema_na_contagem IS NOT NULL
+                         AND qtd_contada_ciclo = qtd_sistema_na_contagem
+                    THEN 1
+                    ELSE 0 END),
+                SUM(CASE
+                    WHEN status_ciclo='divergencia'
+                         AND NOT (qtd_contada_ciclo IS NOT NULL
+                                  AND qtd_sistema_na_contagem IS NOT NULL
+                                  AND qtd_contada_ciclo = qtd_sistema_na_contagem)
+                    THEN 1 ELSE 0 END),
                 SUM(CASE WHEN status_ciclo='' OR status_ciclo IS NULL THEN 1 ELSE 0 END)
             FROM estoque_mestre
         """).fetchone()

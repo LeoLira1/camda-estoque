@@ -2907,6 +2907,18 @@ def get_current_stock() -> pd.DataFrame:
         df = pd.DataFrame(rows, columns=_STOCK_COLS)
         if not df.empty and _PRODUTOS_IGNORADOS:
             df = df[~df["produto"].str.strip().str.upper().isin(_PRODUTOS_IGNORADOS)]
+        if not df.empty:
+            # Uma contagem cíclica só é divergência de fato se a quantidade contada
+            # difere da do sistema. Registros com status_ciclo='divergencia' mas
+            # qtd_contada_ciclo == qtd_sistema_na_contagem (ex: confirmação sem
+            # diferença feita em qualquer app sincronizado) contam como OK.
+            _falso_positivo = (
+                (df["status_ciclo"] == "divergencia")
+                & df["qtd_contada_ciclo"].notna()
+                & df["qtd_sistema_na_contagem"].notna()
+                & (df["qtd_contada_ciclo"] == df["qtd_sistema_na_contagem"])
+            )
+            df.loc[_falso_positivo, "status_ciclo"] = "ok"
         return df
     except Exception as e:
         st.warning(f"⚠️ Erro ao carregar estoque: {e}")
