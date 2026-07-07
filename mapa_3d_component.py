@@ -1,7 +1,7 @@
 """
 mapa_3d_component.py — Componente 3D do Mapa Visual do Armazém CAMDA.
 
-Renderiza um rack 3D usando Three.js via st.components.v1.html().
+Renderiza um rack 3D usando Three.js via st.iframe (iframe_compat).
 Não requer build step — funciona direto no Streamlit Cloud.
 
 Comunicação com Streamlit:
@@ -10,7 +10,7 @@ Comunicação com Streamlit:
 """
 
 import json
-import streamlit.components.v1 as components
+import iframe_compat as components
 
 
 def render_rack_3d(
@@ -22,7 +22,7 @@ def render_rack_3d(
     highlight_keys=None,
 ) -> None:
     """
-    Renderiza o rack 3D via st.components.v1.html().
+    Renderiza o rack 3D via st.iframe (iframe_compat).
 
     paletes        : {pos_key: {produto, quantidade, unidade, cor / cor_hex}}
     produtos       : [{nome, unidade_pad, cor_hex}]  (não usado na renderização, reservado)

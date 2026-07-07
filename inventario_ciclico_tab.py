@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
+import iframe_compat
+
 _BRT = timezone(timedelta(hours=-3))
 _COLS = 5  # cards por linha na grade
 
@@ -599,6 +601,6 @@ def build_inventario_ciclico_tab(
     st.markdown(html_mapa, unsafe_allow_html=True)
 
     # JS que faz os cards do treemap dispararem o input de busca ao serem clicados
-    st.components.v1.html(_JS_TREEMAP_CLICK, height=0)
+    iframe_compat.html(_JS_TREEMAP_CLICK, height=0)
     # JS que oculta visualmente os controles de conferência
-    st.components.v1.html(_JS_HIDE_CONFERENCIA, height=0)
+    iframe_compat.html(_JS_HIDE_CONFERENCIA, height=0)

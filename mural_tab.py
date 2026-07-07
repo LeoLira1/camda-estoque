@@ -1,14 +1,14 @@
 """
 mural_tab.py — Aba "Mural" para o dashboard CAMDA Estoque.
 
-Renderiza o mural de post-its via st.components.v1.html.
+Renderiza o mural de post-its via st.iframe (iframe_compat).
 Os dados são carregados do Python (Turso/libSQL) na montagem inicial e
 as mutações (add/delete) são feitas diretamente pelo JavaScript via
 Turso HTTP API.
 """
 
 import json as _json
-import streamlit.components.v1 as _components
+import iframe_compat as _components
 
 # ---------------------------------------------------------------------------
 # HTML / CSS / JS template
