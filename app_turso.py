@@ -858,7 +858,11 @@ st.markdown("""
     }
     .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
     .stTabs [data-baseweb="tab-list"] { gap: 4px !important; padding: 4px 4px 0 4px !important; }
-    .stTabs [data-baseweb="tab"] {
+    /* Streamlit <=1.58 usa [data-baseweb="tab"]; >=1.59 (react-aria) usa
+       [data-testid="stTab"] — os dois seletores mantêm o visual nas duas
+       gerações de DOM. */
+    .stTabs [data-baseweb="tab"],
+    .stTabs [data-testid="stTab"] {
         color: #7bafd4 !important;
         background: rgba(255,255,255,0.04) !important;
         border: 1px solid rgba(255,255,255,0.08) !important;
@@ -868,7 +872,8 @@ st.markdown("""
         transition: background 0.2s, border-color 0.2s !important;
         margin-bottom: 0 !important;
     }
-    .stTabs [data-baseweb="tab"][aria-selected="true"] {
+    .stTabs [data-baseweb="tab"][aria-selected="true"],
+    .stTabs [data-testid="stTab"][aria-selected="true"] {
         color: #cde8f8 !important;
         background: rgba(123,175,212,0.16) !important;
         border: 1px solid rgba(123,175,212,0.5) !important;
@@ -876,6 +881,18 @@ st.markdown("""
     }
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
     .stTabs [data-baseweb="tab-border"] { display: none !important; }
+    .stTabs .react-aria-SelectionIndicator { display: none !important; }
+    /* ── Blindagem: painel de aba inativo nunca fica visível ───────────
+       O esconder padrão depende de CSS gerado em runtime pelo frontend do
+       Streamlit; se ele falhar (versão nova, cache velho, navegador
+       antigo), os 19 painéis empilham na página. Estas regras estáticas
+       cobrem o DOM antigo (hidden) e o novo (inert/data-inert). */
+    .stTabs [data-baseweb="tab-panel"][hidden],
+    .stTabs [role="tabpanel"][hidden],
+    .stTabs [data-inert="true"],
+    .stTabs [inert] {
+        display: none !important;
+    }
     /* ── Mobile (≤640px) ───────────────────────────────────────────────── */
     @media (max-width: 640px) {
         .block-container { padding: 0.3rem 0.3rem !important; }
@@ -889,7 +906,8 @@ st.markdown("""
         .stat-card { flex: 1 1 calc(33% - 4px); min-width: 0; padding: 6px 4px; }
         .stat-value { font-size: 0.85rem; }
         .stat-label { font-size: 0.48rem; letter-spacing: 0.5px; }
-        .stTabs [data-baseweb="tab"] {
+        .stTabs [data-baseweb="tab"],
+        .stTabs [data-testid="stTab"] {
             padding: 5px 8px !important;
             font-size: 0.65rem !important;
             border-radius: 6px !important;
@@ -991,7 +1009,8 @@ st.markdown("""
         from { opacity: 0; transform: translateY(10px); }
         to   { opacity: 1; transform: translateY(0); }
     }
-    [data-baseweb="tab-panel"] {
+    [data-baseweb="tab-panel"],
+    .stTabs [role="tabpanel"]:not([inert]):not([data-inert="true"]) {
         animation: tabFadeIn 0.3s ease both;
     }
     /* ── Search input glow ao focar ───────────────────────────────────── */
@@ -1206,6 +1225,94 @@ _stc_global.html("""
     }
   });
   observer.observe(document.body, { childList: true, subtree: true });
+})();
+</script>
+""", height=0)
+
+# ── Injetar JS: sentinela das abas ───────────────────────────────────────────
+# Se mais de um painel de aba ficar visível ao mesmo tempo (falha do CSS de
+# runtime do Streamlit), força a exibição apenas do painel da aba selecionada.
+_stc_global.html("""
+<script>
+(function() {
+  try {
+    var _fe3 = window.frameElement;
+    if (_fe3) {
+      _fe3.style.cssText = 'display:none!important;height:0!important;width:0!important;border:none!important;position:absolute!important;';
+      var _p3 = _fe3.parentElement;
+      var _STOP3 = /stVerticalBlock|stMain|stApp|block-container|stAppView/;
+      for (var _i3 = 0; _i3 < 3; _i3++) {
+        if (!_p3 || _p3 === document.body) break;
+        var _tid3 = (_p3.getAttribute && _p3.getAttribute('data-testid')) || '';
+        var _cls3 = _p3.className || '';
+        if (_STOP3.test(_tid3) || _STOP3.test(_cls3)) break;
+        _p3.style.height = '0';
+        _p3.style.minHeight = '0';
+        _p3.style.margin = '0';
+        _p3.style.padding = '0';
+        _p3.style.overflow = 'hidden';
+        _p3.style.lineHeight = '0';
+        _p3 = _p3.parentElement;
+      }
+    }
+  } catch(_e3) {}
+
+  var doc;
+  try { doc = window.parent.document; } catch(e) { return; }
+  if (!doc) return;
+
+  function panelsOf(tabs, list) {
+    // Streamlit >= 1.59: painéis são irmãos do [role="tablist"]
+    var out = [];
+    var sibs = list.parentElement ? list.parentElement.children : [];
+    for (var j = 0; j < sibs.length; j++) {
+      if (sibs[j] !== list && sibs[j].tagName === 'DIV') out.push(sibs[j]);
+    }
+    if (out.length > 0) return out;
+    // Streamlit <= 1.58 (BaseWeb)
+    return Array.prototype.slice.call(tabs.querySelectorAll('[data-baseweb="tab-panel"]'));
+  }
+
+  function fixTabPanels() {
+    try {
+      doc.querySelectorAll('[data-testid="stTabs"]').forEach(function(tabs) {
+        var list = tabs.querySelector('[role="tablist"], [data-baseweb="tab-list"]');
+        if (!list) return;
+        var btns = list.querySelectorAll('[role="tab"]');
+        var selIdx = -1;
+        for (var i = 0; i < btns.length; i++) {
+          if (btns[i].getAttribute('aria-selected') === 'true') { selIdx = i; break; }
+        }
+        if (selIdx < 0) return;
+        var panels = panelsOf(tabs, list);
+        if (panels.length !== btns.length) return; // estrutura inesperada: não mexe
+        var nVis = 0;
+        panels.forEach(function(p) {
+          if (getComputedStyle(p).display !== 'none') nVis++;
+        });
+        if (nVis > 1) {
+          // anomalia: painéis empilhados — mostra só o da aba selecionada
+          panels.forEach(function(p, i) {
+            p.style.display = (i === selIdx) ? '' : 'none';
+          });
+        } else if (panels[selIdx].style.display === 'none') {
+          // desfaz um display:none nosso que tenha ficado no painel ativo
+          panels[selIdx].style.display = '';
+        }
+      });
+    } catch(e) {}
+  }
+
+  fixTabPanels();
+  var _t;
+  try {
+    new window.parent.MutationObserver(function() {
+      clearTimeout(_t);
+      _t = setTimeout(fixTabPanels, 120);
+    }).observe(doc.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-selected', 'inert', 'hidden'] });
+  } catch(e) {
+    setInterval(fixTabPanels, 1000);
+  }
 })();
 </script>
 """, height=0)

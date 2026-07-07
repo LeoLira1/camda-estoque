@@ -21,14 +21,14 @@ div[data-testid="stTabs"] div[data-baseweb="tab-list"] {
     overflow: visible !important;
 }
 
-div[data-testid="stTabs"] button[role="tab"],
+div[data-testid="stTabs"] [role="tab"],
 div[data-testid="stTabs"] button[data-baseweb="tab"] {
     position: relative !important;
     overflow: visible !important;
     transition: color .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease !important;
 }
 
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"],
+div[data-testid="stTabs"] [role="tab"][aria-selected="true"],
 div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
     color: #ecffd6 !important;
     border-color: rgba(190,255,95,.28) !important;
@@ -36,7 +36,7 @@ div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"] {
     box-shadow: inset 0 0 0 1px rgba(190,255,95,.10), 0 8px 22px rgba(190,255,95,.07) !important;
 }
 
-div[data-testid="stTabs"] button[role="tab"][aria-selected="true"]::after,
+div[data-testid="stTabs"] [role="tab"][aria-selected="true"]::after,
 div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"]::after {
     content: "";
     position: absolute;
@@ -50,17 +50,20 @@ div[data-testid="stTabs"] button[data-baseweb="tab"][aria-selected="true"]::afte
     pointer-events: none;
 }
 
-div[data-testid="stTabs"] [data-baseweb="tab-highlight"] {
+div[data-testid="stTabs"] [data-baseweb="tab-highlight"],
+div[data-testid="stTabs"] .react-aria-SelectionIndicator {
     background: transparent !important;
 }
 </style>
 """
 
     def tabs_with_active_style(*args, **kwargs):
+        # Injeta o CSS antes de TODA chamada de st.tabs, em todo rerun.
+        # (Injetar "só no primeiro run da sessão" fazia o número de elementos
+        # mudar entre reruns, deslocando a posição do st.tabs e fazendo o
+        # Streamlit remontar as abas — a seleção voltava para a primeira.)
         try:
-            if not st.session_state.get("_camda_active_tab_css_done", False):
-                st.session_state["_camda_active_tab_css_done"] = True
-                st.markdown(active_tab_css, unsafe_allow_html=True)
+            st.markdown(active_tab_css, unsafe_allow_html=True)
         except Exception:
             pass
         return original_tabs(*args, **kwargs)

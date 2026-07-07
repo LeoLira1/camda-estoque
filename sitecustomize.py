@@ -13,7 +13,6 @@ def _install_streamlit_top_gap_fix() -> None:
         return
 
     original_markdown = st.markdown
-    injected = {"done": False}
 
     top_gap_fix_css = """
 <style id="camda-top-gap-fix">
@@ -89,8 +88,11 @@ div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer
 """
 
     def markdown_with_top_gap_fix(body, *args, **kwargs):
-        if not injected["done"] and isinstance(body, str):
-            injected["done"] = True
+        # Injeta o CSS imediatamente antes do header, em TODO rerun.
+        # (Injetar "só uma vez" fazia o número de elementos mudar entre o
+        # primeiro run e os seguintes, deslocando a posição do st.tabs e
+        # fazendo o Streamlit remontar as abas do zero.)
+        if isinstance(body, str) and "camda-header" in body:
             original_markdown(top_gap_fix_css, unsafe_allow_html=True)
         return original_markdown(body, *args, **kwargs)
 
