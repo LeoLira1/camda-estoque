@@ -9330,12 +9330,14 @@ if has_mestre:
 
     pendentes_pa = get_produtos_sem_principio_ativo()
     n_pendentes = len(pendentes_pa)
-    label_historico = f"📊 Histórico  🔴 {n_pendentes}" if n_pendentes > 0 else "📊 Histórico"
 
     _n_entradas_pending = len(_al_aumento)
-    label_entradas = f"📥 Entradas  🟢 {_n_entradas_pending}" if _n_entradas_pending > 0 else "📥 Entradas"
 
-    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_hist_contagem, t_entradas = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", label_historico, "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", "📋 Hist. Contagem", label_entradas])
+    # Labels das abas ficam sempre estáticas: se o texto mudar entre reruns
+    # (ex.: contador de pendências variando), o Streamlit trata st.tabs()
+    # como um widget novo e reseta a aba selecionada para a primeira.
+    # Os contadores são exibidos dentro do corpo de cada aba.
+    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_hist_contagem, t_entradas = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", "📋 Hist. Contagem", "📥 Entradas"])
 
     with t0:
         # ── Dados ──────────────────────────────────────────────────────────
@@ -12929,6 +12931,8 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
             '📥 Histórico de Entradas no Estoque</div>',
             unsafe_allow_html=True,
         )
+        if _n_entradas_pending > 0:
+            st.info(f"🟢 {_n_entradas_pending} aumento(s) de estoque recente(s) — veja o alerta no topo do dashboard.")
 
         # ── Filtros ──────────────────────────────────────────────────────────
         _ent_c1, _ent_c2 = st.columns([3, 1])
