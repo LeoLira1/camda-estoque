@@ -473,7 +473,7 @@ if not st.session_state.authenticated:
     _, col_login, _ = st.columns([1, 1.5, 1])
     with col_login:
         st.markdown(card_weather, unsafe_allow_html=True)
-        import streamlit.components.v1 as _stc_login
+        import iframe_compat as _stc_login
         _stc_login.html("""<script>
         (function(){
             function disablePwdManager(){
@@ -543,7 +543,7 @@ if not st.session_state.authenticated:
 
 
 # ── Calendar Popup ────────────────────────────────────────────────────────────
-import streamlit.components.v1 as _stc_cal
+import iframe_compat as _stc_cal
 
 # Token único por sessão Python — garante que novo login exibe o popup novamente
 if "cal_session_token" not in st.session_state:
@@ -719,7 +719,8 @@ st.markdown("""
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > style),
     div[data-testid="stElementContainer"]:has(> div[data-testid="stMarkdownContainer"] > script),
     div[data-testid="stElementContainer"]:has(iframe[height="0"]),
-    div[data-testid="stElementContainer"]:has(iframe[style*="height: 0"]) {
+    div[data-testid="stElementContainer"]:has(iframe[style*="height: 0"]),
+    div[data-testid="stElementContainer"]:has(iframe[data-camda-collapse]) {
         margin: 0 !important;
         padding: 0 !important;
         min-height: 0 !important;
@@ -1101,7 +1102,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Injetar JS: desabilitar gerenciador de senhas em todos os inputs ──────────
-import streamlit.components.v1 as _stc_global
+import iframe_compat as _stc_global
 _stc_global.html("""<script>
 (function() {
   // Colapsa o próprio iframe e até 3 containers pai imediatos (sem subir ao stVerticalBlock)
@@ -6062,7 +6063,7 @@ def render_mapa_visual(conn):
         render_rack_3d(paletes, produtos, rua, face,
                        height=560, highlight_keys=hl_keys)
     else:
-        import streamlit.components.v1 as _stc
+        import iframe_compat as _stc
         _stc.html(_rack_html(paletes, rua, face, hl_keys), height=295, scrolling=False)
 
     # ── Mover palete ──────────────────────────────────────────────────────────
@@ -9205,7 +9206,7 @@ if has_mestre:
     _meta_data = _agora_hdr.strftime("%d/%m/%Y · %H:%M")
     search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
     search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed", key="search_mestre")
-    import streamlit.components.v1 as _stc_ac
+    import iframe_compat as _stc_ac
     _stc_ac.html("""<script>
     (function() {
         // Colapsa o próprio iframe e até 3 containers pai imediatos
@@ -9673,9 +9674,9 @@ if has_mestre:
             pass
         st.markdown(build_css_treemap(df_view, "TODOS", avarias_map=av_map, divergencias_map=divs_map, validade_map=_val_map_mapa, ctx="mapa"), unsafe_allow_html=True)
 
-        # Injeta modal de cooperados via components.v1.html (st.markdown bloqueia <script>)
+        # Injeta modal de cooperados via iframe (st.markdown bloqueia <script>)
         import json as _json
-        import streamlit.components.v1 as _comp
+        import iframe_compat as _comp
         _divs_json = _json.dumps(divs_map, ensure_ascii=False)
         _comp.html(f"""
 <script>
@@ -10011,7 +10012,7 @@ new Chart(document.getElementById('coop-chart'),{
             _html_divbar = _html_divbar.replace("__DADOS__", _dados_json)
             _html_divbar = _html_divbar.replace("__CHART_H__", str(_chart_h))
             _html_divbar = _html_divbar.replace("__TOTAL__", str(_total_div_count))
-            import streamlit.components.v1 as _stcv1_divbar
+            import iframe_compat as _stcv1_divbar
             _stcv1_divbar.html(_html_divbar, height=_chart_h + 140)
 
             # --- Filtro / Agrupamento por cooperado e produto ---
@@ -10031,7 +10032,7 @@ new Chart(document.getElementById('coop-chart'),{
             with _c3:
                 _agrupar = st.checkbox("Agrupar", value=True, key="div_agrupar")
             # Injeta JS local para suprimir popup de gerenciador de senhas no selectbox
-            import streamlit.components.v1 as _stc_div
+            import iframe_compat as _stc_div
             _stc_div.html("""<script>
             (function(){
               function _fix(){
@@ -10722,6 +10723,7 @@ new Chart(document.getElementById('coop-chart'),{
         div[data-testid="stVerticalBlock"] div[data-testid="stExpander"]{margin-bottom:4px;}
         div[data-testid="stExpander"] summary{padding:6px 12px;}
         iframe[title="streamlit_components.v1.html.html"]{display:block;}
+        iframe[title="st.iframe"]{display:block;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -10805,7 +10807,7 @@ new Chart(document.getElementById('coop-chart'),{
                 unsafe_allow_html=True
             )
 
-            import streamlit.components.v1 as _cv1
+            import iframe_compat as _cv1
 
             _lightbox_js = (
                 '<script>'
@@ -11067,7 +11069,7 @@ new Chart(document.getElementById('coop-chart'),{
                 st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
 
     with t8:
-        import streamlit.components.v1 as components
+        import iframe_compat as components
         import calendar as _cal
         import json as _json
 
