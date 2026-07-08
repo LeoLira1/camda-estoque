@@ -149,6 +149,8 @@ button { -webkit-tap-highlight-color: transparent; }
   box-shadow: 0 12px 28px rgba(148,163,184,0.18);
 }
 
+#btn-archived { flex-shrink: 0; white-space: nowrap; }
+
 /* GRID (masonry via CSS columns para evitar buracos entre cards de alturas diferentes) */
 .grid {
   column-width: 215px;
@@ -314,7 +316,8 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 .card-time.old { opacity: 0.58; font-weight: 750; }
 
-.card-del {
+.card-del,
+.card-arch {
   position: absolute;
   top: 13px;
   right: 14px;
@@ -334,8 +337,11 @@ button { -webkit-tap-highlight-color: transparent; }
   color: inherit;
   z-index: 4;
 }
-.card:hover .card-del { opacity: 1; transform: scale(1); }
-.card-del:hover { background: rgba(0,0,0,0.26) !important; }
+.card-arch { right: 46px; font-size: 12px; }
+.card:hover .card-del,
+.card:hover .card-arch { opacity: 1; transform: scale(1); }
+.card-del:hover,
+.card-arch:hover { background: rgba(0,0,0,0.26) !important; }
 .card.loading { opacity: 0.45; pointer-events: none; }
 
 /* IMAGEM no card */
@@ -627,6 +633,7 @@ button { -webkit-tap-highlight-color: transparent; }
       <button class="ftag" onclick="setFilter('lembrete',this)">Lembrete</button>
       <button class="ftag" onclick="setFilter('info',this)">Info</button>
     </div>
+    <button class="ftag" id="btn-archived" onclick="toggleArchived()">📦 Arquivados</button>
   </div>
 
   <div class="grid" id="grid"></div>
@@ -686,6 +693,7 @@ var TAG_META = {
 
 var selColor     = 0;
 var activeFilter = 'all';
+var viewArchived = false;
 var notes = __NOTES_JSON__;   /* injected by Python */
 
 /* ── TURSO HTTP ─────────────────────────────────────────────── */
@@ -754,16 +762,26 @@ function pickColor(i) { selColor = i; renderSwatches(); }
 
 function renderGrid() {
   var grid = document.getElementById('grid');
+  var pool = notes.filter(function(n) {
+    return viewArchived ? Number(n.arquivado) === 1 : Number(n.arquivado) !== 1;
+  });
   var filtered = (activeFilter === 'all')
-    ? notes
-    : notes.filter(function(n) { return n.tag === activeFilter; });
+    ? pool
+    : pool.filter(function(n) { return n.tag === activeFilter; });
 
-  var total = notes.length;
-  document.getElementById('count').textContent =
-    total + ' recado' + (total !== 1 ? 's' : '');
+  var total = pool.length;
+  document.getElementById('count').textContent = viewArchived
+    ? total + ' arquivado' + (total !== 1 ? 's' : '')
+    : total + ' recado' + (total !== 1 ? 's' : '');
+
+  var nArch = notes.filter(function(n) { return Number(n.arquivado) === 1; }).length;
+  document.getElementById('btn-archived').textContent =
+    '📦 Arquivados' + (nArch ? ' (' + nArch + ')' : '');
 
   if (!filtered.length) {
-    grid.innerHTML = '<div class="empty"><strong>Nenhum recado por aqui.</strong><br>Use o botão + para fixar o próximo lembrete 🌿</div>';
+    grid.innerHTML = viewArchived
+      ? '<div class="empty"><strong>Nenhum recado arquivado.</strong><br>Use o botão 📦 de um recado para guardá-lo aqui.</div>'
+      : '<div class="empty"><strong>Nenhum recado por aqui.</strong><br>Use o botão + para fixar o próximo lembrete 🌿</div>';
     return;
   }
 
@@ -781,10 +799,14 @@ function renderGrid() {
       : '<label class="card-img-btn" title="Adicionar foto">+' +
           '<input type="file" accept="image/*" onchange="uploadImage(event,' + n.id + ')" />' +
         '</label>';
+    var archBtn = viewArchived
+      ? '<button class="card-arch" onclick="unarchiveNote(' + n.id + ')" title="Restaurar recado">↩</button>'
+      : '<button class="card-arch" onclick="archiveNote(' + n.id + ')" title="Arquivar recado">📦</button>';
     return (
       '<div class="card ' + cKey + urgentClass + '" id="card-' + n.id + '" data-tag="' + esc(n.tag) + '"' +
       ' style="animation-delay:' + (idx * 0.045) + 's">' +
       '<button class="card-del" onclick="delNote(' + n.id + ')" title="Apagar recado">✕</button>' +
+      archBtn +
       '<div class="card-tag-row">' +
         '<div class="card-tag"><span class="card-tag-dot"></span>' + esc(meta.label) + '</div>' +
       '</div>' +
@@ -907,10 +929,16 @@ function resetModalImage() {
 /* ── FILTER ─────────────────────────────────────────────────── */
 function setFilter(tag, btn) {
   activeFilter = tag;
-  document.querySelectorAll('.ftag').forEach(function(b) {
+  document.querySelectorAll('.filters .ftag').forEach(function(b) {
     b.classList.remove('on');
   });
   btn.classList.add('on');
+  renderGrid();
+}
+
+function toggleArchived() {
+  viewArchived = !viewArchived;
+  document.getElementById('btn-archived').classList.toggle('on', viewArchived);
   renderGrid();
 }
 
@@ -957,6 +985,7 @@ async function saveNote() {
       cor:    selColor,
       tempo:  'agora',
       imagem: _modalImgB64,
+      arquivado: 0,
     });
     document.getElementById('f-text').value   = '';
     document.getElementById('f-author').value = '';
@@ -969,6 +998,37 @@ async function saveNote() {
   } finally {
     btn.disabled    = false;
     btn.textContent = '📌 Publicar';
+  }
+}
+
+/* ── ARCHIVE / UNARCHIVE NOTE ────────────────────────────────── */
+async function archiveNote(id) {
+  var card = document.getElementById('card-' + id);
+  if (card) card.classList.add('loading');
+  try {
+    await tursoExec('UPDATE mural_recados SET arquivado=1 WHERE id=?', [id]);
+    var n = notes.find(function(x) { return x.id === id; });
+    if (n) n.arquivado = 1;
+    renderGrid();
+    showToast('📦 Recado arquivado.');
+  } catch (e) {
+    if (card) card.classList.remove('loading');
+    showToast('Erro ao arquivar: ' + e.message, 3500);
+  }
+}
+
+async function unarchiveNote(id) {
+  var card = document.getElementById('card-' + id);
+  if (card) card.classList.add('loading');
+  try {
+    await tursoExec('UPDATE mural_recados SET arquivado=0 WHERE id=?', [id]);
+    var n = notes.find(function(x) { return x.id === id; });
+    if (n) n.arquivado = 0;
+    renderGrid();
+    showToast('↩️ Recado restaurado no mural.');
+  } catch (e) {
+    if (card) card.classList.remove('loading');
+    showToast('Erro ao restaurar: ' + e.message, 3500);
   }
 }
 
@@ -1039,8 +1099,9 @@ def mural_tab(turso_url: str, turso_token: str, rows: list) -> None:
     Args:
         turso_url:   URL do banco Turso (libsql://...).
         turso_token: Token de autenticação Turso.
-        rows:        Lista de tuplas (id, autor, texto, tag, cor, criado_em)
-                     carregadas pelo Python antes da renderização.
+        rows:        Lista de tuplas (id, autor, texto, tag, cor, criado_em,
+                     imagem, arquivado) carregadas pelo Python antes da
+                     renderização.
     """
     http_url = (turso_url or "").replace("libsql://", "https://").rstrip("/")
 
@@ -1053,6 +1114,7 @@ def mural_tab(turso_url: str, turso_token: str, rows: list) -> None:
             "cor":    int(r[4] or 0),
             "tempo":  _fmt_tempo(str(r[5] or "")),
             "imagem": (r[6] if len(r) > 6 and r[6] else None),
+            "arquivado": int(r[7] or 0) if len(r) > 7 else 0,
         }
         for r in rows
     ]

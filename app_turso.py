@@ -1738,6 +1738,7 @@ def _get_connection():
             tag       TEXT    NOT NULL DEFAULT 'aviso',
             cor       INTEGER NOT NULL DEFAULT 0,
             imagem    TEXT,
+            arquivado INTEGER NOT NULL DEFAULT 0,
             criado_em TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%S','now'))
         )
     """)
@@ -1904,6 +1905,13 @@ def _get_connection():
     # ── Migração: adiciona coluna imagem em mural_recados se ausente ──
     try:
         conn.execute("ALTER TABLE mural_recados ADD COLUMN imagem TEXT")
+        conn.commit()
+    except Exception:
+        pass
+
+    # ── Migração: adiciona coluna arquivado em mural_recados se ausente ──
+    try:
+        conn.execute("ALTER TABLE mural_recados ADD COLUMN arquivado INTEGER NOT NULL DEFAULT 0")
         conn.commit()
     except Exception:
         pass
@@ -2561,13 +2569,13 @@ def get_mural_recados(tag: str | None = None) -> list:
     try:
         if tag and tag != "all":
             rows = conn.execute(
-                "SELECT id, autor, texto, tag, cor, criado_em, imagem FROM mural_recados"
+                "SELECT id, autor, texto, tag, cor, criado_em, imagem, arquivado FROM mural_recados"
                 " WHERE tag=? ORDER BY criado_em DESC",
                 (tag,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, autor, texto, tag, cor, criado_em, imagem FROM mural_recados"
+                "SELECT id, autor, texto, tag, cor, criado_em, imagem, arquivado FROM mural_recados"
                 " ORDER BY criado_em DESC"
             ).fetchall()
         return rows
