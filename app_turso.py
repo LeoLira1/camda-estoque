@@ -2303,6 +2303,42 @@ def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
     return suspeitos
 
 
+_MOTIVO_TRANSF = "🔄 Saída sem venda (possível transferência)"
+
+
+def _incluir_saidas_na_contagem(grupos: list, conn) -> None:
+    """Coloca os produtos com saída sem venda na lista de contagem
+    (contagem_itens) para a conferência física confirmar se foi
+    transferência ou falta. Mesmo upsert de popular_contagem: se o código
+    já está na lista volta para 'pendente'; senão insere."""
+    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+    for g in grupos:
+        codigo = g["codigo"]
+        # linhas vêm ordenadas por detectado_em DESC — [0] é o estado mais recente
+        qtd_atual = int(g["linhas"][0]["qtd_atual"])
+        row = conn.execute(
+            "SELECT categoria FROM estoque_mestre WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        categoria = row[0] if row else "OUTROS"
+        existe = conn.execute(
+            "SELECT id FROM contagem_itens WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        if existe:
+            conn.execute(
+                "UPDATE contagem_itens SET status='pendente', motivo=?, "
+                "qtd_estoque=?, qtd_divergencia=0, registrado_em=? WHERE id=?",
+                (_MOTIVO_TRANSF, qtd_atual, now, existe[0]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO contagem_itens (upload_id, codigo, produto, categoria, "
+                "qtd_estoque, status, motivo, qtd_divergencia, registrado_em) "
+                "VALUES (0, ?, ?, ?, ?, 'pendente', ?, 0, ?)",
+                (codigo, g["produto"], categoria, qtd_atual, _MOTIVO_TRANSF, now),
+            )
+    _invalidar_cache_contagem()
+
+
 def _registrar_alertas_no_banco():
     """Verifica condições de alerta e registra no banco (side-effect only).
     Chamada 1x/dia/sessão via guard de session_state no ponto de chamada."""
@@ -2391,6 +2427,7 @@ def _registrar_alertas_no_banco():
         pass
 
     try:
+        novos_transf = []
         for g in checar_saidas_sem_venda():
             chave = f"{g['codigo']}|{g['dia']}"
             rec = conn.execute(
@@ -2403,6 +2440,11 @@ def _registrar_alertas_no_banco():
                     ("transferencia_saida", chave, hoje.isoformat()),
                 )
                 houve_escrita = True
+                novos_transf.append(g)
+        # Primeira detecção também coloca o produto na lista de contagem —
+        # a conferência física decide se foi transferência ou falta.
+        if novos_transf:
+            _incluir_saidas_na_contagem(novos_transf, conn)
     except Exception:
         pass
 
@@ -11780,6 +11822,9 @@ new Chart(document.getElementById('coop-chart'),{
                     _cod = str(item["codigo"])
                     _qtd_sis = qty
                     _obs_existente = str(item.get("observacoes", "") or "")
+                    # Itens pendentes normalmente têm motivo vazio; quando vêm do
+                    # alerta de saída sem venda, motivo explica por que estão aqui.
+                    _motivo_pend = str(item.get("motivo", "") or "")
 
                     col_info, col_b1, col_b2 = st.columns([5, 1.2, 1.2])
 
@@ -11788,6 +11833,7 @@ new Chart(document.getElementById('coop-chart'),{
                             f'<span class="ct-nome">{prod}</span>'
                             f'<span class="ct-cod" style="color:#94a3b8;font-size:0.78em;margin-left:8px;font-weight:400;">#{_cod}</span>'
                             f'<span class="ct-qty">{qty} un</span>'
+                            + (f'<div class="ct-motivo" style="color:#a855f7;">{_motivo_pend}</div>' if _motivo_pend else '')
                             + (f'<div class="ct-motivo">{_obs_existente}</div>' if _obs_existente else '')
                         )
                         st.markdown(f'<div class="ct-card pendente">{info_html}</div>', unsafe_allow_html=True)
@@ -13187,7 +13233,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         if _n_entradas_pending > 0:
             st.info(f"🟢 {_n_entradas_pending} aumento(s) de estoque recente(s) — veja o alerta no topo do dashboard.")
         if _al_transf:
-            st.info(f"🔄 {len(_al_transf)} saída(s) sem venda associada — possível(is) transferência(s); veja a seção 📤 abaixo.")
+            st.info(f"🔄 {len(_al_transf)} saída(s) sem venda associada — possível(is) transferência(s); veja a seção 📤 abaixo. Os produtos também entraram na 📋 Contagem para conferência física.")
 
         # ── Filtros ──────────────────────────────────────────────────────────
         _ent_c1, _ent_c2 = st.columns([3, 1])
