@@ -2,6 +2,7 @@
 import re as _re
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 import streamlit as st
 
 import iframe_compat
@@ -553,7 +554,10 @@ def build_inventario_ciclico_tab(
     with col_status:
         filtro_status = st.selectbox(
             "Status",
-            ["Todos", "Pendentes", "Contados", "Divergências"],
+            [
+                "Todos", "Pendentes", "Contados", "Divergências",
+                "Divergências positivas (sobra)", "Divergências negativas (falta)",
+            ],
             key="inv_ciclico_filtro_status",
         )
 
@@ -588,8 +592,22 @@ def build_inventario_ciclico_tab(
         df_treemap = df_treemap[~df_treemap["status_ciclo"].isin(["ok", "divergencia"])]
     elif filtro_status == "Contados":
         df_treemap = df_treemap[df_treemap["status_ciclo"] == "ok"]
-    elif filtro_status == "Divergências":
+    elif filtro_status.startswith("Divergências"):
         df_treemap = df_treemap[df_treemap["status_ciclo"] == "divergencia"]
+        if filtro_status != "Divergências" and not df_treemap.empty:
+            # Sinal da divergência: contado − sistema. Se as colunas do ciclo
+            # estiverem vazias (registros antigos), usa o histórico inventario_cicli.
+            def _diff_ciclo(row):
+                qc, qs = row["qtd_contada_ciclo"], row["qtd_sistema_na_contagem"]
+                if pd.notna(qc) and pd.notna(qs):
+                    return float(qc) - float(qs)
+                return float(divergencias_cicli.get(str(row["codigo"]), 0) or 0)
+
+            diffs = df_treemap.apply(_diff_ciclo, axis=1)
+            if "positivas" in filtro_status:
+                df_treemap = df_treemap[diffs > 0]
+            else:
+                df_treemap = df_treemap[diffs < 0]
 
     html_mapa = build_css_treemap(
         df_treemap,
