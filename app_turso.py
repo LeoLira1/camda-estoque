@@ -4321,18 +4321,23 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     try:
         event = st.plotly_chart(
             fig, use_container_width=True,
-            config={"displayModeBar": False, "scrollZoom": False},
+            # doubleClick=False evita que o reset nativo de duplo-clique do Plotly
+            # limpe a seleção antes do Streamlit conseguir processar o clique
+            # (era isso que fazia o clique duplo não mostrar os produtos).
+            config={"displayModeBar": False, "scrollZoom": False, "doubleClick": False},
             on_select="rerun",
             key=_chart_key,
         )
         if event and event.selection and event.selection.points:
             pt = event.selection.points[0]
             clicked_pa = pt.get("x") or pt.get("label")
-            if clicked_pa:
-                novo = None if clicked_pa == st.session_state["pa_selected"] else clicked_pa
-                st.session_state["pa_selected"] = novo
+            # Sempre seleciona o PA clicado (sem toggle-off no reclique): um clique
+            # duplo rápido no mesmo ponto não deve "cancelar" a seleção — para
+            # fechar o painel de detalhe existe o botão "✕ Fechar detalhe" abaixo.
+            if clicked_pa and clicked_pa != st.session_state["pa_selected"]:
+                st.session_state["pa_selected"] = clicked_pa
                 # Incrementa versão → nova key no próximo rerun → reset da seleção
-                # do widget, evitando que o "ghost click" dispare o toggle infinito
+                # do widget, evitando que o "ghost click" dispare reruns indevidos
                 st.session_state["pa_chart_ver"] += 1
                 st.rerun()
     except TypeError:
