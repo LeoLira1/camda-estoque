@@ -2217,6 +2217,92 @@ def _dias_desde(data_str: str) -> int:
         return 0
 
 
+# Tolerância (unidades) entre saída detectada e venda registrada — cobre
+# arredondamento e pequenas diferenças de corte entre os dois relatórios.
+_TOL_SAIDA_VENDA = 1
+
+
+@st.cache_data(ttl=60)
+def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
+    """Saídas de estoque (delta < 0 em variacao_estoque) NÃO explicadas por
+    venda registrada no período — candidatas a transferência entre unidades.
+
+    JANELA DE MATCH (validada nos dados reais em 07/2026): detectado_em é
+    timestamp completo do upload de estoque ("YYYY-MM-DD HH:MM:SS"), enquanto
+    vendas_historico.data_upload é só a data de REFERÊNCIA do relatório
+    ("YYYY-MM-DD") e normalmente fica um dia ATRÁS da detecção — a venda de
+    08/07 explica a queda detectada no upload de estoque de 09/07 de manhã.
+    Match por dia igual falharia silenciosamente (0 vendas encontradas para
+    quedas 100% explicadas); por isso a janela é [dia da detecção - 1 dia,
+    dia da detecção].
+
+    Deltas do mesmo código no mesmo dia são SOMADOS antes da comparação —
+    comparar linha a linha deixaria a mesma venda "explicar" duas quedas
+    (caso real: NONGRASS -38 e -31 no mesmo dia com 69 vendidos).
+
+    Retorna um dict por grupo (codigo, dia) suspeito: codigo, produto, dia,
+    saida_total (>0), vendido, linhas=[{id, qtd_anterior, qtd_atual, delta,
+    detectado_em, status}, ...].
+    """
+    conn = get_db()
+    try:
+        sql = (
+            "SELECT id, codigo, produto, qtd_anterior, qtd_atual, delta, detectado_em, status "
+            "FROM variacao_estoque WHERE delta < 0"
+        )
+        if apenas_pendentes:
+            sql += " AND status = 'pendente'"
+        sql += " ORDER BY detectado_em DESC LIMIT 1000"
+        saidas = conn.execute(sql).fetchall()
+    except Exception:
+        return []
+    if not saidas:
+        return []
+
+    dias = {str(r[6])[:10] for r in saidas}
+    try:
+        corte = (date.fromisoformat(min(dias)) - timedelta(days=1)).isoformat()
+    except Exception:
+        return []
+    vendas: dict = {}
+    try:
+        for cod_v, dia_v, qtd_v in conn.execute(
+            "SELECT codigo, data_upload, SUM(qtd_vendida) FROM vendas_historico "
+            "WHERE data_upload >= ? GROUP BY codigo, data_upload",
+            (corte,),
+        ).fetchall():
+            key = (_codigo_key(cod_v), str(dia_v)[:10])
+            vendas[key] = vendas.get(key, 0) + int(qtd_v or 0)
+    except Exception:
+        return []
+
+    grupos: dict = {}
+    for vid, cod, prod, q_ant, q_atu, delta, det_em, status in saidas:
+        dia = str(det_em)[:10]
+        g = grupos.setdefault((_codigo_key(cod), dia), {
+            "codigo": cod, "produto": prod, "dia": dia,
+            "saida_total": 0, "linhas": [],
+        })
+        g["saida_total"] += abs(int(delta))
+        g["linhas"].append({
+            "id": vid, "qtd_anterior": q_ant, "qtd_atual": q_atu,
+            "delta": int(delta), "detectado_em": det_em, "status": status,
+        })
+
+    suspeitos = []
+    for (cod_key, dia), g in grupos.items():
+        try:
+            dia_ant = (date.fromisoformat(dia) - timedelta(days=1)).isoformat()
+        except Exception:
+            continue
+        vendido = vendas.get((cod_key, dia), 0) + vendas.get((cod_key, dia_ant), 0)
+        if g["saida_total"] > vendido + _TOL_SAIDA_VENDA:
+            g["vendido"] = vendido
+            suspeitos.append(g)
+    suspeitos.sort(key=lambda g: (g["dia"], str(g["produto"])), reverse=True)
+    return suspeitos
+
+
 def _registrar_alertas_no_banco():
     """Verifica condições de alerta e registra no banco (side-effect only).
     Chamada 1x/dia/sessão via guard de session_state no ponto de chamada."""
@@ -2305,6 +2391,22 @@ def _registrar_alertas_no_banco():
         pass
 
     try:
+        for g in checar_saidas_sem_venda():
+            chave = f"{g['codigo']}|{g['dia']}"
+            rec = conn.execute(
+                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                ("transferencia_saida", chave),
+            ).fetchone()
+            if rec is None:
+                conn.execute(
+                    "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                    ("transferencia_saida", chave, hoje.isoformat()),
+                )
+                houve_escrita = True
+    except Exception:
+        pass
+
+    try:
         cutoff = (hoje - timedelta(days=5)).isoformat()
         conn.execute("DELETE FROM alertas_disparados WHERE data_disparo < ?", (cutoff,))
         houve_escrita = True
@@ -2325,7 +2427,8 @@ def _ler_alertas_para_exibir() -> dict:
     Cache compartilhado entre sessões (ttl=3600) — sem side-effects."""
     hoje = datetime.now(tz=_BRT).date()
     conn = get_db()
-    result = {"validade_30d": [], "pendencia_5d": [], "reconciliacao_gv": [], "aumento_estoque": []}
+    result = {"validade_30d": [], "pendencia_5d": [], "reconciliacao_gv": [],
+              "aumento_estoque": [], "transferencia_saida": []}
 
     try:
         ads = conn.execute(
@@ -2403,6 +2506,22 @@ def _ler_alertas_para_exibir() -> dict:
                         "codigo": codigo,
                         "produto": nome_curto,
                         "delta": int(delta),
+                    })
+        except Exception:
+            pass
+
+    if "transferencia_saida" in ativos:
+        chaves = ativos["transferencia_saida"]
+        try:
+            for g in checar_saidas_sem_venda():
+                if f"{g['codigo']}|{g['dia']}" in chaves:
+                    produto = str(g["produto"])
+                    nome_curto = produto.split(" - ")[-1][:40] if " - " in produto else produto[:40]
+                    result["transferencia_saida"].append({
+                        "codigo": g["codigo"],
+                        "produto": nome_curto,
+                        "delta": -int(g["saida_total"]),
+                        "vendido": int(g["vendido"]),
                     })
         except Exception:
             pass
@@ -5728,6 +5847,7 @@ def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int
         ], variacoes)
         get_variacoes.clear()
         get_variacoes_pendentes_count.clear()
+        checar_saidas_sem_venda.clear()
     return len(variacoes)
 
 
@@ -5753,6 +5873,7 @@ def marcar_variacao_verificada(variacao_id: int):
         sync_db()
         get_variacoes.clear()
         get_variacoes_pendentes_count.clear()
+        checar_saidas_sem_venda.clear()
     except Exception as e:
         st.error(f"❌ Erro: {e}")
 
@@ -5768,6 +5889,7 @@ def limpar_variacoes_pendentes() -> int:
         sync_db()
         get_variacoes.clear()
         get_variacoes_pendentes_count.clear()
+        checar_saidas_sem_venda.clear()
         return n
     except Exception:
         return 0
@@ -6996,6 +7118,10 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
         # antigo (ttl 1800s) e não dispararia após o upload da planilha de vendas.
         checar_reconciliacao_gv.clear()
         get_resumo_reconciliacao_gv.clear()
+        # Saídas sem venda cruzam variacao_estoque × vendas_historico: uma venda
+        # recém-carregada pode "explicar" uma queda que estava marcada como
+        # possível transferência.
+        checar_saidas_sem_venda.clear()
     except Exception:
         pass
 
@@ -9146,6 +9272,7 @@ _al_val    = _alertas.get("validade_30d", [])
 _al_pend   = _alertas.get("pendencia_5d", [])
 _al_reconc = _alertas.get("reconciliacao_gv", [])
 _al_aumento = _alertas.get("aumento_estoque", [])
+_al_transf = _alertas.get("transferencia_saida", [])
 
 # ── Separação de estocados pendente ──────────────────────────────────────────
 _GRUPOS_EQUIP = (
@@ -9297,7 +9424,7 @@ if has_mestre:
     </script>""", height=0)
 
     # ── Alertas (abaixo da busca, compacto) ──────────────────────────────────
-    if _al_val or _al_pend or _al_reconc or _al_aumento or _al_sep_pendentes:
+    if _al_val or _al_pend or _al_reconc or _al_aumento or _al_transf or _al_sep_pendentes:
         _pills = []
         if _al_sep_pendentes:
             _n_sep = len(_al_sep_pendentes)
@@ -9353,6 +9480,13 @@ if has_mestre:
             _pills.append(
                 f'<div class="al-pill al-aumento">🟢 <b>Aumento de estoque:</b> {_nomes_au}</div>'
             )
+        if _al_transf:
+            _nomes_tr = ", ".join(
+                f"{a['produto']} {a['delta']}" for a in _al_transf
+            )
+            _pills.append(
+                f'<div class="al-pill al-transferencia">🔄 <b>Possível transferência:</b> {_nomes_tr}</div>'
+            )
         st.markdown(
             """
             <style>
@@ -9363,6 +9497,7 @@ if has_mestre:
             .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
             .al-gv{background:rgba(59,130,246,0.12);color:#60a5fa;border:1px solid rgba(59,130,246,0.35);}
             .al-aumento{background:rgba(34,197,94,0.12);color:#22c55e;border:1px solid rgba(34,197,94,0.35);}
+            .al-transferencia{background:rgba(168,85,247,0.12);color:#a855f7;border:1px solid rgba(168,85,247,0.35);}
             .al-sep{background:rgba(249,115,22,0.12);color:#fb923c;border:1px solid rgba(249,115,22,0.4);}
             </style>
             """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
@@ -9453,7 +9588,7 @@ if has_mestre:
     # (ex.: contador de pendências variando), o Streamlit trata st.tabs()
     # como um widget novo e reseta a aba selecionada para a primeira.
     # Os contadores são exibidos dentro do corpo de cada aba.
-    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_hist_contagem, t_entradas = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", "📋 Hist. Contagem", "📥 Entradas"])
+    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_hist_contagem, t_entradas = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", "📋 Hist. Contagem", "📥📤 Movimentações"])
 
     with t0:
         # ── Dados ──────────────────────────────────────────────────────────
@@ -13040,16 +13175,19 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         .ent-pend{background:rgba(255,165,2,.12);color:#ffa502;border:1px solid rgba(255,165,2,.3);}
         .ent-verif{background:rgba(0,214,143,.10);color:#00d68f;border:1px solid rgba(0,214,143,.25);}
         .ent-manual{background:rgba(59,130,246,.10);color:#60a5fa;border:1px solid rgba(59,130,246,.25);}
+        .ent-delta.ent-neg{color:#a855f7;}
         </style>
         """, unsafe_allow_html=True)
 
         st.markdown(
             '<div style="font-size:1.05rem;font-weight:700;color:#e0e6ed;margin-bottom:10px;">'
-            '📥 Histórico de Entradas no Estoque</div>',
+            '📥📤 Movimentações de Estoque</div>',
             unsafe_allow_html=True,
         )
         if _n_entradas_pending > 0:
             st.info(f"🟢 {_n_entradas_pending} aumento(s) de estoque recente(s) — veja o alerta no topo do dashboard.")
+        if _al_transf:
+            st.info(f"🔄 {len(_al_transf)} saída(s) sem venda associada — possível(is) transferência(s); veja a seção 📤 abaixo.")
 
         # ── Filtros ──────────────────────────────────────────────────────────
         _ent_c1, _ent_c2 = st.columns([3, 1])
@@ -13192,6 +13330,51 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                     f'</div>'
                 )
             st.markdown("".join(_html_var), unsafe_allow_html=True)
+
+        # ── Seção: Saídas sem venda (possíveis transferências) ────────────────
+        st.markdown('<div class="ent-section">📤 Saídas sem venda (possíveis transferências)</div>', unsafe_allow_html=True)
+
+        try:
+            _grupos_saida = checar_saidas_sem_venda(apenas_pendentes=False)
+        except Exception:
+            _grupos_saida = []
+        if _dias_ent < 3650:
+            _grupos_saida = [g for g in _grupos_saida if g["dia"] >= _corte_ent]
+        if _ent_search.strip():
+            _s_out = _ent_search.strip().lower()
+            _grupos_saida = [
+                g for g in _grupos_saida
+                if _s_out in str(g["produto"]).lower() or _s_out in str(g["codigo"]).lower()
+            ]
+
+        if not _grupos_saida:
+            st.markdown(
+                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhuma saída sem venda no período.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _html_saida = []
+            for _gs in _grupos_saida:
+                _nome_s = short_name(_gs["produto"])
+                for _ls in _gs["linhas"]:
+                    _data_s = str(_ls["detectado_em"])[:16].replace("T", " ")
+                    _badge_s = (
+                        '<span class="ent-badge ent-pend">pendente</span>'
+                        if _ls["status"] == "pendente"
+                        else '<span class="ent-badge ent-verif">verificado</span>'
+                    )
+                    _html_saida.append(
+                        f'<div class="ent-row">'
+                        f'<span class="ent-cod">{_gs["codigo"]}</span>'
+                        f'<span class="ent-prod">{_nome_s}</span>'
+                        f'<span class="ent-qty">{int(_ls["qtd_anterior"])} → {int(_ls["qtd_atual"])}</span>'
+                        f'<span class="ent-delta ent-neg">{int(_ls["delta"])}</span>'
+                        f'<span class="ent-qty">venda período: {int(_gs["vendido"])}</span>'
+                        f'<span class="ent-date">{_data_s}</span>'
+                        f'{_badge_s}'
+                        f'</div>'
+                    )
+            st.markdown("".join(_html_saida), unsafe_allow_html=True)
 
         # ── Seção: Lançamentos Manuais ────────────────────────────────────────
         st.markdown('<div class="ent-section">📋 Lançamentos Manuais</div>', unsafe_allow_html=True)
