@@ -10807,7 +10807,15 @@ new Chart(document.getElementById('coop-chart'),{
             )
             if foto is not None:
                 img_bytes = foto.read()
-                st.image(img_bytes, caption="Prévia — confirme antes de salvar", use_container_width=True)
+                _prev_b64 = base64.b64encode(img_bytes).decode("utf-8")
+                _prev_mime = foto.type or "image/jpeg"
+                st.markdown(
+                    f'<img src="data:{_prev_mime};base64,{_prev_b64}" '
+                    f'style="width:100%;border-radius:12px;display:block;" '
+                    f'alt="Prévia da via cega">',
+                    unsafe_allow_html=True
+                )
+                st.caption("Prévia — confirme antes de salvar")
                 col_ok, col_cancel = st.columns(2)
                 with col_ok:
                     if st.button("✅ Salvar pendência", use_container_width=True, type="primary", key="pend_salvar"):
@@ -10855,9 +10863,17 @@ new Chart(document.getElementById('coop-chart'),{
                     f'{obs_html}',
                     unsafe_allow_html=True
                 )
-                try:
-                    st.image(base64.b64decode(foto_b64), use_container_width=True)
-                except Exception:
+                # Data URI em vez de st.image: não depende do media server do
+                # Streamlit, evitando "not connected to a server!" quando o
+                # navegador reconecta (comum no celular em segundo plano).
+                if foto_b64:
+                    st.markdown(
+                        f'<img src="data:image/jpeg;base64,{foto_b64}" '
+                        f'style="width:100%;border-radius:12px;display:block;" '
+                        f'alt="Via cega do pedido">',
+                        unsafe_allow_html=True
+                    )
+                else:
                     st.warning("Erro ao carregar imagem.")
                 if st.button(f"✅ Entregue — remover", key=f"pend_del_{pid}", use_container_width=True):
                     deletar_pendencia(pid)
