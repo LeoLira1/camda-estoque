@@ -9,6 +9,7 @@ import random
 import base64
 import io
 import unicodedata
+import html as _esc_html
 import calendar as _cal_mod
 from difflib import get_close_matches as _gcm
 import plotly.graph_objects as go
@@ -6759,7 +6760,7 @@ def render_mapa_visual(conn):
     st.plotly_chart(fig_hm, use_container_width=True)
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia", sort_fn=None, ctx: str = "") -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia", sort_fn=None, ctx: str = "", observacoes_map: dict = None) -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
@@ -6776,6 +6777,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
         validade_map = {}
     avarias_map_norm = {_codigo_key(k): v for k, v in avarias_map.items()}
     divergencias_map_norm = {_codigo_key(k): v for k, v in divergencias_map.items()}
+    observacoes_map_norm = {_codigo_key(k): v for k, v in (observacoes_map or {}).items()}
 
     from datetime import date as _vdate, datetime as _vdatetime
 
@@ -7022,6 +7024,22 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                         f'&#x1F464; {_coops_txt}</div>'
                     )
 
+            # Último comentário do app sincronizado (inventario_cicli.observacao)
+            obs_popup_html = ""
+            if cod_str in observacoes_map_norm:
+                _obs_txt, _obs_dt = observacoes_map_norm[cod_str]
+                _obs_txt = _esc_html.escape(str(_obs_txt).strip())
+                _obs_dt = str(_obs_dt or "").strip()
+                _obs_dt_fmt = f"{_obs_dt[8:10]}/{_obs_dt[5:7]}" if len(_obs_dt) >= 10 else ""
+                if _obs_txt:
+                    obs_popup_html = (
+                        f'<div style="font-size:0.78rem;font-weight:500;color:#cbd5e1;margin-top:6px;'
+                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
+                        f'&#x1F4AC; {_obs_txt}'
+                        + (f' <span style="color:#94a3b8;">&middot; {_obs_dt_fmt}</span>' if _obs_dt_fmt else '')
+                        + '</div>'
+                    )
+
             prods.append(
                 f'<div class="tm-tile{blink_cls}" tabindex="0" title="{r["codigo"]} — {r["produto"]}"'
                 f' data-codigo="{cod_str}"'
@@ -7035,7 +7053,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 f'{venc_label_html}'
                 f'{ciclo_date_html}'
                 f'<div class="tm-cod">{r["codigo"]}</div>'
-                f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}{cooperado_popup_html}</div>'
+                f'<div class="tm-popup"><div class="tm-popup-code">{r["codigo"]}</div>{r["produto"]}{cooperado_popup_html}{obs_popup_html}</div>'
                 f'</div>'
             )
 
