@@ -1,4 +1,5 @@
 """Aba de Inventário Cíclico — conferência contínua com cards clicáveis."""
+import html as _html
 import re as _re
 from datetime import datetime, timedelta, timezone
 
@@ -395,6 +396,30 @@ def _get_divergencias_cicli(get_db) -> dict:
         return {}
 
 
+def _get_ultima_observacao_cicli(get_db, codigo: str):
+    """Última observacao não-vazia de inventario_cicli (gravada pelo app
+    sincronizado via triggers). Retorna (observacao, contado_em) ou None."""
+    try:
+        conn = get_db()
+        return conn.execute("""
+            SELECT observacao, contado_em FROM inventario_cicli
+            WHERE UPPER(TRIM(produto_id)) = UPPER(TRIM(?))
+              AND TRIM(COALESCE(observacao,'')) != ''
+            ORDER BY data_contagem DESC, contado_em DESC LIMIT 1
+        """, (str(codigo),)).fetchone()
+    except Exception:
+        return None
+
+
+def _fmt_dt_br(s) -> str:
+    """'2026-07-11 15:42:07' → '11/07 15:42'; devolve a string original se não parsear."""
+    txt = str(s or "").strip()
+    try:
+        return datetime.strptime(txt, "%Y-%m-%d %H:%M:%S").strftime("%d/%m %H:%M")
+    except (ValueError, TypeError):
+        return txt
+
+
 def _get_progresso_ciclo(get_db) -> dict:
     try:
         conn = get_db()
@@ -428,13 +453,68 @@ def _get_progresso_ciclo(get_db) -> dict:
 # ── Modal de conferência ──────────────────────────────────────────────────────
 
 @st.dialog("Conferência de Estoque", width="small")
-def _dialog_conferencia(produto_row, get_db, sync_db):
+def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None):
     """Modal para confirmar quantidade OK ou registrar divergência."""
     sel_codigo = str(produto_row["codigo"])
     qtd_sistema = int(produto_row["qtd_sistema"])
 
     st.markdown(f"**{produto_row['produto']}**")
     st.caption(f"Categoria: {produto_row['categoria']} · Código: {sel_codigo}")
+
+    # ── Contexto: divergências abertas + comentários do app sincronizado ─────
+    if get_divergencias is not None:
+        try:
+            _df_div = get_divergencias()
+        except Exception:
+            _df_div = None
+        if _df_div is not None and not _df_div.empty:
+            _cod_norm = sel_codigo.strip().upper()
+            _df_div = _df_div[
+                _df_div["codigo"].astype(str).str.strip().str.upper() == _cod_norm
+            ]
+            for _, _dv in _df_div.iterrows():
+                _delta = int(_dv["delta"]) if pd.notna(_dv.get("delta")) else 0
+                _falta = _delta < 0
+                _seta, _cor = ("▼", "#ff4757") if _falta else ("▲", "#ffa502")
+                _tipo = "falta" if _falta else "sobra"
+                _coop = str(_dv.get("cooperado") or "").strip() or "sem cooperado"
+                st.markdown(
+                    f'<div style="background:rgba(255,71,87,0.10);border-left:3px solid {_cor};'
+                    f'border-radius:6px;padding:6px 10px;margin:4px 0;'
+                    f"font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#e8eaf0;\">"
+                    f'<span style="color:{_cor};font-weight:700;">{_seta} {abs(_delta)} un ({_tipo})</span>'
+                    f' · 👤 {_html.escape(_coop)}'
+                    f' · <span style="color:#94a3b8;">{_fmt_dt_br(_dv.get("criado_em"))}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+    _obs = _get_ultima_observacao_cicli(get_db, sel_codigo)
+    if _obs and str(_obs[0] or "").strip():
+        st.markdown(
+            f'<div style="background:rgba(59,130,246,0.10);border-left:3px solid #3b82f6;'
+            f'border-radius:6px;padding:6px 10px;margin:4px 0;'
+            f"font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#e8eaf0;\">"
+            f'💬 "{_html.escape(str(_obs[0]).strip())}"'
+            f' · <span style="color:#94a3b8;">{_fmt_dt_br(_obs[1])}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        _nota = ""
+        for _campo in ("nota", "observacoes"):
+            _v = produto_row.get(_campo)
+            if pd.notna(_v) and str(_v).strip():
+                _nota = str(_v).strip()
+                break
+        if _nota:
+            st.caption(f"📝 Nota do produto: {_nota}")
+
+    _contado_em = produto_row.get("contado_ciclo_em")
+    _qtd_cont = produto_row.get("qtd_contada_ciclo")
+    if pd.notna(_contado_em) and str(_contado_em).strip() and pd.notna(_qtd_cont):
+        st.caption(f"🕐 Última conferência: {int(float(_qtd_cont))} un em {_fmt_dt_br(_contado_em)}")
+
     st.divider()
 
     col_lbl, col_val = st.columns([3, 1])
@@ -522,7 +602,7 @@ def build_inventario_ciclico_tab(
         if _sc:
             _sr = df[df["codigo"].astype(str) == str(_sc)]
             if not _sr.empty:
-                _dialog_conferencia(_sr.iloc[0], get_db, sync_db)
+                _dialog_conferencia(_sr.iloc[0], get_db, sync_db, get_divergencias)
 
     conferidos = progresso["ok"] + progresso["divergencia"]
     pct = (conferidos / max(progresso["total"], 1)) * 100
