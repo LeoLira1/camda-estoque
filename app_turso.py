@@ -9306,13 +9306,21 @@ def apply_header_css() -> None:
     --ch-green: #3ddc84;
     --ch-red: #ff5d6c;
 }
+/* Injetores invisíveis (iframes utilitários colapsados e blocos só-CSS)
+   ainda geram um gap de 1rem cada no flex principal, empurrando o header
+   para baixo. display:none remove o item do flex e elimina o gap.
+   (style:only-child preserva blocos que misturam <style> + conteúdo real.) */
+div[data-testid="stElementContainer"]:has(iframe[data-camda-collapse]),
+div[data-testid="stElementContainer"]:has(div[data-testid="stMarkdownContainer"] > style:only-child) {
+    display: none !important;
+}
 /* Container Streamlit do header: sticky no topo do scroll principal */
 div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.camda-topbar) {
     position: -webkit-sticky;
     position: sticky !important;
     top: 0;
     z-index: 99;
-    margin: 0 0 12px 0 !important;
+    margin: 0 !important;
     padding: 0 !important;
 }
 .camda-topbar {
@@ -9372,7 +9380,8 @@ div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.
 /* ── Responsivo ── */
 @media (max-width: 720px) {
     .camda-topbar { gap: 10px; padding: 0 12px; }
-    .ct-sub, .ct-num-lbl, .ct-fil-name { display: none; }
+    /* fica só o essencial: marca, números e dot + hora */
+    .ct-sub, .ct-num-lbl, .ct-fil-name, .ct-sync-txt { display: none; }
     .ct-title { letter-spacing: 2px; font-size: 15px; }
     .ct-nums { gap: 8px; }
     .ct-ops { gap: 8px; }
@@ -9389,8 +9398,11 @@ div[data-testid="stVerticalBlock"] > div.st-key-search_mestre {
     top: 0;
     z-index: 100;                    /* acima do header, abaixo de popovers/modais */
     height: 54px;
-    margin-top: -66px !important;    /* 54px do header + 12px de margem inferior */
-    margin-bottom: 12px !important;
+    /* No 1.59 o box do markdown do header mede 1rem a menos que o visual
+       (38px) e o gap do flex principal é 1rem: posição normal da busca =
+       38 + 16 = 54px abaixo do topo do header → -54px a sobrepõe exata. */
+    margin-top: -54px !important;
+    margin-bottom: 0 !important;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -9400,7 +9412,9 @@ div.st-key-search_mestre [data-testid="stTextInput"] {
     width: clamp(150px, calc(100vw - 590px), 460px);
     pointer-events: auto;
 }
-/* Campo em glass escuro com lupa à esquerda */
+/* Campo em glass escuro com lupa à esquerda
+   (1.59 usa react-aria: stTextInputRootElement é o wrapper com a borda) */
+div.st-key-search_mestre [data-testid="stTextInputRootElement"],
 div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"] {
     background: rgba(10,20,38,0.7) !important;
     border: 1px solid var(--ch-border) !important;
@@ -9411,6 +9425,7 @@ div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"] {
     background-repeat: no-repeat !important;
     background-position: 11px center !important;
 }
+div.st-key-search_mestre .react-aria-TextField,
 div.st-key-search_mestre [data-baseweb="base-input"] {
     background: transparent !important;
     border: none !important;
@@ -9428,6 +9443,7 @@ div.st-key-search_mestre [data-testid="stTextInput"] input::placeholder {
     color: var(--ch-muted) !important;
     opacity: .8 !important;
 }
+div.st-key-search_mestre [data-testid="stTextInputRootElement"]:focus-within,
 div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
     border-color: rgba(56,200,240,0.35) !important;
     box-shadow: 0 0 0 3px rgba(47,211,245,0.08) !important;
@@ -9440,7 +9456,8 @@ div.st-key-search_mestre [data-testid="stTextInput"] input:focus {
 }
 @media (max-width: 720px) {
     div.st-key-search_mestre [data-testid="stTextInput"] {
-        width: min(300px, calc(100vw - 235px));
+        /* marca (~130px) + números/dot/hora (~140px) fora da zona central */
+        width: min(280px, calc(100vw - 275px));
     }
 }
 </style>
@@ -9475,7 +9492,7 @@ def render_camda_header(total_itens=None, n_diverg_dia=None, sync_hhmm=None) -> 
     <div class="ct-sep"></div>
     <div class="ct-fil">
       <div class="ct-fil-name">FILIAL 01053 · QUIRINÓPOLIS</div>
-      <div class="ct-sync"><span class="ct-dot"></span>sincronizado {sync_txt}</div>
+      <div class="ct-sync"><span class="ct-dot"></span><span class="ct-sync-txt">sincronizado&nbsp;</span>{sync_txt}</div>
     </div>
   </div>
 </div>
