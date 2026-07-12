@@ -846,6 +846,38 @@ st.markdown("""
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
     .stTabs [data-baseweb="tab-border"] { display: none !important; }
     .stTabs .react-aria-SelectionIndicator { display: none !important; }
+    /* ── Navegação principal do dashboard (st.pills key=dash_nav) ────────
+       Mesmo visual das abas antigas; as pills quebram linha (todas as 19
+       visíveis de uma vez, sem setas de scroll). */
+    div.st-key-dash_nav [data-testid="stButtonGroup"] {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px !important;
+        padding: 4px 4px 0 4px;
+    }
+    div.st-key-dash_nav button {
+        color: #7bafd4 !important;
+        background: rgba(255,255,255,0.04) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 8px !important;
+        padding: 6px 14px !important;
+        font-weight: 500 !important;
+        font-size: 0.875rem !important;
+        min-height: 0 !important;
+        transition: background 0.2s, border-color 0.2s !important;
+    }
+    div.st-key-dash_nav button p { font-size: inherit !important; }
+    div.st-key-dash_nav button:hover {
+        background: rgba(123,175,212,0.10) !important;
+        border-color: rgba(123,175,212,0.35) !important;
+    }
+    div.st-key-dash_nav button[data-testid="stBaseButton-pillsActive"],
+    div.st-key-dash_nav button[kind="pillsActive"] {
+        color: #cde8f8 !important;
+        background: rgba(123,175,212,0.16) !important;
+        border: 1px solid rgba(123,175,212,0.5) !important;
+        box-shadow: 0 0 6px rgba(123,175,212,0.45), 0 0 14px rgba(123,175,212,0.18) !important;
+    }
     /* ── Blindagem: painel de aba inativo nunca fica visível ───────────
        O esconder padrão depende de CSS gerado em runtime pelo frontend do
        Streamlit; se ele falhar (versão nova, cache velho, navegador
@@ -867,6 +899,11 @@ st.markdown("""
         .stat-label { font-size: 0.48rem; letter-spacing: 0.5px; }
         .stTabs [data-baseweb="tab"],
         .stTabs [data-testid="stTab"] {
+            padding: 5px 8px !important;
+            font-size: 0.65rem !important;
+            border-radius: 6px !important;
+        }
+        div.st-key-dash_nav button {
             padding: 5px 8px !important;
             font-size: 0.65rem !important;
             border-radius: 6px !important;
@@ -9390,10 +9427,19 @@ div[data-testid="stVerticalBlock"] > div.st-key-search_mestre {
     display: flex;
     align-items: center;
     justify-content: center;
+    /* Reserva as zonas laterais do header: marca à esquerda (~200px) e
+       resumo operacional à direita (~410px com filial visível). O input é
+       centralizado apenas na zona central restante — antes era centralizado
+       na viewport inteira e cobria o "DIVERG. HOJE" em telas médias. */
+    box-sizing: border-box;
+    padding-left: 200px;
+    padding-right: 410px;
     pointer-events: none;            /* só o input captura cliques */
 }
 div.st-key-search_mestre [data-testid="stTextInput"] {
-    width: clamp(150px, calc(100vw - 590px), 460px);
+    width: 100%;
+    max-width: 460px;
+    min-width: 0;
     pointer-events: auto;
 }
 /* Campo em glass escuro com lupa à esquerda
@@ -9438,10 +9484,21 @@ div.st-key-search_mestre [data-testid="stTextInput"] input:focus {
     box-shadow: none !important;
     outline: none !important;
 }
+/* Telas médias: sem espaço para o nome da filial ao lado da busca */
+@media (max-width: 980px) {
+    .ct-fil-name, .ct-sep { display: none; }
+    div[data-testid="stVerticalBlock"] > div.st-key-search_mestre {
+        padding-right: 210px;   /* ops sem filial: só números */
+    }
+}
 @media (max-width: 720px) {
+    div[data-testid="stVerticalBlock"] > div.st-key-search_mestre {
+        /* marca só com título (~150px) + números sem labels (~80px) */
+        padding-left: 150px;
+        padding-right: 80px;
+    }
     div.st-key-search_mestre [data-testid="stTextInput"] {
-        /* marca (~130px) + números/dot/hora (~140px) fora da zona central */
-        width: min(280px, calc(100vw - 275px));
+        max-width: 280px;
     }
 }
 </style>
@@ -9757,13 +9814,40 @@ if has_mestre:
 
     _n_entradas_pending = len(_al_aumento)
 
-    # Labels das abas ficam sempre estáticas: se o texto mudar entre reruns
-    # (ex.: contador de pendências variando), o Streamlit trata st.tabs()
-    # como um widget novo e reseta a aba selecionada para a primeira.
-    # Os contadores são exibidos dentro do corpo de cada aba.
-    t0, t1, t2, t3, t4, t_cobertura, t_mural, t5, t6, t7, t8, t9, t10, t11, t12, t_materiais, t_ciclico, t_hist_contagem, t_entradas = st.tabs(["📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja", "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda", "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem", "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📦 Estocados", "🔄 Inv. Cíclico", "📋 Hist. Contagem", "📥📤 Movimentações"])
+    # ── Navegação do dashboard: renderização preguiçosa (lazy) ──────────────
+    # Antes usava st.tabs(), que renderiza o corpo das 19 abas em TODO rerun:
+    # a entrada no dashboard só terminava depois de computar e montar o DOM
+    # de todas as abas, e cada interação repetia esse custo. Com st.pills +
+    # renderização condicional, apenas a aba ativa é executada — a entrada e
+    # a troca de aba custam 1/19 do trabalho anterior.
+    # Labels ficam estáticas (sem contadores) para não invalidar o widget.
+    _DASH_TABS = [
+        "📊 Info", "🗺️ Mapa Estoque", "⚠️ Divergências", "🏪 Repor na Loja",
+        "📈 Vendas", "📉 Cobertura", "📌 Mural", "🗓️ Última Venda",
+        "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem",
+        "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📦 Estocados",
+        "🔄 Inv. Cíclico", "📋 Hist. Contagem", "📥📤 Movimentações",
+    ]
+    (_TAB_INFO, _TAB_MAPA, _TAB_DIVERG, _TAB_REPOR, _TAB_VENDAS,
+     _TAB_COBERTURA, _TAB_MURAL, _TAB_ULT_VENDA, _TAB_PENDENCIAS,
+     _TAB_AVARIAS, _TAB_AGENDA, _TAB_CONTAGEM, _TAB_VALIDADE,
+     _TAB_HISTORICO, _TAB_PATIVOS, _TAB_ESTOCADOS, _TAB_CICLICO,
+     _TAB_HIST_CONTAGEM, _TAB_ENTRADAS) = _DASH_TABS
 
-    with t0:
+    # st.pills permite "desmarcar" a pill ativa (retorna None); restaura a
+    # última aba escolhida antes de instanciar o widget para nunca ficar
+    # sem aba selecionada.
+    if st.session_state.get("dash_nav") is None:
+        st.session_state["dash_nav"] = st.session_state.get("_dash_nav_last", _TAB_INFO)
+    _dash_tab = st.pills(
+        "Navegação do dashboard", _DASH_TABS, selection_mode="single",
+        key="dash_nav", label_visibility="collapsed",
+    )
+    if _dash_tab is None:
+        _dash_tab = st.session_state.get("_dash_nav_last", _TAB_INFO)
+    st.session_state["_dash_nav_last"] = _dash_tab
+
+    if _dash_tab == _TAB_INFO:
         # ── Dados ──────────────────────────────────────────────────────────
         _df_d = get_divergencias()
         _df_falta_i = _df_d[_df_d["status"] == "falta"] if not _df_d.empty else pd.DataFrame(columns=["id","codigo","produto","categoria","delta","status","cooperado","criado_em","qtd_sistema"])
@@ -9957,7 +10041,7 @@ if has_mestre:
                 if len(_df_crit_i) > 10:
                     st.caption(f"+ {len(_df_crit_i)-10} produtos — ver aba Vendas → Estoque Crítico")
 
-    with t1:
+    if _dash_tab == _TAB_MAPA:
         # Monta dict codigo -> qtd_avariada (avarias abertas)
         df_av_mapa = listar_avarias(apenas_abertas=True)
         av_map = df_av_mapa.groupby("codigo")["qtd_avariada"].sum().to_dict() if not df_av_mapa.empty else {}
@@ -10082,7 +10166,7 @@ if has_mestre:
 </script>
 """, height=0)
 
-    with t2:
+    if _dash_tab == _TAB_DIVERG:
         df_div = get_divergencias()
         if df_div.empty:
             st.info("Nenhuma divergência.")
@@ -10508,7 +10592,7 @@ new Chart(document.getElementById('coop-chart'),{
                             f"{item['produto']} possui estocado de cooperado(s): {detalhes}"
                         )
 
-    with t3:
+    if _dash_tab == _TAB_REPOR:
         if df_reposicao.empty:  # Repor na Loja
             st.success("Nenhum produto pendente de reposição! 🎉")
         else:
@@ -10659,7 +10743,7 @@ new Chart(document.getElementById('coop-chart'),{
                                 else:
                                     st.error(msg)
 
-    with t4:
+    if _dash_tab == _TAB_VENDAS:
         df_vendas = get_vendas_historico()
         build_vendas_tab(df_vendas)
 
@@ -10816,7 +10900,7 @@ new Chart(document.getElementById('coop-chart'),{
             st.rerun()
 
     # ── Aba Última Venda ────────────────────────────────────────────────────
-    with t5:
+    if _dash_tab == _TAB_ULT_VENDA:
         st.markdown("### 🗓️ Última Venda Registrada por Produto")
         st.caption("Mostra a data da última planilha de vendas que incluiu cada produto e a quantidade vendida naquele dia.")
 
@@ -10904,7 +10988,7 @@ new Chart(document.getElementById('coop-chart'),{
 
             st.caption(f"Exibindo {len(_df_uv_disp)} de {len(_df_uv)} produto(s).")
 
-    with t6:
+    if _dash_tab == _TAB_PENDENCIAS:
         # ── CSS da aba ──
         st.markdown("""
         <style>
@@ -11012,7 +11096,7 @@ new Chart(document.getElementById('coop-chart'),{
                     st.rerun()
                 st.markdown("</div>", unsafe_allow_html=True)
 
-    with t7:
+    if _dash_tab == _TAB_AVARIAS:
         st.markdown("""
         <style>
         .av-card{background:linear-gradient(145deg,#0d1824,#111e2e);
@@ -11400,7 +11484,7 @@ new Chart(document.getElementById('coop-chart'),{
 
                 st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
 
-    with t8:
+    if _dash_tab == _TAB_AGENDA:
         import iframe_compat as components
         import calendar as _cal
         import json as _json
@@ -12064,10 +12148,10 @@ new Chart(document.getElementById('coop-chart'),{
                                 st.rerun()
                             st.markdown("</div>", unsafe_allow_html=True)
 
-    with t9:
+    if _dash_tab == _TAB_CONTAGEM:
         _aba_contagem()
 
-    with t10:
+    if _dash_tab == _TAB_VALIDADE:
         # ── CSS da aba ──────────────────────────────────────────────────────────
         st.markdown("""
         <style>
@@ -12269,7 +12353,7 @@ new Chart(document.getElementById('coop-chart'),{
     # ══════════════════════════════════════════════════════════════════════════
     # TAB 11 — HISTÓRICO DE VENDAS
     # ══════════════════════════════════════════════════════════════════════════
-    with t11:
+    if _dash_tab == _TAB_HISTORICO:
         if n_pendentes > 0:
             st.warning(f"⚠️ {n_pendentes} produto(s) sem princípio ativo cadastrado")
             with st.expander("📋 Ver produtos pendentes de classificação", expanded=True):
@@ -12493,13 +12577,13 @@ new Chart(document.getElementById('coop-chart'),{
     # ══════════════════════════════════════════════════════════════════════════
     # TAB 12 — ESTOQUE POR PRINCÍPIO ATIVO
     # ══════════════════════════════════════════════════════════════════════════
-    with t12:
+    if _dash_tab == _TAB_PATIVOS:
         build_principios_ativos_tab(df_mestre, df_pa)
 
     # ══════════════════════════════════════════════════════════════════════════
     # TAB MATERIAIS — Materiais Em Poder de Terceiros (MATR480)
     # ══════════════════════════════════════════════════════════════════════════
-    with t_materiais:
+    if _dash_tab == _TAB_ESTOCADOS:
         st.markdown(
             '<div style="font-size:1.05rem;font-weight:700;color:#e0e6ed;'
             'margin-bottom:12px;">📦 Materiais Em Poder de Terceiros — MATR480</div>',
@@ -12888,14 +12972,279 @@ new Chart(document.getElementById('coop-chart'),{
 
 
     # ── TAB: COBERTURA DE ESTOQUE ─────────────────────────────────────────────
-    with t_cobertura:
+    if _dash_tab == _TAB_COBERTURA:
         build_cobertura_tab(get_cobertura_estoque())
 
 
     # ── TAB: MURAL ──────────────────────────────────────────────────────────
-    with t_mural:
+    if _dash_tab == _TAB_MURAL:
         _mural_rows = get_mural_recados()
         _render_mural_tab(TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, _mural_rows)
+
+
+    if _dash_tab == _TAB_CICLICO:
+        _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name,
+                            get_divergencias=get_divergencias, get_historico_divergencias=get_historico_divergencias)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB HISTÓRICO DE CONTAGEM — lista por dia das contagens do inventário cíclico
+    # ══════════════════════════════════════════════════════════════════════════
+    if _dash_tab == _TAB_HIST_CONTAGEM:
+        _render_historico_contagem_tab(get_db)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB ENTRADAS — Histórico de produtos que entraram no estoque
+    # ══════════════════════════════════════════════════════════════════════════
+    if _dash_tab == _TAB_ENTRADAS:
+        st.markdown("""
+        <style>
+        .ent-kpi-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+        .ent-kpi{flex:1;min-width:90px;background:linear-gradient(135deg,#111827,#1a2332);
+                 border:1px solid #1e293b;border-radius:10px;padding:8px 10px;text-align:center;}
+        .ent-kpi-v{font-family:'JetBrains Mono',monospace;font-size:1.15rem;font-weight:700;color:#22c55e;}
+        .ent-kpi-v.amber{color:#ffa502;}
+        .ent-kpi-l{font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+        .ent-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
+                     color:#64748b;margin:14px 0 5px;padding:0 2px;border-bottom:1px solid #1e293b;padding-bottom:4px;}
+        .ent-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
+                 border-radius:8px;padding:7px 10px;margin-bottom:3px;
+                 display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+        .ent-prod{font-weight:600;font-size:0.83rem;color:#e0e6ed;flex:1;min-width:160px;}
+        .ent-cod{font-family:'JetBrains Mono',monospace;font-size:0.70rem;color:#3b82f6;min-width:75px;}
+        .ent-delta{font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;
+                   color:#22c55e;min-width:55px;text-align:right;}
+        .ent-qty{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#94a3b8;min-width:100px;text-align:right;}
+        .ent-date{font-size:0.67rem;color:#64748b;min-width:88px;text-align:right;}
+        .ent-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;}
+        .ent-pend{background:rgba(255,165,2,.12);color:#ffa502;border:1px solid rgba(255,165,2,.3);}
+        .ent-verif{background:rgba(0,214,143,.10);color:#00d68f;border:1px solid rgba(0,214,143,.25);}
+        .ent-manual{background:rgba(59,130,246,.10);color:#60a5fa;border:1px solid rgba(59,130,246,.25);}
+        .ent-delta.ent-neg{color:#a855f7;}
+        </style>
+        """, unsafe_allow_html=True)
+
+        st.markdown(
+            '<div style="font-size:1.05rem;font-weight:700;color:#e0e6ed;margin-bottom:10px;">'
+            '📥📤 Movimentações de Estoque</div>',
+            unsafe_allow_html=True,
+        )
+        if _n_entradas_pending > 0:
+            st.info(f"🟢 {_n_entradas_pending} aumento(s) de estoque recente(s) — veja o alerta no topo do dashboard.")
+        if _al_transf:
+            st.info(f"🔄 {len(_al_transf)} saída(s) sem venda associada — possível(is) transferência(s); veja a seção 📤 abaixo. Os produtos também entraram na 📋 Contagem para conferência física.")
+
+        # ── Filtros ──────────────────────────────────────────────────────────
+        _ent_c1, _ent_c2 = st.columns([3, 1])
+        with _ent_c1:
+            _ent_search = st.text_input(
+                "Buscar produto", key="ent_search",
+                placeholder="Nome ou código…", label_visibility="collapsed",
+            )
+        with _ent_c2:
+            _ent_periodo = st.selectbox(
+                "Período", ["Hoje", "7 dias", "30 dias", "90 dias", "Tudo"],
+                key="ent_periodo", label_visibility="collapsed",
+            )
+
+        _hoje_ent = datetime.now(tz=_BRT).date()
+        _dias_map = {"Hoje": 0, "7 dias": 7, "30 dias": 30, "90 dias": 90, "Tudo": 3650}
+        _dias_ent = _dias_map[_ent_periodo]
+        _corte_ent = (_hoje_ent - timedelta(days=_dias_ent)).isoformat()
+
+        # ── Carregar variacao_estoque (apenas delta > 0 = entradas) ──────────
+        try:
+            _sql_var = (
+                "SELECT codigo, produto, qtd_anterior, qtd_atual, delta, detectado_em, status "
+                "FROM variacao_estoque WHERE delta > 0"
+            )
+            if _dias_ent < 3650:
+                _sql_var += f" AND detectado_em >= '{_corte_ent}'"
+            _sql_var += " ORDER BY detectado_em DESC LIMIT 400"
+            _rows_var = get_db().execute(_sql_var).fetchall()
+            _df_var = pd.DataFrame(
+                _rows_var,
+                columns=["codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"],
+            )
+        except Exception:
+            _df_var = pd.DataFrame(columns=["codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"])
+
+        # ── Carregar lancamentos_manuais ─────────────────────────────────────
+        try:
+            _sql_lanc = (
+                "SELECT codigo, produto, categoria, tipo, quantidade, motivo, registrado_em "
+                "FROM lancamentos_manuais"
+            )
+            if _dias_ent < 3650:
+                _sql_lanc += f" WHERE registrado_em >= '{_corte_ent}'"
+            _sql_lanc += " ORDER BY registrado_em DESC LIMIT 400"
+            _rows_lanc = get_db().execute(_sql_lanc).fetchall()
+            _df_lanc = pd.DataFrame(
+                _rows_lanc,
+                columns=["codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"],
+            )
+        except Exception:
+            _df_lanc = pd.DataFrame(columns=["codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"])
+
+        # ── Filtro de busca ──────────────────────────────────────────────────
+        if _ent_search.strip():
+            _s = _ent_search.strip().lower()
+            if not _df_var.empty:
+                _mask_var = (
+                    _df_var["produto"].str.lower().str.contains(_s, na=False) |
+                    _df_var["codigo"].str.lower().str.contains(_s, na=False)
+                )
+                _df_var = _df_var[_mask_var]
+            if not _df_lanc.empty:
+                _mask_lanc = (
+                    _df_lanc["produto"].str.lower().str.contains(_s, na=False) |
+                    _df_lanc["codigo"].str.lower().str.contains(_s, na=False)
+                )
+                _df_lanc = _df_lanc[_mask_lanc]
+
+        # ── KPIs ─────────────────────────────────────────────────────────────
+        _hoje_str = _hoje_ent.isoformat()
+        _7d_str   = (_hoje_ent - timedelta(days=7)).isoformat()
+        _30d_str  = (_hoje_ent - timedelta(days=30)).isoformat()
+
+        def _ent_count(df, col, desde):
+            if df.empty:
+                return 0
+            return int((df[col].str[:10] >= desde).sum())
+
+        try:
+            _kpi_var_hoje  = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_hoje_str,)).fetchone()[0]
+            _kpi_var_7d    = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_7d_str,)).fetchone()[0]
+            _kpi_var_30d   = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_30d_str,)).fetchone()[0]
+            _kpi_pend      = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND status='pendente'").fetchone()[0]
+            _kpi_lanc_30d  = get_db().execute("SELECT COUNT(*) FROM lancamentos_manuais WHERE registrado_em>=?", (_30d_str,)).fetchone()[0]
+        except Exception:
+            _kpi_var_hoje = _kpi_var_7d = _kpi_var_30d = _kpi_pend = _kpi_lanc_30d = 0
+
+        _pend_cls = "amber" if _kpi_pend > 0 else ""
+        st.markdown(
+            f'<div class="ent-kpi-row">'
+            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_hoje}</div>'
+            f'<div class="ent-kpi-l">Entradas hoje</div></div>'
+            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_7d}</div>'
+            f'<div class="ent-kpi-l">Últimos 7 dias</div></div>'
+            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_30d}</div>'
+            f'<div class="ent-kpi-l">Últimos 30 dias</div></div>'
+            f'<div class="ent-kpi"><div class="ent-kpi-v {_pend_cls}">{_kpi_pend}</div>'
+            f'<div class="ent-kpi-l">Pendentes verificação</div></div>'
+            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_lanc_30d}</div>'
+            f'<div class="ent-kpi-l">Lançamentos (30d)</div></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Botão marcar pendentes como verificados ───────────────────────────
+        if _kpi_pend > 0:
+            if st.button(f"✅ Marcar {_kpi_pend} entrada(s) pendente(s) como verificadas", key="ent_limpar_pend"):
+                n_ok = limpar_variacoes_pendentes()
+                st.success(f"✅ {n_ok} entrada(s) marcada(s) como verificada(s).")
+                st.rerun()
+
+        # ── Seção: Variações de Estoque (entradas automáticas) ────────────────
+        st.markdown('<div class="ent-section">📊 Variações Detectadas (Upload de Estoque)</div>', unsafe_allow_html=True)
+
+        if _df_var.empty:
+            st.markdown(
+                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhuma entrada detectada no período.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _html_var = []
+            for _, _rv in _df_var.iterrows():
+                _nome_v = short_name(_rv["produto"])
+                _data_v = str(_rv["detectado_em"])[:16].replace("T", " ")
+                _badge_v = (
+                    '<span class="ent-badge ent-pend">pendente</span>'
+                    if _rv["status"] == "pendente"
+                    else '<span class="ent-badge ent-verif">verificado</span>'
+                )
+                _qty_info = f'{int(_rv["qtd_anterior"])} → {int(_rv["qtd_atual"])}'
+                _html_var.append(
+                    f'<div class="ent-row">'
+                    f'<span class="ent-cod">{_rv["codigo"]}</span>'
+                    f'<span class="ent-prod">{_nome_v}</span>'
+                    f'<span class="ent-qty">{_qty_info}</span>'
+                    f'<span class="ent-delta">+{int(_rv["delta"])}</span>'
+                    f'<span class="ent-date">{_data_v}</span>'
+                    f'{_badge_v}'
+                    f'</div>'
+                )
+            st.markdown("".join(_html_var), unsafe_allow_html=True)
+
+        # ── Seção: Saídas sem venda (possíveis transferências) ────────────────
+        st.markdown('<div class="ent-section">📤 Saídas sem venda (possíveis transferências)</div>', unsafe_allow_html=True)
+
+        try:
+            _grupos_saida = checar_saidas_sem_venda(apenas_pendentes=False)
+        except Exception:
+            _grupos_saida = []
+        if _dias_ent < 3650:
+            _grupos_saida = [g for g in _grupos_saida if g["dia"] >= _corte_ent]
+        if _ent_search.strip():
+            _s_out = _ent_search.strip().lower()
+            _grupos_saida = [
+                g for g in _grupos_saida
+                if _s_out in str(g["produto"]).lower() or _s_out in str(g["codigo"]).lower()
+            ]
+
+        if not _grupos_saida:
+            st.markdown(
+                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhuma saída sem venda no período.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _html_saida = []
+            for _gs in _grupos_saida:
+                _nome_s = short_name(_gs["produto"])
+                for _ls in _gs["linhas"]:
+                    _data_s = str(_ls["detectado_em"])[:16].replace("T", " ")
+                    _badge_s = (
+                        '<span class="ent-badge ent-pend">pendente</span>'
+                        if _ls["status"] == "pendente"
+                        else '<span class="ent-badge ent-verif">verificado</span>'
+                    )
+                    _html_saida.append(
+                        f'<div class="ent-row">'
+                        f'<span class="ent-cod">{_gs["codigo"]}</span>'
+                        f'<span class="ent-prod">{_nome_s}</span>'
+                        f'<span class="ent-qty">{int(_ls["qtd_anterior"])} → {int(_ls["qtd_atual"])}</span>'
+                        f'<span class="ent-delta ent-neg">{int(_ls["delta"])}</span>'
+                        f'<span class="ent-qty">venda período: {int(_gs["vendido"])}</span>'
+                        f'<span class="ent-date">{_data_s}</span>'
+                        f'{_badge_s}'
+                        f'</div>'
+                    )
+            st.markdown("".join(_html_saida), unsafe_allow_html=True)
+
+        # ── Seção: Lançamentos Manuais ────────────────────────────────────────
+        st.markdown('<div class="ent-section">📋 Lançamentos Manuais</div>', unsafe_allow_html=True)
+
+        if _df_lanc.empty:
+            st.markdown(
+                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhum lançamento no período.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            _html_lanc = []
+            for _, _rl in _df_lanc.iterrows():
+                _nome_l = short_name(_rl["produto"])
+                _data_l = str(_rl["registrado_em"])[:16].replace("T", " ")
+                _motivo_l = f' — {_rl["motivo"]}' if _rl.get("motivo", "").strip() else ""
+                _html_lanc.append(
+                    f'<div class="ent-row">'
+                    f'<span class="ent-cod">{_rl["codigo"]}</span>'
+                    f'<span class="ent-prod">{_nome_l}{_motivo_l}</span>'
+                    f'<span class="ent-badge ent-manual">{_rl["tipo"]}</span>'
+                    f'<span class="ent-delta">+{int(_rl["quantidade"])}</span>'
+                    f'<span class="ent-date">{_data_l}</span>'
+                    f'</div>'
+                )
+            st.markdown("".join(_html_lanc), unsafe_allow_html=True)
+
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────
@@ -13330,270 +13679,6 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                             st.error("Erro ao salvar. Tente novamente.")
                     else:
                         st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
-
-    with t_ciclico:
-        _render_ciclico_tab(get_db, _using_cloud, sync_db, build_css_treemap, sort_categorias, get_current_stock, short_name,
-                            get_divergencias=get_divergencias, get_historico_divergencias=get_historico_divergencias)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # TAB HISTÓRICO DE CONTAGEM — lista por dia das contagens do inventário cíclico
-    # ══════════════════════════════════════════════════════════════════════════
-    with t_hist_contagem:
-        _render_historico_contagem_tab(get_db)
-
-    # ══════════════════════════════════════════════════════════════════════════
-    # TAB ENTRADAS — Histórico de produtos que entraram no estoque
-    # ══════════════════════════════════════════════════════════════════════════
-    with t_entradas:
-        st.markdown("""
-        <style>
-        .ent-kpi-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
-        .ent-kpi{flex:1;min-width:90px;background:linear-gradient(135deg,#111827,#1a2332);
-                 border:1px solid #1e293b;border-radius:10px;padding:8px 10px;text-align:center;}
-        .ent-kpi-v{font-family:'JetBrains Mono',monospace;font-size:1.15rem;font-weight:700;color:#22c55e;}
-        .ent-kpi-v.amber{color:#ffa502;}
-        .ent-kpi-l{font-size:0.58rem;color:#64748b;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
-        .ent-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
-                     color:#64748b;margin:14px 0 5px;padding:0 2px;border-bottom:1px solid #1e293b;padding-bottom:4px;}
-        .ent-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
-                 border-radius:8px;padding:7px 10px;margin-bottom:3px;
-                 display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-        .ent-prod{font-weight:600;font-size:0.83rem;color:#e0e6ed;flex:1;min-width:160px;}
-        .ent-cod{font-family:'JetBrains Mono',monospace;font-size:0.70rem;color:#3b82f6;min-width:75px;}
-        .ent-delta{font-family:'JetBrains Mono',monospace;font-size:0.85rem;font-weight:700;
-                   color:#22c55e;min-width:55px;text-align:right;}
-        .ent-qty{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#94a3b8;min-width:100px;text-align:right;}
-        .ent-date{font-size:0.67rem;color:#64748b;min-width:88px;text-align:right;}
-        .ent-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;}
-        .ent-pend{background:rgba(255,165,2,.12);color:#ffa502;border:1px solid rgba(255,165,2,.3);}
-        .ent-verif{background:rgba(0,214,143,.10);color:#00d68f;border:1px solid rgba(0,214,143,.25);}
-        .ent-manual{background:rgba(59,130,246,.10);color:#60a5fa;border:1px solid rgba(59,130,246,.25);}
-        .ent-delta.ent-neg{color:#a855f7;}
-        </style>
-        """, unsafe_allow_html=True)
-
-        st.markdown(
-            '<div style="font-size:1.05rem;font-weight:700;color:#e0e6ed;margin-bottom:10px;">'
-            '📥📤 Movimentações de Estoque</div>',
-            unsafe_allow_html=True,
-        )
-        if _n_entradas_pending > 0:
-            st.info(f"🟢 {_n_entradas_pending} aumento(s) de estoque recente(s) — veja o alerta no topo do dashboard.")
-        if _al_transf:
-            st.info(f"🔄 {len(_al_transf)} saída(s) sem venda associada — possível(is) transferência(s); veja a seção 📤 abaixo. Os produtos também entraram na 📋 Contagem para conferência física.")
-
-        # ── Filtros ──────────────────────────────────────────────────────────
-        _ent_c1, _ent_c2 = st.columns([3, 1])
-        with _ent_c1:
-            _ent_search = st.text_input(
-                "Buscar produto", key="ent_search",
-                placeholder="Nome ou código…", label_visibility="collapsed",
-            )
-        with _ent_c2:
-            _ent_periodo = st.selectbox(
-                "Período", ["Hoje", "7 dias", "30 dias", "90 dias", "Tudo"],
-                key="ent_periodo", label_visibility="collapsed",
-            )
-
-        _hoje_ent = datetime.now(tz=_BRT).date()
-        _dias_map = {"Hoje": 0, "7 dias": 7, "30 dias": 30, "90 dias": 90, "Tudo": 3650}
-        _dias_ent = _dias_map[_ent_periodo]
-        _corte_ent = (_hoje_ent - timedelta(days=_dias_ent)).isoformat()
-
-        # ── Carregar variacao_estoque (apenas delta > 0 = entradas) ──────────
-        try:
-            _sql_var = (
-                "SELECT codigo, produto, qtd_anterior, qtd_atual, delta, detectado_em, status "
-                "FROM variacao_estoque WHERE delta > 0"
-            )
-            if _dias_ent < 3650:
-                _sql_var += f" AND detectado_em >= '{_corte_ent}'"
-            _sql_var += " ORDER BY detectado_em DESC LIMIT 400"
-            _rows_var = get_db().execute(_sql_var).fetchall()
-            _df_var = pd.DataFrame(
-                _rows_var,
-                columns=["codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"],
-            )
-        except Exception:
-            _df_var = pd.DataFrame(columns=["codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"])
-
-        # ── Carregar lancamentos_manuais ─────────────────────────────────────
-        try:
-            _sql_lanc = (
-                "SELECT codigo, produto, categoria, tipo, quantidade, motivo, registrado_em "
-                "FROM lancamentos_manuais"
-            )
-            if _dias_ent < 3650:
-                _sql_lanc += f" WHERE registrado_em >= '{_corte_ent}'"
-            _sql_lanc += " ORDER BY registrado_em DESC LIMIT 400"
-            _rows_lanc = get_db().execute(_sql_lanc).fetchall()
-            _df_lanc = pd.DataFrame(
-                _rows_lanc,
-                columns=["codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"],
-            )
-        except Exception:
-            _df_lanc = pd.DataFrame(columns=["codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"])
-
-        # ── Filtro de busca ──────────────────────────────────────────────────
-        if _ent_search.strip():
-            _s = _ent_search.strip().lower()
-            if not _df_var.empty:
-                _mask_var = (
-                    _df_var["produto"].str.lower().str.contains(_s, na=False) |
-                    _df_var["codigo"].str.lower().str.contains(_s, na=False)
-                )
-                _df_var = _df_var[_mask_var]
-            if not _df_lanc.empty:
-                _mask_lanc = (
-                    _df_lanc["produto"].str.lower().str.contains(_s, na=False) |
-                    _df_lanc["codigo"].str.lower().str.contains(_s, na=False)
-                )
-                _df_lanc = _df_lanc[_mask_lanc]
-
-        # ── KPIs ─────────────────────────────────────────────────────────────
-        _hoje_str = _hoje_ent.isoformat()
-        _7d_str   = (_hoje_ent - timedelta(days=7)).isoformat()
-        _30d_str  = (_hoje_ent - timedelta(days=30)).isoformat()
-
-        def _ent_count(df, col, desde):
-            if df.empty:
-                return 0
-            return int((df[col].str[:10] >= desde).sum())
-
-        try:
-            _kpi_var_hoje  = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_hoje_str,)).fetchone()[0]
-            _kpi_var_7d    = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_7d_str,)).fetchone()[0]
-            _kpi_var_30d   = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND detectado_em>=?", (_30d_str,)).fetchone()[0]
-            _kpi_pend      = get_db().execute("SELECT COUNT(*) FROM variacao_estoque WHERE delta>0 AND status='pendente'").fetchone()[0]
-            _kpi_lanc_30d  = get_db().execute("SELECT COUNT(*) FROM lancamentos_manuais WHERE registrado_em>=?", (_30d_str,)).fetchone()[0]
-        except Exception:
-            _kpi_var_hoje = _kpi_var_7d = _kpi_var_30d = _kpi_pend = _kpi_lanc_30d = 0
-
-        _pend_cls = "amber" if _kpi_pend > 0 else ""
-        st.markdown(
-            f'<div class="ent-kpi-row">'
-            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_hoje}</div>'
-            f'<div class="ent-kpi-l">Entradas hoje</div></div>'
-            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_7d}</div>'
-            f'<div class="ent-kpi-l">Últimos 7 dias</div></div>'
-            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_var_30d}</div>'
-            f'<div class="ent-kpi-l">Últimos 30 dias</div></div>'
-            f'<div class="ent-kpi"><div class="ent-kpi-v {_pend_cls}">{_kpi_pend}</div>'
-            f'<div class="ent-kpi-l">Pendentes verificação</div></div>'
-            f'<div class="ent-kpi"><div class="ent-kpi-v">{_kpi_lanc_30d}</div>'
-            f'<div class="ent-kpi-l">Lançamentos (30d)</div></div>'
-            f'</div>',
-            unsafe_allow_html=True,
-        )
-
-        # ── Botão marcar pendentes como verificados ───────────────────────────
-        if _kpi_pend > 0:
-            if st.button(f"✅ Marcar {_kpi_pend} entrada(s) pendente(s) como verificadas", key="ent_limpar_pend"):
-                n_ok = limpar_variacoes_pendentes()
-                st.success(f"✅ {n_ok} entrada(s) marcada(s) como verificada(s).")
-                st.rerun()
-
-        # ── Seção: Variações de Estoque (entradas automáticas) ────────────────
-        st.markdown('<div class="ent-section">📊 Variações Detectadas (Upload de Estoque)</div>', unsafe_allow_html=True)
-
-        if _df_var.empty:
-            st.markdown(
-                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhuma entrada detectada no período.</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            _html_var = []
-            for _, _rv in _df_var.iterrows():
-                _nome_v = short_name(_rv["produto"])
-                _data_v = str(_rv["detectado_em"])[:16].replace("T", " ")
-                _badge_v = (
-                    '<span class="ent-badge ent-pend">pendente</span>'
-                    if _rv["status"] == "pendente"
-                    else '<span class="ent-badge ent-verif">verificado</span>'
-                )
-                _qty_info = f'{int(_rv["qtd_anterior"])} → {int(_rv["qtd_atual"])}'
-                _html_var.append(
-                    f'<div class="ent-row">'
-                    f'<span class="ent-cod">{_rv["codigo"]}</span>'
-                    f'<span class="ent-prod">{_nome_v}</span>'
-                    f'<span class="ent-qty">{_qty_info}</span>'
-                    f'<span class="ent-delta">+{int(_rv["delta"])}</span>'
-                    f'<span class="ent-date">{_data_v}</span>'
-                    f'{_badge_v}'
-                    f'</div>'
-                )
-            st.markdown("".join(_html_var), unsafe_allow_html=True)
-
-        # ── Seção: Saídas sem venda (possíveis transferências) ────────────────
-        st.markdown('<div class="ent-section">📤 Saídas sem venda (possíveis transferências)</div>', unsafe_allow_html=True)
-
-        try:
-            _grupos_saida = checar_saidas_sem_venda(apenas_pendentes=False)
-        except Exception:
-            _grupos_saida = []
-        if _dias_ent < 3650:
-            _grupos_saida = [g for g in _grupos_saida if g["dia"] >= _corte_ent]
-        if _ent_search.strip():
-            _s_out = _ent_search.strip().lower()
-            _grupos_saida = [
-                g for g in _grupos_saida
-                if _s_out in str(g["produto"]).lower() or _s_out in str(g["codigo"]).lower()
-            ]
-
-        if not _grupos_saida:
-            st.markdown(
-                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhuma saída sem venda no período.</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            _html_saida = []
-            for _gs in _grupos_saida:
-                _nome_s = short_name(_gs["produto"])
-                for _ls in _gs["linhas"]:
-                    _data_s = str(_ls["detectado_em"])[:16].replace("T", " ")
-                    _badge_s = (
-                        '<span class="ent-badge ent-pend">pendente</span>'
-                        if _ls["status"] == "pendente"
-                        else '<span class="ent-badge ent-verif">verificado</span>'
-                    )
-                    _html_saida.append(
-                        f'<div class="ent-row">'
-                        f'<span class="ent-cod">{_gs["codigo"]}</span>'
-                        f'<span class="ent-prod">{_nome_s}</span>'
-                        f'<span class="ent-qty">{int(_ls["qtd_anterior"])} → {int(_ls["qtd_atual"])}</span>'
-                        f'<span class="ent-delta ent-neg">{int(_ls["delta"])}</span>'
-                        f'<span class="ent-qty">venda período: {int(_gs["vendido"])}</span>'
-                        f'<span class="ent-date">{_data_s}</span>'
-                        f'{_badge_s}'
-                        f'</div>'
-                    )
-            st.markdown("".join(_html_saida), unsafe_allow_html=True)
-
-        # ── Seção: Lançamentos Manuais ────────────────────────────────────────
-        st.markdown('<div class="ent-section">📋 Lançamentos Manuais</div>', unsafe_allow_html=True)
-
-        if _df_lanc.empty:
-            st.markdown(
-                '<div style="color:#64748b;font-size:0.82rem;padding:8px 0;">Nenhum lançamento no período.</div>',
-                unsafe_allow_html=True,
-            )
-        else:
-            _html_lanc = []
-            for _, _rl in _df_lanc.iterrows():
-                _nome_l = short_name(_rl["produto"])
-                _data_l = str(_rl["registrado_em"])[:16].replace("T", " ")
-                _motivo_l = f' — {_rl["motivo"]}' if _rl.get("motivo", "").strip() else ""
-                _html_lanc.append(
-                    f'<div class="ent-row">'
-                    f'<span class="ent-cod">{_rl["codigo"]}</span>'
-                    f'<span class="ent-prod">{_nome_l}{_motivo_l}</span>'
-                    f'<span class="ent-badge ent-manual">{_rl["tipo"]}</span>'
-                    f'<span class="ent-delta">+{int(_rl["quantidade"])}</span>'
-                    f'<span class="ent-date">{_data_l}</span>'
-                    f'</div>'
-                )
-            st.markdown("".join(_html_lanc), unsafe_allow_html=True)
-
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
