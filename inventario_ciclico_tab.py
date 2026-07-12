@@ -420,6 +420,23 @@ def _fmt_dt_br(s) -> str:
         return txt
 
 
+def _get_observacoes_cicli(get_db) -> dict:
+    """{produto_id: (observacao, contado_em)} com a observação não-vazia mais
+    recente de inventario_cicli (comentários gravados pelo app sincronizado)."""
+    try:
+        conn = get_db()
+        rows = conn.execute("""
+            SELECT produto_id, observacao, contado_em
+            FROM inventario_cicli
+            WHERE TRIM(COALESCE(observacao,'')) != ''
+            ORDER BY data_contagem ASC, contado_em ASC
+        """).fetchall()
+        # ordem ascendente: a última linha de cada produto (mais recente) prevalece
+        return {str(r[0]): (str(r[1]), str(r[2] or "")) for r in rows}
+    except Exception:
+        return {}
+
+
 def _get_progresso_ciclo(get_db) -> dict:
     try:
         conn = get_db()
@@ -689,10 +706,31 @@ def build_inventario_ciclico_tab(
             else:
                 df_treemap = df_treemap[diffs < 0]
 
+    # Popup dos cards: cooperados das divergências abertas + comentário do app sincronizado
+    divs_map: dict = {}
+    if get_divergencias is not None:
+        try:
+            _df_divs = get_divergencias()
+        except Exception:
+            _df_divs = None
+        if _df_divs is not None and not _df_divs.empty:
+            for _, _drow in _df_divs.iterrows():
+                _dcod = str(_drow["codigo"]).strip()
+                if not _dcod:
+                    continue
+                divs_map.setdefault(_dcod, []).append({
+                    "cooperado": str(_drow["cooperado"]) if _drow["cooperado"] else "—",
+                    "delta": int(_drow["delta"]) if pd.notna(_drow["delta"]) else 0,
+                    "status": str(_drow["status"]),
+                })
+    obs_map = _get_observacoes_cicli(get_db)
+
     html_mapa = build_css_treemap(
         df_treemap,
         filter_cat=filtro_cat,
         avarias_map=None,
+        divergencias_map=divs_map,
+        observacoes_map=obs_map,
         color_mode="ciclico",
         sort_fn=_sort_ciclo,
     )
