@@ -9483,7 +9483,26 @@ def render_camda_header(total_itens=None, n_diverg_dia=None, sync_hhmm=None) -> 
 
 
 apply_header_css()
-render_camda_header()
+
+# ── Dados dinâmicos do header ────────────────────────────────────────────────
+# Divergências registradas hoje (criado_em = '%Y-%m-%d %H:%M:%S' em BRT)
+_df_divs_hdr = get_divergencias()
+_hoje_iso_hdr = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
+try:
+    _n_diverg_hoje = (
+        int(_df_divs_hdr["criado_em"].astype(str).str.startswith(_hoje_iso_hdr).sum())
+        if not _df_divs_hdr.empty else 0
+    )
+except Exception:
+    _n_diverg_hoje = 0
+
+# Horário do último fetch do Turso: não há timestamp de cache exposto pelo
+# st.cache_data, então registramos o momento da primeira carga da sessão.
+if "camda_last_sync" not in st.session_state:
+    st.session_state["camda_last_sync"] = datetime.now(tz=_BRT)
+_sync_hhmm = st.session_state["camda_last_sync"].strftime("%H:%M")
+
+render_camda_header(stock_count, _n_diverg_hoje, _sync_hhmm)
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
 if has_mestre:
