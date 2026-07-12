@@ -1,7 +1,9 @@
 # Fixado: atualizações automáticas do Streamlit Cloud já quebraram o app
 # (abas, deprecação de st.components.v1.html). st.iframe requer >= 1.58.
 streamlit==1.59.0
-pandas>=2.0.0
+# pandas 3.x muda o dtype padrão de strings (Arrow) e causa segfault na
+# construção de DataFrames deste app — manter na série 2.x.
+pandas>=2.0.0,<3
 openpyxl>=3.1.0
 libsql>=0.0.3
 python-dotenv>=1.0.0
