@@ -734,49 +734,12 @@ st.markdown("""
         -webkit-background-clip: text; -webkit-text-fill-color: transparent;
         text-align: center; margin: 0.3rem 0;
     }
-    .dash-top {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        position: relative;
-        padding: 6px 0;
-    }
-    /* Elimina espaço do Streamlit entre header e barra de busca */
-    div[data-testid="stVerticalBlock"] > div:has(.camda-header) {
+    /* Elimina espaço do Streamlit acima do header compacto */
+    div[data-testid="stVerticalBlock"] > div:has(.camda-topbar) {
         margin-top: 0 !important; padding-top: 0 !important;
-        margin-bottom: 0 !important; padding-bottom: 0 !important;
     }
     div[data-testid="stVerticalBlock"] > div:has(.stTextInput) {
         margin-top: 0 !important; padding-top: 0 !important;
-    }
-    .dash-brand {
-        display: inline-flex;
-        align-items: center;
-        background: transparent;
-        border: none;
-        padding: 4px 0;
-    }
-    .dash-brand-title {
-        font-family: 'Outfit', sans-serif;
-        font-size: 1.6rem;
-        font-weight: 900;
-        line-height: 1;
-        letter-spacing: 0.02em;
-        background: linear-gradient(135deg, #00d68f, #00c4ff);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        text-transform: uppercase;
-    }
-    .dash-brand-sub { display: none; }
-    .dash-brand-meta { display: none; }
-    .dash-top .wco {
-        position: absolute;
-        right: 0;
-        top: 50%;
-        transform: translateY(-50%);
-        padding: 6px 10px !important;
-        border-radius: 10px !important;
-        border: 1px solid rgba(255,255,255,0.10) !important;
     }
     .sub-title {
         font-family: 'JetBrains Mono', monospace; font-size: 0.7rem;
@@ -898,11 +861,6 @@ st.markdown("""
     @media (max-width: 640px) {
         .block-container { padding: 0.3rem 0.3rem !important; }
         .main-title { font-size: 1.2rem; }
-        .dash-top { gap: 6px; margin-bottom: 8px; }
-        .dash-brand { min-width: 0; width: 100%; padding: 10px 12px; }
-        .dash-brand-title { font-size: 1.25rem; }
-        .dash-brand-sub { font-size: 0.62rem; letter-spacing: 0.06em; }
-        .dash-brand-meta { font-size: 0.62rem; }
         .stat-row { flex-wrap: wrap; gap: 4px; }
         .stat-card { flex: 1 1 calc(33% - 4px); min-width: 0; padding: 6px 4px; }
         .stat-value { font-size: 0.85rem; }
@@ -1035,14 +993,6 @@ st.markdown("""
     .repor-item:hover {
         background: #1a2438 !important;
         transform: translateX(4px);
-    }
-    /* ── Glow pulsante no header banner ──────────────────────────────── */
-    @keyframes glowPulse {
-        0%, 100% { box-shadow: 0 0 20px rgba(45,255,122,0.15); }
-        50%       { box-shadow: 0 0 40px rgba(45,255,122,0.40); }
-    }
-    .camda-header {
-        animation: glowPulse 3s ease-in-out infinite;
     }
     /* ── Respeitar prefers-reduced-motion ─────────────────────────────── */
     @media (prefers-reduced-motion: reduce) {
@@ -9335,36 +9285,142 @@ except Exception:
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
 
-# ── Header CAMDA (só no dashboard, após autenticação) ────────────────────────
-st.markdown("""
-<div class="camda-header" style="
-    position: relative;
-    background: linear-gradient(135deg, #0d1b2a 0%, #0a1628 75%, #0d2a3a 100%);
-    border-radius: 0 0 20px 20px;
-    overflow: hidden;
-    padding: 22px 26px 18px 26px;
-    margin-bottom: 0;
-">
-    <div style="
-        position: absolute; top: -60px; right: -60px;
-        width: 280px; height: 280px;
-        background: radial-gradient(circle, rgba(0,200,255,0.18) 0%, transparent 65%);
-        pointer-events: none;
-    "></div>
-    <div style="display: flex; align-items: center; justify-content: center; gap: 14px; position: relative; z-index: 1;">
-        <svg width="42" height="42" viewBox="0 0 100 100" aria-hidden="true">
-            <polygon points="50,8 84,28 84,72 50,92 16,72 16,28" fill="none" stroke="#00bcd4" stroke-width="6" />
-            <text x="50" y="58" text-anchor="middle" fill="#00bcd4" font-size="38" font-weight="800" font-family="Arial, sans-serif">C</text>
-        </svg>
-        <div style="text-align: center;">
-            <div style="color: #00e5ff; font-size: 26px; font-weight: 900; letter-spacing: 3px; line-height: 1;">CAMDA</div>
-            <div style="margin-top: 6px; font-size: 11px; color: #4a9abb; letter-spacing: .6px;">
-                <span style="color: #00bcd4;">●</span> Controle de Estoque
-            </div>
-        </div>
+# ── Header CAMDA compacto (sticky, só no dashboard, após autenticação) ──────
+def apply_header_css() -> None:
+    """CSS do header compacto e da busca integrada — bloco único.
+
+    Todo o CSS novo do topo fica centralizado aqui para não espalhar
+    st.markdown pelo código.
+    """
+    st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;600&display=swap');
+:root {
+    --ch-grad-a: #0c1a30;
+    --ch-grad-b: #0a1424;
+    --ch-border: rgba(56,200,240,0.14);
+    --ch-text: #e8f0f6;
+    --ch-muted: #8aa0b4;
+    --ch-cyan: #2fd3f5;
+    --ch-cyan-soft: #6fb6cc;
+    --ch-green: #3ddc84;
+    --ch-red: #ff5d6c;
+}
+/* Container Streamlit do header: sticky no topo do scroll principal */
+div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.camda-topbar) {
+    position: -webkit-sticky;
+    position: sticky !important;
+    top: 0;
+    z-index: 99;
+    margin: 0 0 12px 0 !important;
+    padding: 0 !important;
+}
+.camda-topbar {
+    height: 54px;
+    margin: 0 -0.8rem;   /* full-bleed sobre o padding lateral do block-container */
+    padding: 0 18px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: linear-gradient(180deg, var(--ch-grad-a), var(--ch-grad-b));
+    border-bottom: 1px solid var(--ch-border);
+    color: var(--ch-text);
+    font-family: 'Inter', sans-serif;
+}
+/* ── Zona esquerda: marca ── */
+.ct-brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.ct-hex { flex: 0 0 auto; filter: drop-shadow(0 0 7px rgba(47,211,245,0.35)); }
+.ct-title {
+    font-family: 'Sora', sans-serif; font-weight: 700; font-size: 16px;
+    letter-spacing: 3px; line-height: 1.15; color: var(--ch-cyan);
+}
+.ct-sub { font-size: 10.5px; color: var(--ch-muted); line-height: 1.2; letter-spacing: .3px; }
+/* ── Zona central: espaço onde o st.text_input real é sobreposto ── */
+.ct-mid { flex: 1 1 auto; min-width: 40px; }
+/* ── Zona direita: resumo operacional ── */
+.ct-ops { display: flex; align-items: center; gap: 14px; flex: 0 0 auto; margin-left: auto; }
+.ct-nums { display: flex; align-items: baseline; gap: 14px; }
+.ct-num { display: inline-flex; align-items: baseline; }
+.ct-num-val {
+    font-family: 'JetBrains Mono', monospace; font-weight: 600;
+    font-size: 14px; color: var(--ch-text);
+}
+.ct-num-val.ct-red { color: var(--ch-red); }
+.ct-num-lbl {
+    font-size: 9.5px; color: var(--ch-muted); margin-left: 5px;
+    letter-spacing: .6px; text-transform: uppercase;
+}
+.ct-sep { width: 1px; height: 26px; background: var(--ch-border); flex: 0 0 auto; }
+.ct-fil { display: flex; flex-direction: column; gap: 2px; }
+.ct-fil-name { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--ch-cyan-soft); }
+.ct-sync {
+    display: flex; align-items: center; gap: 5px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ch-muted);
+}
+.ct-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--ch-green);
+    box-shadow: 0 0 6px rgba(61,220,132,0.55);
+    animation: ctPulse 2.4s ease-in-out infinite;
+}
+@keyframes ctPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%      { opacity: .4; transform: scale(.78); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ct-dot { animation: none; }
+}
+/* ── Responsivo ── */
+@media (max-width: 720px) {
+    .camda-topbar { gap: 10px; padding: 0 12px; }
+    .ct-sub, .ct-num-lbl, .ct-fil-name { display: none; }
+    .ct-title { letter-spacing: 2px; font-size: 15px; }
+    .ct-nums { gap: 8px; }
+    .ct-ops { gap: 8px; }
+}
+@media (max-width: 640px) {
+    .camda-topbar { margin: 0 -0.3rem; }  /* block-container usa 0.3rem no mobile */
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+def render_camda_header(total_itens=None, n_diverg_dia=None, sync_hhmm=None) -> None:
+    """Renderiza o header compacto de 54px (marca · busca · resumo operacional)."""
+    total_txt = f"{total_itens:,}".replace(",", ".") if isinstance(total_itens, int) else "—"
+    div_txt = str(n_diverg_dia) if isinstance(n_diverg_dia, int) else "—"
+    sync_txt = sync_hhmm or "--:--"
+    st.markdown(f"""
+<div class="camda-topbar">
+  <div class="ct-brand">
+    <svg class="ct-hex" width="34" height="34" viewBox="0 0 100 100" aria-hidden="true">
+      <polygon points="50,8 84,28 84,72 50,92 16,72 16,28"
+               fill="rgba(47,211,245,0.06)" stroke="#2fd3f5" stroke-width="5"/>
+      <text x="50" y="62" text-anchor="middle" fill="#2fd3f5" font-size="36"
+            font-weight="700" font-family="Sora, Arial, sans-serif">C</text>
+    </svg>
+    <div>
+      <div class="ct-title">CAMDA</div>
+      <div class="ct-sub">Controle de Estoque</div>
     </div>
+  </div>
+  <div class="ct-mid"></div>
+  <div class="ct-ops">
+    <div class="ct-nums">
+      <span class="ct-num"><span class="ct-num-val">{total_txt}</span><span class="ct-num-lbl">itens</span></span>
+      <span class="ct-num"><span class="ct-num-val ct-red">{div_txt}</span><span class="ct-num-lbl">diverg. hoje</span></span>
+    </div>
+    <div class="ct-sep"></div>
+    <div class="ct-fil">
+      <div class="ct-fil-name">FILIAL 01053 · QUIRINÓPOLIS</div>
+      <div class="ct-sync"><span class="ct-dot"></span>sincronizado {sync_txt}</div>
+    </div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
+
+
+apply_header_css()
+render_camda_header()
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
 if has_mestre:
