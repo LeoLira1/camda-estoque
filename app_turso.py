@@ -9361,27 +9361,11 @@ div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.
 .ct-sep { width: 1px; height: 26px; background: var(--ch-border); flex: 0 0 auto; }
 .ct-fil { display: flex; flex-direction: column; gap: 2px; }
 .ct-fil-name { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--ch-cyan-soft); }
-.ct-sync {
-    display: flex; align-items: center; gap: 5px;
-    font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ch-muted);
-}
-.ct-dot {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--ch-green);
-    box-shadow: 0 0 6px rgba(61,220,132,0.55);
-    animation: ctPulse 2.4s ease-in-out infinite;
-}
-@keyframes ctPulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50%      { opacity: .4; transform: scale(.78); }
-}
-@media (prefers-reduced-motion: reduce) {
-    .ct-dot { animation: none; }
-}
 /* ── Responsivo ── */
 @media (max-width: 720px) {
     .camda-topbar { gap: 10px; padding: 0 12px; }
-    /* fica só o essencial: marca, números e dot + hora */
-    .ct-sub, .ct-num-lbl, .ct-fil-name, .ct-sync-txt { display: none; }
+    /* fica só o essencial: marca e números */
+    .ct-sub, .ct-num-lbl, .ct-fil-name, .ct-sep { display: none; }
     .ct-title { letter-spacing: 2px; font-size: 15px; }
     .ct-nums { gap: 8px; }
     .ct-ops { gap: 8px; }
@@ -9464,11 +9448,10 @@ div.st-key-search_mestre [data-testid="stTextInput"] input:focus {
 """, unsafe_allow_html=True)
 
 
-def render_camda_header(total_itens=None, n_diverg_dia=None, sync_hhmm=None) -> None:
+def render_camda_header(total_itens=None, n_diverg_dia=None) -> None:
     """Renderiza o header compacto de 54px (marca · busca · resumo operacional)."""
     total_txt = f"{total_itens:,}".replace(",", ".") if isinstance(total_itens, int) else "—"
     div_txt = str(n_diverg_dia) if isinstance(n_diverg_dia, int) else "—"
-    sync_txt = sync_hhmm or "--:--"
     st.markdown(f"""
 <div class="camda-topbar">
   <div class="ct-brand">
@@ -9492,7 +9475,6 @@ def render_camda_header(total_itens=None, n_diverg_dia=None, sync_hhmm=None) -> 
     <div class="ct-sep"></div>
     <div class="ct-fil">
       <div class="ct-fil-name">FILIAL 01053 · QUIRINÓPOLIS</div>
-      <div class="ct-sync"><span class="ct-dot"></span><span class="ct-sync-txt">sincronizado&nbsp;</span>{sync_txt}</div>
     </div>
   </div>
 </div>
@@ -9513,13 +9495,7 @@ try:
 except Exception:
     _n_diverg_hoje = 0
 
-# Horário do último fetch do Turso: não há timestamp de cache exposto pelo
-# st.cache_data, então registramos o momento da primeira carga da sessão.
-if "camda_last_sync" not in st.session_state:
-    st.session_state["camda_last_sync"] = datetime.now(tz=_BRT)
-_sync_hhmm = st.session_state["camda_last_sync"].strftime("%H:%M")
-
-render_camda_header(stock_count, _n_diverg_hoje, _sync_hhmm)
+render_camda_header(stock_count, _n_diverg_hoje)
 
 # ── Dashboard ────────────────────────────────────────────────────────────────
 if has_mestre:
