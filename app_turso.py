@@ -9380,6 +9380,69 @@ div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.
 @media (max-width: 640px) {
     .camda-topbar { margin: 0 -0.3rem; }  /* block-container usa 0.3rem no mobile */
 }
+/* ── Busca integrada: o st.text_input real (key=search_mestre) é puxado
+      para cima e fica sticky junto com o header, sobre a zona central.
+      Nada de input HTML fake — o widget continua sendo o do Streamlit. ── */
+div[data-testid="stVerticalBlock"] > div.st-key-search_mestre {
+    position: -webkit-sticky;
+    position: sticky !important;
+    top: 0;
+    z-index: 100;                    /* acima do header, abaixo de popovers/modais */
+    height: 54px;
+    margin-top: -66px !important;    /* 54px do header + 12px de margem inferior */
+    margin-bottom: 12px !important;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;            /* só o input captura cliques */
+}
+div.st-key-search_mestre [data-testid="stTextInput"] {
+    width: clamp(150px, calc(100vw - 590px), 460px);
+    pointer-events: auto;
+}
+/* Campo em glass escuro com lupa à esquerda */
+div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"] {
+    background: rgba(10,20,38,0.7) !important;
+    border: 1px solid var(--ch-border) !important;
+    border-radius: 10px !important;
+    backdrop-filter: blur(6px);
+    transition: border-color .15s ease, box-shadow .15s ease;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%238aa0b4' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.2' y2='16.2'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: 11px center !important;
+}
+div.st-key-search_mestre [data-baseweb="base-input"] {
+    background: transparent !important;
+    border: none !important;
+}
+div.st-key-search_mestre [data-testid="stTextInput"] input {
+    background: transparent !important;
+    border: none !important;
+    color: var(--ch-text) !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.875rem !important;
+    padding: 9px 12px 9px 34px !important;
+    caret-color: var(--ch-cyan) !important;
+}
+div.st-key-search_mestre [data-testid="stTextInput"] input::placeholder {
+    color: var(--ch-muted) !important;
+    opacity: .8 !important;
+}
+div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
+    border-color: rgba(56,200,240,0.35) !important;
+    box-shadow: 0 0 0 3px rgba(47,211,245,0.08) !important;
+}
+/* Neutraliza o glow verde global (.stTextInput input:focus) apenas na busca */
+div.st-key-search_mestre [data-testid="stTextInput"] input:focus {
+    border: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+@media (max-width: 720px) {
+    div.st-key-search_mestre [data-testid="stTextInput"] {
+        width: min(300px, calc(100vw - 235px));
+    }
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -9437,7 +9500,7 @@ if has_mestre:
 
     _agora_hdr = datetime.now(tz=_BRT)
     _meta_data = _agora_hdr.strftime("%d/%m/%Y · %H:%M")
-    search_placeholder = "Nome, Código ou Princípio Ativo..." if has_pa else "Nome ou Código..."
+    search_placeholder = "Nome, código ou princípio ativo..." if has_pa else "Nome ou código..."
     search_term = st.text_input("🔍 Buscar no Mestre", placeholder=search_placeholder, label_visibility="collapsed", key="search_mestre")
     import iframe_compat as _stc_ac
     _stc_ac.html("""<script>
