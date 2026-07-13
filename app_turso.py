@@ -2221,8 +2221,15 @@ def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
     ("YYYY-MM-DD") e normalmente fica um dia ATRÁS da detecção — a venda de
     08/07 explica a queda detectada no upload de estoque de 09/07 de manhã.
     Match por dia igual falharia silenciosamente (0 vendas encontradas para
-    quedas 100% explicadas); por isso a janela é [dia da detecção - 1 dia,
-    dia da detecção].
+    quedas 100% explicadas).
+
+    O delta cobre TODA a movimentação desde o upload de estoque ANTERIOR, não
+    só a do dia anterior: na segunda-feira o upload compara com o de sábado, e
+    a queda é explicada pelas vendas de sábado (data de referência 2 dias
+    atrás). Janela fixa de 1 dia marcava todas as vendas do fim de semana como
+    "possível transferência". Por isso a janela vai do dia do upload anterior
+    (historico_uploads) até o dia da detecção — nunca mais estreita que
+    [dia da detecção - 1 dia, dia da detecção], a janela original validada.
 
     Deltas do mesmo código no mesmo dia são SOMADOS antes da comparação —
     comparar linha a linha deixaria a mesma venda "explicar" duas quedas
@@ -2249,18 +2256,35 @@ def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
 
     dias = {str(r[6])[:10] for r in saidas}
     try:
-        corte = (date.fromisoformat(min(dias)) - timedelta(days=1)).isoformat()
+        datas_uploads = {
+            str(r[0])[:10]
+            for r in conn.execute(
+                "SELECT DISTINCT substr(data, 1, 10) FROM historico_uploads"
+            ).fetchall()
+        }
     except Exception:
+        datas_uploads = set()
+    inicio_janela: dict = {}
+    for dia in dias:
+        try:
+            vespera = (date.fromisoformat(dia) - timedelta(days=1)).isoformat()
+        except Exception:
+            continue
+        upload_anterior = max((d for d in datas_uploads if d < dia), default=None)
+        inicio_janela[dia] = min(upload_anterior, vespera) if upload_anterior else vespera
+    if not inicio_janela:
         return []
-    vendas: dict = {}
+    corte = min(inicio_janela.values())
+    vendas: dict = {}  # _codigo_key -> {dia_venda: qtd}
     try:
         for cod_v, dia_v, qtd_v in conn.execute(
             "SELECT codigo, data_upload, SUM(qtd_vendida) FROM vendas_historico "
             "WHERE data_upload >= ? GROUP BY codigo, data_upload",
             (corte,),
         ).fetchall():
-            key = (_codigo_key(cod_v), str(dia_v)[:10])
-            vendas[key] = vendas.get(key, 0) + int(qtd_v or 0)
+            por_dia = vendas.setdefault(_codigo_key(cod_v), {})
+            dv = str(dia_v)[:10]
+            por_dia[dv] = por_dia.get(dv, 0) + int(qtd_v or 0)
     except Exception:
         return []
 
@@ -2279,11 +2303,12 @@ def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
 
     suspeitos = []
     for (cod_key, dia), g in grupos.items():
-        try:
-            dia_ant = (date.fromisoformat(dia) - timedelta(days=1)).isoformat()
-        except Exception:
+        ini = inicio_janela.get(dia)
+        if ini is None:
             continue
-        vendido = vendas.get((cod_key, dia), 0) + vendas.get((cod_key, dia_ant), 0)
+        vendido = sum(
+            q for dv, q in vendas.get(cod_key, {}).items() if ini <= dv <= dia
+        )
         if g["saida_total"] > vendido + _TOL_SAIDA_VENDA:
             g["vendido"] = vendido
             suspeitos.append(g)
