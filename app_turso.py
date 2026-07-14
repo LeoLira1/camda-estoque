@@ -6918,29 +6918,33 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Status → border color, bg, qty color
             if color_mode == "ciclico":
                 status_c = str(r.get("status_ciclo", "") or "")
-                if status_c == "ok":
-                    border_color = "#00d68f"
-                    card_bg = "rgba(0,214,143,0.72)"
-                    qty_color = "#ffffff"
-                    card_border = "border:2px solid #00d68f;"
-                elif status_c == "divergencia":
+                if status_c in ("ok", "divergencia"):
+                    # A cor segue a diferença efetiva, não o status gravado —
+                    # precedência: contagem do ciclo (quando difere) >
+                    # divergências abertas > diferença geral. Item conferido
+                    # "ok" em app sincronizado mas com falta apontada fica
+                    # vermelho; sobra fica azul.
                     _qtd_cont = r.get("qtd_contada_ciclo")
                     _qtd_sis  = r.get("qtd_sistema_na_contagem")
-                    _is_sobra = (
-                        _qtd_cont is not None and _qtd_sis is not None
-                        and float(_qtd_cont) > float(_qtd_sis)
-                    )
-                    if _qtd_cont is not None and _qtd_sis is not None:
+                    _tem_contagem = pd.notnull(_qtd_cont) and pd.notnull(_qtd_sis)
+                    if _tem_contagem:
                         try:
-                            diff = int(float(_qtd_cont)) - int(float(_qtd_sis))
+                            _diff_ciclo = int(float(_qtd_cont)) - int(float(_qtd_sis))
+                            if _diff_ciclo != 0:
+                                diff = _diff_ciclo
                         except (ValueError, TypeError):
-                            pass
-                    if _is_sobra:
+                            _tem_contagem = False
+                    # Divergência antiga sem quantidades registradas: mantém vermelho
+                    if diff < 0 or (status_c == "divergencia" and diff == 0
+                                    and not _tem_contagem):
+                        border_color = "#ff4757"
+                        card_bg = "rgba(255,71,87,0.72)"
+                    elif diff > 0:
                         border_color = "#06b6d4"
                         card_bg = "rgba(6,182,212,0.72)"
                     else:
-                        border_color = "#ff4757"
-                        card_bg = "rgba(255,71,87,0.72)"
+                        border_color = "#00d68f"
+                        card_bg = "rgba(0,214,143,0.72)"
                     qty_color = "#ffffff"
                     card_border = f"border:2px solid {border_color};"
                 else:

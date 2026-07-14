@@ -405,6 +405,33 @@ def _diff_ciclo_row(row, divergencias_cicli: dict) -> float:
     return float(divergencias_cicli.get(str(row["codigo"]), 0) or 0)
 
 
+def _norm_cod(v) -> str:
+    """Mesma normalização de código usada nos cards (_codigo_key do app)."""
+    s = str(v or "").strip()
+    if _re.fullmatch(r"\d+\.0+", s):
+        s = s.split(".", 1)[0]
+    return s.upper()
+
+
+def _diff_efetivo_row(row, divergencias_cicli: dict, divs_map: dict) -> float:
+    """Diferença efetiva do produto — mesma precedência da cor dos cards:
+    contagem do ciclo (quando difere) > divergências abertas > diferença geral.
+    Captura faltas/sobras de itens conferidos "ok" em apps sincronizados."""
+    d = _diff_ciclo_row(row, divergencias_cicli)
+    if d:
+        return float(d)
+    entries = divs_map.get(_norm_cod(row["codigo"]))
+    if entries:
+        total = sum(int(e.get("delta") or 0) for e in entries)
+        if total:
+            return float(total)
+    dif = row.get("diferenca")
+    try:
+        return float(dif) if pd.notna(dif) else 0.0
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _fmt_qtd(v) -> str:
     """Formata quantidade: inteiro sem casas, fração com 1 casa."""
     try:
@@ -424,6 +451,12 @@ def _relatorio_divergencias_html(df_div: pd.DataFrame, divergencias_cicli: dict)
         for _, r in df_sec.iterrows():
             qc, qs = r["qtd_contada_ciclo"], r["qtd_sistema_na_contagem"]
             diff = r["_diff"]
+            if pd.isna(qs):
+                qs = r.get("qtd_sistema")
+            # Diferença vinda das divergências abertas (a contagem do ciclo
+            # bateu ou não existe): o contado real é sistema + diferença
+            if pd.notna(qs) and (pd.isna(qc) or float(qc) - float(qs) != diff):
+                qc = float(qs) + diff
             sinal = "+" if diff > 0 else "−"
             rows.append(
                 "<tr>"
@@ -695,7 +728,6 @@ def build_inventario_ciclico_tab(
         short_name = lambda x: x  # noqa: E731
 
     df = get_current_stock()
-    progresso = _get_progresso_ciclo(get_db)
     divergencias_cicli = _get_divergencias_cicli(get_db)
 
     # ── Processa clique no treemap (via JS → input → callback) ───────────────
@@ -727,6 +759,45 @@ def build_inventario_ciclico_tab(
             if not _sr.empty:
                 _dialog_conferencia(_sr.iloc[0], get_db, sync_db, get_divergencias)
 
+    # Popup dos cards e diferença efetiva: cooperados das divergências abertas
+    # + comentário do app sincronizado
+    divs_map: dict = {}
+    if get_divergencias is not None:
+        try:
+            _df_divs = get_divergencias()
+        except Exception:
+            _df_divs = None
+        if _df_divs is not None and not _df_divs.empty:
+            for _, _drow in _df_divs.iterrows():
+                _dcod = _norm_cod(_drow["codigo"])
+                if not _dcod:
+                    continue
+                divs_map.setdefault(_dcod, []).append({
+                    "cooperado": str(_drow["cooperado"]) if _drow["cooperado"] else "—",
+                    "delta": int(_drow["delta"]) if pd.notna(_drow["delta"]) else 0,
+                    "status": str(_drow["status"]),
+                })
+    obs_map = _get_observacoes_cicli(get_db)
+
+    # Progresso calculado sobre o mesmo df/divergências dos cards, para os
+    # contadores baterem com as cores (falta em item "ok" conta como divergência)
+    if df.empty:
+        progresso = {"total": 0, "ok": 0, "divergencia": 0, "pendente": 0}
+    else:
+        _contados_df = df[df["status_ciclo"].isin(["ok", "divergencia"])]
+        _n_div = 0
+        if not _contados_df.empty:
+            _diffs_cont = _contados_df.apply(
+                _diff_efetivo_row, axis=1, args=(divergencias_cicli, divs_map))
+            _n_div = int(((_diffs_cont != 0)
+                          | (_contados_df["status_ciclo"] == "divergencia")).sum())
+        progresso = {
+            "total": len(df),
+            "ok": len(_contados_df) - _n_div,
+            "divergencia": _n_div,
+            "pendente": len(df) - len(_contados_df),
+        }
+
     conferidos = progresso["ok"] + progresso["divergencia"]
     pct = (conferidos / max(progresso["total"], 1)) * 100
 
@@ -742,7 +813,7 @@ def build_inventario_ciclico_tab(
     st.markdown("""
     <div style='display:flex;gap:16px;font-size:0.7rem;margin:6px 0 10px 0;
                 color:#64748b;font-family:JetBrains Mono,monospace;'>
-        <span>🟡 Aguardando</span><span>🟢 Conferido OK</span><span>🔴 Divergência</span>
+        <span>🟡 Aguardando</span><span>🟢 Conferido OK</span><span>🔴 Falta</span><span>🔵 Sobra</span>
     </div>""", unsafe_allow_html=True)
 
     # ── Filtros ───────────────────────────────────────────────────────────────
@@ -796,32 +867,16 @@ def build_inventario_ciclico_tab(
     elif filtro_status == "Contados":
         df_treemap = df_treemap[df_treemap["status_ciclo"] == "ok"]
     elif filtro_status.startswith("Divergências"):
-        df_treemap = df_treemap[df_treemap["status_ciclo"] == "divergencia"]
-        if filtro_status != "Divergências" and not df_treemap.empty:
-            diffs = df_treemap.apply(_diff_ciclo_row, axis=1, args=(divergencias_cicli,))
+        # Inclui itens "ok" com falta/sobra efetiva (ex.: apontada em app sincronizado)
+        df_treemap = df_treemap[df_treemap["status_ciclo"].isin(["ok", "divergencia"])]
+        if not df_treemap.empty:
+            diffs = df_treemap.apply(_diff_efetivo_row, axis=1, args=(divergencias_cicli, divs_map))
             if "positivas" in filtro_status:
                 df_treemap = df_treemap[diffs > 0]
-            else:
+            elif "negativas" in filtro_status:
                 df_treemap = df_treemap[diffs < 0]
-
-    # Popup dos cards: cooperados das divergências abertas + comentário do app sincronizado
-    divs_map: dict = {}
-    if get_divergencias is not None:
-        try:
-            _df_divs = get_divergencias()
-        except Exception:
-            _df_divs = None
-        if _df_divs is not None and not _df_divs.empty:
-            for _, _drow in _df_divs.iterrows():
-                _dcod = str(_drow["codigo"]).strip()
-                if not _dcod:
-                    continue
-                divs_map.setdefault(_dcod, []).append({
-                    "cooperado": str(_drow["cooperado"]) if _drow["cooperado"] else "—",
-                    "delta": int(_drow["delta"]) if pd.notna(_drow["delta"]) else 0,
-                    "status": str(_drow["status"]),
-                })
-    obs_map = _get_observacoes_cicli(get_db)
+            else:
+                df_treemap = df_treemap[(diffs != 0) | (df_treemap["status_ciclo"] == "divergencia")]
 
     html_mapa = build_css_treemap(
         df_treemap,
@@ -840,9 +895,10 @@ def build_inventario_ciclico_tab(
     iframe_compat.html(_JS_HIDE_CONFERENCIA, height=0)
 
     # ── Download discreto: relatório imprimível das divergências ─────────────
-    df_div = df[df["status_ciclo"] == "divergencia"].copy()
+    # Inclui também itens "ok" com falta/sobra efetiva (app sincronizado)
+    df_div = df[df["status_ciclo"].isin(["ok", "divergencia"])].copy()
     if not df_div.empty:
-        df_div["_diff"] = df_div.apply(_diff_ciclo_row, axis=1, args=(divergencias_cicli,))
+        df_div["_diff"] = df_div.apply(_diff_efetivo_row, axis=1, args=(divergencias_cicli, divs_map))
         df_div = df_div[df_div["_diff"] != 0]
     if not df_div.empty:
         st.download_button(
