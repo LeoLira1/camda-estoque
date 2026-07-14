@@ -396,6 +396,112 @@ def _get_divergencias_cicli(get_db) -> dict:
         return {}
 
 
+def _diff_ciclo_row(row, divergencias_cicli: dict) -> float:
+    """Diferença da contagem cíclica (contado − sistema). Se as colunas do
+    ciclo estiverem vazias (registros antigos), usa o histórico inventario_cicli."""
+    qc, qs = row["qtd_contada_ciclo"], row["qtd_sistema_na_contagem"]
+    if pd.notna(qc) and pd.notna(qs):
+        return float(qc) - float(qs)
+    return float(divergencias_cicli.get(str(row["codigo"]), 0) or 0)
+
+
+def _fmt_qtd(v) -> str:
+    """Formata quantidade: inteiro sem casas, fração com 1 casa."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return "—"
+    return f"{f:.0f}" if f == int(f) else f"{f:.1f}"
+
+
+def _relatorio_divergencias_html(df_div: pd.DataFrame, divergencias_cicli: dict) -> str:
+    """Relatório HTML imprimível com as divergências do inventário cíclico,
+    separadas em sobras (positivas) e faltas (negativas)."""
+    gerado_em = datetime.now(_BRT).strftime("%d/%m/%Y %H:%M")
+
+    def _linhas(df_sec: pd.DataFrame) -> str:
+        rows = []
+        for _, r in df_sec.iterrows():
+            qc, qs = r["qtd_contada_ciclo"], r["qtd_sistema_na_contagem"]
+            diff = r["_diff"]
+            sinal = "+" if diff > 0 else "−"
+            rows.append(
+                "<tr>"
+                f"<td class='mono'>{_html.escape(str(r['codigo']))}</td>"
+                f"<td>{_html.escape(str(r['produto']))}</td>"
+                f"<td>{_html.escape(str(r['categoria']))}</td>"
+                f"<td class='num'>{_fmt_qtd(qs) if pd.notna(qs) else '—'}</td>"
+                f"<td class='num'>{_fmt_qtd(qc) if pd.notna(qc) else '—'}</td>"
+                f"<td class='num diff'>{sinal}{_fmt_qtd(abs(diff))}</td>"
+                f"<td class='mono'>{_html.escape(_fmt_dt_br(r['contado_ciclo_em']))}</td>"
+                "</tr>"
+            )
+        return "".join(rows)
+
+    def _secao(titulo: str, df_sec: pd.DataFrame, classe: str) -> str:
+        if df_sec.empty:
+            return ""
+        total = df_sec["_diff"].abs().sum()
+        return f"""
+        <h2 class="{classe}">{titulo} — {len(df_sec)} produto(s), {_fmt_qtd(total)} unidade(s)</h2>
+        <table>
+          <thead><tr>
+            <th>Código</th><th>Produto</th><th>Categoria</th>
+            <th class="num">Sistema</th><th class="num">Contado</th>
+            <th class="num">Diferença</th><th>Conferido em</th>
+          </tr></thead>
+          <tbody>{_linhas(df_sec)}</tbody>
+        </table>"""
+
+    sobras = df_div[df_div["_diff"] > 0]
+    faltas = df_div[df_div["_diff"] < 0]
+
+    return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Divergências — Inventário Cíclico</title>
+<style>
+  @page {{ size: A4; margin: 14mm; }}
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: Arial, Helvetica, sans-serif; color: #111; margin: 24px;
+         font-size: 12px; }}
+  h1 {{ font-size: 17px; margin: 0 0 2px 0; }}
+  .sub {{ color: #555; margin: 0 0 14px 0; }}
+  h2 {{ font-size: 13px; margin: 18px 0 6px 0; padding-bottom: 3px;
+        border-bottom: 2px solid #111; }}
+  h2.sobra {{ border-color: #1a7f37; }}
+  h2.falta {{ border-color: #b91c1c; }}
+  table {{ width: 100%; border-collapse: collapse; }}
+  th, td {{ border: 1px solid #999; padding: 4px 6px; text-align: left;
+            vertical-align: top; }}
+  th {{ background: #eee; font-size: 11px; }}
+  .num {{ text-align: right; white-space: nowrap; }}
+  .mono {{ font-family: 'Courier New', monospace; white-space: nowrap; }}
+  .diff {{ font-weight: bold; }}
+  tr {{ page-break-inside: avoid; }}
+  .assin {{ margin-top: 40px; display: flex; gap: 60px; }}
+  .assin div {{ flex: 1; border-top: 1px solid #111; padding-top: 4px;
+                text-align: center; color: #555; }}
+  .no-print {{ margin: 0 0 14px 0; }}
+  @media print {{ .no-print {{ display: none; }} body {{ margin: 0; }} }}
+</style>
+</head>
+<body>
+<div class="no-print"><button onclick="window.print()">🖨️ Imprimir</button></div>
+<h1>CAMDA — Divergências do Inventário Cíclico</h1>
+<p class="sub">Gerado em {gerado_em} · {len(df_div)} produto(s) com divergência
+({len(sobras)} sobra(s), {len(faltas)} falta(s))</p>
+{_secao("▲ Sobras (contado acima do sistema)", sobras, "sobra")}
+{_secao("▼ Faltas (contado abaixo do sistema)", faltas, "falta")}
+<div class="assin">
+  <div>Responsável pela contagem</div>
+  <div>Gerente</div>
+</div>
+</body>
+</html>"""
+
+
 def _get_ultima_observacao_cicli(get_db, codigo: str):
     """Última observacao não-vazia de inventario_cicli (gravada pelo app
     sincronizado via triggers). Retorna (observacao, contado_em) ou None."""
@@ -692,15 +798,7 @@ def build_inventario_ciclico_tab(
     elif filtro_status.startswith("Divergências"):
         df_treemap = df_treemap[df_treemap["status_ciclo"] == "divergencia"]
         if filtro_status != "Divergências" and not df_treemap.empty:
-            # Sinal da divergência: contado − sistema. Se as colunas do ciclo
-            # estiverem vazias (registros antigos), usa o histórico inventario_cicli.
-            def _diff_ciclo(row):
-                qc, qs = row["qtd_contada_ciclo"], row["qtd_sistema_na_contagem"]
-                if pd.notna(qc) and pd.notna(qs):
-                    return float(qc) - float(qs)
-                return float(divergencias_cicli.get(str(row["codigo"]), 0) or 0)
-
-            diffs = df_treemap.apply(_diff_ciclo, axis=1)
+            diffs = df_treemap.apply(_diff_ciclo_row, axis=1, args=(divergencias_cicli,))
             if "positivas" in filtro_status:
                 df_treemap = df_treemap[diffs > 0]
             else:
@@ -740,3 +838,19 @@ def build_inventario_ciclico_tab(
     iframe_compat.html(_JS_TREEMAP_CLICK, height=0)
     # JS que oculta visualmente os controles de conferência
     iframe_compat.html(_JS_HIDE_CONFERENCIA, height=0)
+
+    # ── Download discreto: relatório imprimível das divergências ─────────────
+    df_div = df[df["status_ciclo"] == "divergencia"].copy()
+    if not df_div.empty:
+        df_div["_diff"] = df_div.apply(_diff_ciclo_row, axis=1, args=(divergencias_cicli,))
+        df_div = df_div[df_div["_diff"] != 0]
+    if not df_div.empty:
+        st.download_button(
+            "🖨️ Baixar lista de divergências",
+            data=_relatorio_divergencias_html(df_div, divergencias_cicli),
+            file_name=f"divergencias_ciclico_{datetime.now(_BRT).strftime('%d-%m-%Y')}.html",
+            mime="text/html",
+            type="tertiary",
+            help="Relatório imprimível com sobras e faltas do inventário cíclico",
+            key="ciclo_dl_divergencias",
+        )
