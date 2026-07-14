@@ -873,7 +873,10 @@ st.markdown("""
         border-color: rgba(123,175,212,0.35) !important;
     }
     div.st-key-dash_nav button[data-testid="stBaseButton-pillsActive"],
-    div.st-key-dash_nav button[kind="pillsActive"] {
+    div.st-key-dash_nav button[kind="pillsActive"],
+    div.st-key-dash_nav button[data-selected],
+    div.st-key-dash_nav [role="radio"][aria-checked="true"],
+    div.st-key-dash_nav [role="option"][aria-selected="true"] {
         color: #cde8f8 !important;
         background: rgba(123,175,212,0.16) !important;
         border: 1px solid rgba(123,175,212,0.5) !important;
