@@ -23,19 +23,24 @@ antemão em vez de redescobri-las:
    com restart do servidor — o teste é flaky se o item 1 não foi corrigido.
 
 3. **Credenciais reais em `.streamlit/secrets.toml`.** O ambiente injeta
-   credenciais do Turso de PRODUÇÃO. Para testar sem tocar no banco
+   credenciais do Turso de PRODUÇÃO. O arquivo **não é mais versionado**
+   (saiu do índice do git; `.gitignore` linha 20 agora vale), então não há
+   mais o risco de commitá-lo por engano. Para testar sem tocar no banco
    compartilhado: mova o `secrets.toml` para fora temporariamente (o app cai
-   em modo local), semeie o `camda_local.db` com algumas linhas em
-   `estoque_mestre` (o dashboard só renderiza se `has_mestre > 0`) e
-   **restaure o `secrets.toml` antes de commitar**. Nunca combine as
-   credenciais reais com um `camda_local.db` já existente: dá
+   em modo local) e semeie o `camda_local.db` com algumas linhas em
+   `estoque_mestre` (o dashboard só renderiza se `has_mestre > 0`). Nunca
+   combine as credenciais reais com um `camda_local.db` já existente: dá
    `sync error: invalid local state: db file exists but metadata file does
    not` — apague `camda_local.db*` nesse caso.
 
-4. **Login e overlay de calendário.** Senha de acesso: `força` (senha de
-   edição: padrão `camda@edit`). Após o login, o popup de calendário
-   `#camda-cal-overlay` intercepta TODOS os cliques no Playwright —
-   remova-o com
+4. **Login e overlay de calendário.** As senhas não ficam no código: vêm dos
+   secrets `CAMDA_ACCESS_PASSWORD` (acesso) e `CAMDA_EDIT_PASSWORD` (edição).
+   Ao mover o `secrets.toml` para fora (item 3) o login para de funcionar —
+   exporte as duas como variáveis de ambiente, ou coloque-as num `.env`
+   local (também ignorado pelo git), que o `load_dotenv()` carrega. Sem elas
+   a tela de login mostra "senha não configurada" e ninguém entra.
+   Após o login, o popup de calendário `#camda-cal-overlay` intercepta TODOS
+   os cliques no Playwright — remova-o com
    `page.evaluate("document.getElementById('camda-cal-overlay')?.remove()")`
    após o login e após cada rerun, antes de clicar em qualquer coisa.
 

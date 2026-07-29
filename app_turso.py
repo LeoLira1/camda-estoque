@@ -7,6 +7,7 @@ import time
 import logging
 import random
 import base64
+import hmac
 import io
 import unicodedata
 import html as _esc_html
@@ -45,6 +46,44 @@ st.set_page_config(
 
 # Fuso horário de Brasília (UTC-3) — usado em todo o sistema
 _BRT = timezone(timedelta(hours=-3))
+
+
+# ── Segredos e senhas ────────────────────────────────────────────────────────
+# Definido aqui no topo (e não junto da conexão com o banco) porque a tela de
+# login roda logo abaixo e precisa das senhas.
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+
+def _get_secret(key: str) -> str:
+    try:
+        return st.secrets[key]
+    except (KeyError, FileNotFoundError, AttributeError):
+        return os.environ.get(key, "")
+
+
+# Senhas configuradas fora do código: Secrets do Streamlit Cloud, arquivo
+# .streamlit/secrets.toml (local, não versionado) ou variável de ambiente.
+#   CAMDA_ACCESS_PASSWORD → entrar no dashboard
+#   CAMDA_EDIT_PASSWORD   → liberar upload, ajuste e exclusão de estoque
+ACCESS_PASSWORD = _get_secret("CAMDA_ACCESS_PASSWORD")
+EDIT_PASSWORD   = _get_secret("CAMDA_EDIT_PASSWORD")
+
+
+def _senha_confere(digitada: str, esperada: str) -> bool:
+    """Compara em tempo constante. Senha não configurada nunca confere.
+
+    A comparação é feita em bytes: hmac.compare_digest() com str levanta
+    TypeError se houver caractere não-ASCII, e senha com acento é comum aqui.
+    """
+    if not esperada:
+        return False
+    return hmac.compare_digest(
+        str(digitada).encode("utf-8"), str(esperada).encode("utf-8")
+    )
 
 
 # ── Weather Widget ───────────────────────────────────────────────────────────
@@ -524,7 +563,7 @@ if not st.session_state.authenticated:
             )
             submitted = st.form_submit_button("ENTRAR", use_container_width=True)
             if submitted:
-                if senha_input == "força":
+                if _senha_confere(senha_input, ACCESS_PASSWORD):
                     st.session_state.authenticated = True
                     st.session_state.login_error = False
                     st.rerun()
@@ -532,7 +571,15 @@ if not st.session_state.authenticated:
                     st.session_state.login_error = True
                     st.rerun()
 
-        if st.session_state.login_error:
+        if not ACCESS_PASSWORD:
+            st.markdown(
+                '<div style="background:rgba(255,171,64,0.15);border:1px solid rgba(255,171,64,0.35);'
+                'border-radius:12px;padding:10px 16px;color:#ffc078;text-align:center;'
+                'font-size:0.85rem;margin-top:6px;">⚠️ Senha de acesso não configurada. '
+                'Defina <b>CAMDA_ACCESS_PASSWORD</b> nos Secrets do app.</div>',
+                unsafe_allow_html=True
+            )
+        elif st.session_state.login_error:
             st.markdown(
                 '<div style="background:rgba(255,71,87,0.15);border:1px solid rgba(255,71,87,0.3);'
                 'border-radius:12px;padding:8px 16px;color:#ff6b7a;text-align:center;'
@@ -1446,28 +1493,12 @@ def _supports_update_from(conn) -> bool:
 # DATABASE — conexão + init de tabelas UMA VEZ SÓ
 # ══════════════════════════════════════════════════════════════════════════════
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
-
-
-def _get_secret(key: str) -> str:
-    try:
-        return st.secrets[key]
-    except (KeyError, FileNotFoundError, AttributeError):
-        return os.environ.get(key, "")
-
-
+# load_dotenv() e _get_secret() ficam no topo do arquivo, junto das senhas —
+# a tela de login precisa deles antes deste ponto.
 TURSO_DATABASE_URL = _get_secret("TURSO_DATABASE_URL")
 TURSO_AUTH_TOKEN = _get_secret("TURSO_AUTH_TOKEN")
 LOCAL_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "camda_local.db")
 _using_cloud = bool(TURSO_DATABASE_URL and TURSO_AUTH_TOKEN)
-
-# Senha para liberar a área de edição do estoque (upload, ajuste, exclusão)
-# Configure via st.secrets["CAMDA_EDIT_PASSWORD"] ou variável de ambiente CAMDA_EDIT_PASSWORD
-EDIT_PASSWORD = _get_secret("CAMDA_EDIT_PASSWORD") or "camda@edit"
 
 
 @st.cache_resource(ttl=1800)
@@ -5237,7 +5268,7 @@ def apagar_todo_historico_divergencias():
         st.error(f"❌ Erro ao apagar histórico: {e}")
 
 
-_SENHA_HISTORICO = "força"  # mesma senha de acesso ao dashboard
+_SENHA_HISTORICO = ACCESS_PASSWORD  # mesma senha de acesso ao dashboard
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -11148,10 +11179,10 @@ new Chart(document.getElementById('coop-chart'),{
                     key="repor_manual_senha",
                     placeholder="Digite a senha…",
                 )
-                if senha_div and senha_div != "camda@edit":
+                if senha_div and not _senha_confere(senha_div, EDIT_PASSWORD):
                     st.error("Senha incorreta.")
 
-                if senha_div == "camda@edit":
+                if _senha_confere(senha_div, EDIT_PASSWORD):
 
                     st.caption(
                         "Selecione o produto e informe **quantos estão sobrando** (+) "
@@ -11985,7 +12016,7 @@ new Chart(document.getElementById('coop-chart'),{
                                     placeholder="Digite a senha para editar"
                                 )
                                 if st.button("Confirmar", key=f"av_auth_{av_id}", type="primary"):
-                                    if _senha_input == "camda@edit":
+                                    if _senha_confere(_senha_input, EDIT_PASSWORD):
                                         st.session_state[_edit_key] = True
                                         st.rerun()
                                     else:
@@ -12440,7 +12471,7 @@ new Chart(document.getElementById('coop-chart'),{
                         senha_lt = st.text_input("Senha", type="password", key="hist_senha_limpar", label_visibility="collapsed", placeholder="🔑 Senha para confirmar")
                     with lc2:
                         if st.button("Confirmar", key="hist_confirmar_limpar", type="primary"):
-                            if senha_lt == _SENHA_HISTORICO:
+                            if _senha_confere(senha_lt, _SENHA_HISTORICO):
                                 apagar_todo_historico_divergencias()
                                 st.session_state.pop("hist_limpar_tudo", None)
                                 st.session_state.pop("hist_senha_limpar", None)
@@ -12987,7 +13018,7 @@ new Chart(document.getElementById('coop-chart'),{
                 col_sim, col_nao = st.columns(2)
                 with col_sim:
                     if st.button("✅ Sim, zerar", key="hist_zerar_sim", type="primary", use_container_width=True):
-                        if senha_zerar != EDIT_PASSWORD:
+                        if not _senha_confere(senha_zerar, EDIT_PASSWORD):
                             st.error("Senha incorreta. Operação não realizada.")
                         else:
                             get_db().execute("DELETE FROM vendas_historico")
@@ -14030,9 +14061,11 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
             )
         with _col_btn:
             if st.button("🔓 Entrar", type="primary", key="btn_edit_unlock", use_container_width=True):
-                if _edit_pwd == EDIT_PASSWORD:
+                if _senha_confere(_edit_pwd, EDIT_PASSWORD):
                     st.session_state.admin_unlocked = True
                     st.rerun()
+                elif not EDIT_PASSWORD:
+                    st.error("⚠️ Senha de edição não configurada. Defina **CAMDA_EDIT_PASSWORD** nos Secrets do app.")
                 else:
                     st.error("❌ Senha incorreta")
     else:

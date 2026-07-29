@@ -531,4 +531,5 @@ O GitHub Actions deve estar rodando o build do APK. Se houver falha, verificar:
 
 1. Log completo do GitHub Actions (passo "Build APK release")
 2. Erros de compilação Dart (análise estática no passo anterior)
-3. Secrets configurados: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, `CAMDA_PASSWORD`
+3. Secrets configurados: `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
+   `CAMDA_ACCESS_PASSWORD`, `CAMDA_EDIT_PASSWORD`

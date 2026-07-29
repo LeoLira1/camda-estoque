@@ -136,10 +136,15 @@ camda-app/lib/
 
 ### Variáveis de ambiente obrigatórias (GitHub Secrets)
 ```
-TURSO_DATABASE_URL   → URL do banco Turso (libsql://...)
-TURSO_AUTH_TOKEN     → Token JWT de autenticação
-CAMDA_PASSWORD       → Senha de acesso ao app
+TURSO_DATABASE_URL     → URL do banco Turso (libsql://...)
+TURSO_AUTH_TOKEN       → Token JWT de autenticação
+CAMDA_ACCESS_PASSWORD  → Senha de acesso ao dashboard
+CAMDA_EDIT_PASSWORD    → Senha de edição (upload, ajuste, exclusão)
 ```
+
+As senhas ficam nos Secrets do Streamlit Cloud (app → Settings → Secrets),
+nunca no código. Localmente, use `.streamlit/secrets.toml` ou `.env` — os
+dois são ignorados pelo git.
 
 ### Fluxo de build automático
 ```
