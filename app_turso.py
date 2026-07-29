@@ -4042,17 +4042,27 @@ def render_checkbox_separado(
     novo tinha acabado de desmarcar por ter recebido material novo.
     """
     espelho = f"_db_{key}"
-    if st.session_state.get(espelho) != valor_banco:
-        # O banco mudou por fora (nova importação): o widget acompanha.
+    # `key not in session_state` cobre dois casos: sessão nova e — o que
+    # importa aqui — o estado do widget descartado pelo Streamlit ao trocar de
+    # aba, já que ele só guarda o valor de widgets renderizados no rerun
+    # anterior. Sem isso o checkbox voltava desmarcado.
+    if key not in st.session_state or st.session_state.get(espelho) != valor_banco:
+        # Sessão nova, volta de outra aba, ou o banco mudou por fora
+        # (nova importação): o widget acompanha o banco.
         st.session_state[key] = valor_banco
         st.session_state[espelho] = valor_banco
-    novo_valor = st.checkbox(
-        label, key=key, label_visibility=label_visibility, help=help,
-    )
-    if novo_valor != valor_banco:
-        ao_mudar(novo_valor)
+
+    def _ao_clicar() -> None:
+        # on_change só dispara em clique de verdade — nunca em re-render —,
+        # então nenhuma marcação é gravada por engano.
+        novo_valor = bool(st.session_state.get(key))
         st.session_state[espelho] = novo_valor
-        st.rerun()
+        ao_mudar(novo_valor)
+
+    st.checkbox(
+        label, key=key, on_change=_ao_clicar,
+        label_visibility=label_visibility, help=help,
+    )
 
 
 @st.cache_data(ttl=120)
