@@ -3645,6 +3645,22 @@ def _agrupar_saldos_terceiros(linhas) -> dict:
     return agg
 
 
+def _clientes_com_material_novo(antes: dict, depois: dict) -> set:
+    """Cooperados que ganharam material no relatório novo.
+
+    Conta tanto produto inédito quanto quantidade a mais de um produto que o
+    cooperado já tinha — nos dois casos há material novo para separar, mesmo
+    que a compra tenha vindo em um documento que já existia.
+    """
+    clientes: set = set()
+    for (cooperado, _codigo), dados in depois.items():
+        anterior = antes.get((cooperado, _codigo))
+        saldo_anterior = anterior["saldo"] if anterior else 0.0
+        if dados["saldo"] - saldo_anterior > 0.001:
+            clientes.add(cooperado)
+    return clientes
+
+
 def _registrar_retiradas_terceiros(
     conn, antes: dict, depois: dict, data_movimento: str, data_ref_anterior: str
 ) -> int:
@@ -3733,12 +3749,22 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
         if razao:
             docs_novos.setdefault(razao, set()).add(doc)
 
+    saldos_novos = _agrupar_saldos_terceiros(
+        (
+            r.get("razao_social", ""), r.get("codigo_produto", ""),
+            r.get("descricao", ""), r.get("grupo", ""), r.get("saldo", 0),
+        )
+        for r in records
+    )
+    clientes_material_novo = _clientes_com_material_novo(saldos_anteriores, saldos_novos)
+
     # Remove TODOS os registros anteriores (qualquer data de referência)
     cur = conn.execute("DELETE FROM materiais_terceiros")
     removidos = getattr(cur, "rowcount", 0) or 0
 
-    # Reset seletivo: só desmarca clientes que ganharam documentos novos.
-    # Clientes cujos docs são idênticos (ou subset) mantêm o "separado".
+    # Reset seletivo: desmarca quem ganhou documento novo OU material novo
+    # (produto inédito ou quantidade a mais do mesmo produto). Clientes com
+    # exatamente o mesmo material de antes mantêm o "separado".
     clientes_separados = {
         r[0] for r in conn.execute(
             "SELECT razao_social FROM materiais_separacao WHERE separado = 1"
@@ -3747,7 +3773,7 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     for razao in clientes_separados:
         anteriores = docs_anteriores.get(razao, set())
         novos = docs_novos.get(razao, set())
-        if novos - anteriores:  # há documentos que não existiam antes
+        if (novos - anteriores) or razao in clientes_material_novo:
             conn.execute(
                 "DELETE FROM materiais_separacao WHERE razao_social = ?", (razao,)
             )
@@ -3777,13 +3803,6 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
 
     # Registra as retiradas (saldos que diminuíram em relação ao relatório anterior)
     data_mov = (data_referencia or "").strip() or datetime.now(tz=_BRT).strftime("%Y-%m-%d")
-    saldos_novos = _agrupar_saldos_terceiros(
-        (
-            r.get("razao_social", ""), r.get("codigo_produto", ""),
-            r.get("descricao", ""), r.get("grupo", ""), r.get("saldo", 0),
-        )
-        for r in records
-    )
     try:
         retiradas = _registrar_retiradas_terceiros(
             conn, saldos_anteriores, saldos_novos, data_mov, data_ref_anterior
@@ -3830,6 +3849,26 @@ def set_materiais_separado(razao_social: str, separado: bool) -> None:
     conn.commit()
     sync_db()
     get_materiais_separacao.clear()
+
+
+def render_checkbox_separado(parceiro: str, ja_separado: bool, key: str) -> None:
+    """Checkbox "Já separei" mantido em sincronia com o banco.
+
+    O Streamlit dá prioridade ao valor que já está na session_state sobre o
+    `value=` passado ao widget. Sem o espelho abaixo, o "marcado" de antes
+    vencia e re-separava sozinho o cliente que a importação de um relatório
+    novo tinha acabado de desmarcar por ter recebido material novo.
+    """
+    espelho = f"_db_{key}"
+    if st.session_state.get(espelho) != ja_separado:
+        # O banco mudou por fora (nova importação): o widget acompanha.
+        st.session_state[key] = ja_separado
+        st.session_state[espelho] = ja_separado
+    novo_valor = st.checkbox("Já separei", key=key)
+    if novo_valor != ja_separado:
+        set_materiais_separado(parceiro, novo_valor)
+        st.session_state[espelho] = novo_valor
+        st.rerun()
 
 
 @st.cache_data(ttl=120)
@@ -13359,14 +13398,10 @@ new Chart(document.getElementById('coop-chart'),{
                             unsafe_allow_html=True,
                         )
                     with _col_chk:
-                        _novo_sep = st.checkbox(
-                            "Já separei",
-                            value=_ja_separado,
+                        render_checkbox_separado(
+                            _parceiro, _ja_separado,
                             key=f"mat_sep_resumo_{_parceiro}",
                         )
-                        if _novo_sep != _ja_separado:
-                            set_materiais_separado(_parceiro, _novo_sep)
-                            st.rerun()
                     with _col_btn:
                         if _img_ok:
                             import base64 as _b64mod
@@ -13435,14 +13470,10 @@ new Chart(document.getElementById('coop-chart'),{
                             unsafe_allow_html=True,
                         )
                     with _col_chk_d:
-                        _novo_sep_d = st.checkbox(
-                            "Já separei",
-                            value=_ja_separado,
+                        render_checkbox_separado(
+                            _parceiro, _ja_separado,
                             key=f"mat_sep_detalhado_{_parceiro}",
                         )
-                        if _novo_sep_d != _ja_separado:
-                            set_materiais_separado(_parceiro, _novo_sep_d)
-                            st.rerun()
 
                     for _, _mrow in _df_p.iterrows():
                         _saldo_cor = "#ef4444" if _mrow["saldo"] > 0 else "#22c55e"
