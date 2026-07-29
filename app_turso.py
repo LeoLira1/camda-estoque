@@ -1721,6 +1721,23 @@ def _get_connection():
             separado_em   TEXT    DEFAULT ''
         )
     """)
+    # Histórico de retiradas: diferenças detectadas entre dois relatórios
+    # MATR480 consecutivos (saldo caiu ⇒ o cooperado retirou material).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS retiradas_terceiros (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_movimento  TEXT    NOT NULL,
+            cooperado       TEXT    NOT NULL,
+            codigo_produto  TEXT    DEFAULT '',
+            descricao       TEXT    DEFAULT '',
+            grupo           TEXT    DEFAULT '',
+            qtd_anterior    REAL    DEFAULT 0,
+            qtd_atual       REAL    DEFAULT 0,
+            qtd_retirada    REAL    DEFAULT 0,
+            data_ref_anterior TEXT  DEFAULT '',
+            registrado_em   TEXT    DEFAULT ''
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS mural_recados (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1779,6 +1796,8 @@ def _get_connection():
         "CREATE INDEX IF NOT EXISTS idx_av_status       ON avarias(status)",
         "CREATE INDEX IF NOT EXISTS idx_ci_codigo       ON contagem_itens(codigo)",
         "CREATE INDEX IF NOT EXISTS idx_mapa_pos_rua    ON mapa_posicoes(rua, face)",
+        "CREATE INDEX IF NOT EXISTS idx_ret_ter_data    ON retiradas_terceiros(data_movimento)",
+        "CREATE INDEX IF NOT EXISTS idx_ret_ter_coop    ON retiradas_terceiros(cooperado)",
     ]
     for _idx_sql in _indices:
         try:
@@ -3594,14 +3613,85 @@ def get_estocados_por_produto(produto: str) -> list:
 
 # ── Materiais em Poder de Terceiros (MATR480) ─────────────────────────────────
 
-def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int, int]:
+def _agrupar_saldos_terceiros(linhas) -> dict:
+    """Agrega saldos por (cooperado, código do produto).
+
+    `linhas` é um iterável de tuplas
+    (razao_social, codigo_produto, descricao, grupo, saldo).
+    Retorna {(cooperado, codigo): {"descricao", "grupo", "saldo"}}.
+    """
+    agg: dict[tuple[str, str], dict] = {}
+    for razao, codigo, descricao, grupo, saldo in linhas:
+        razao = (razao or "").strip()
+        codigo = (codigo or "").strip()
+        if not razao:
+            continue
+        descricao = (descricao or "").strip()
+        grupo = (grupo or "").strip()
+        try:
+            valor = float(saldo or 0)
+        except (TypeError, ValueError):
+            valor = 0.0
+        chave = (razao, codigo)
+        atual = agg.get(chave)
+        if atual is None:
+            agg[chave] = {"descricao": descricao, "grupo": grupo, "saldo": valor}
+        else:
+            atual["saldo"] += valor
+            if not atual["descricao"]:
+                atual["descricao"] = descricao
+            if not atual["grupo"]:
+                atual["grupo"] = grupo
+    return agg
+
+
+def _registrar_retiradas_terceiros(
+    conn, antes: dict, depois: dict, data_movimento: str, data_ref_anterior: str
+) -> int:
+    """Compara os saldos do relatório anterior com os do novo e grava as quedas.
+
+    Cada item cujo saldo diminuiu vira uma linha em `retiradas_terceiros`:
+    o cooperado retirou aquela quantidade. Itens que sumiram do relatório são
+    tratados como saldo zero (retirada total). Aumentos de saldo são entradas
+    novas e não são registrados aqui.
+    """
+    if not antes:
+        return 0
+    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+    registrados = 0
+    for chave, dados_ant in antes.items():
+        cooperado, codigo = chave
+        qtd_ant = dados_ant["saldo"]
+        dados_atu = depois.get(chave)
+        qtd_atu = dados_atu["saldo"] if dados_atu else 0.0
+        retirada = qtd_ant - qtd_atu
+        if retirada <= 0.001:
+            continue
+        descricao = dados_ant["descricao"] or (dados_atu or {}).get("descricao", "")
+        grupo = dados_ant["grupo"] or (dados_atu or {}).get("grupo", "")
+        conn.execute("""
+            INSERT INTO retiradas_terceiros
+                (data_movimento, cooperado, codigo_produto, descricao, grupo,
+                 qtd_anterior, qtd_atual, qtd_retirada, data_ref_anterior, registrado_em)
+            VALUES (?,?,?,?,?,?,?,?,?,?)
+        """, (
+            data_movimento, cooperado, codigo, descricao, grupo,
+            qtd_ant, qtd_atu, retirada, data_ref_anterior, now,
+        ))
+        registrados += 1
+    return registrados
+
+
+def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int, int, int]:
     """
     Substitui TODOS os registros da tabela pelos novos.
     Estratégia: DELETE tudo → INSERT tudo.
-    Retorna (inseridos, removidos_anteriormente).
+    Antes de apagar, compara os saldos anteriores com os novos e registra em
+    `retiradas_terceiros` tudo que o cooperado retirou (saldo que diminuiu).
+    Retorna (inseridos, removidos_anteriormente, retiradas_registradas).
     """
     if not records:
-        return 0, 0
+        return 0, 0, 0
     conn = get_db()
     now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -3615,6 +3705,25 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
             docs_anteriores.setdefault(razao, set()).add(doc)
     except Exception:
         pass
+
+    # Snapshot dos saldos atuais (por cooperado + produto) para detectar
+    # retiradas ao comparar com o relatório que está sendo importado.
+    saldos_anteriores: dict = {}
+    data_ref_anterior = ""
+    try:
+        saldos_anteriores = _agrupar_saldos_terceiros(conn.execute(
+            "SELECT razao_social, codigo_produto, descricao, grupo, saldo"
+            " FROM materiais_terceiros"
+        ).fetchall())
+        _row_ref = conn.execute(
+            "SELECT data_referencia FROM materiais_terceiros"
+            " WHERE COALESCE(data_referencia,'') != ''"
+            " ORDER BY data_referencia DESC LIMIT 1"
+        ).fetchone()
+        if _row_ref:
+            data_ref_anterior = _row_ref[0] or ""
+    except Exception:
+        saldos_anteriores = {}
 
     # Calcula docs novos por cliente a partir dos registros que serão inseridos
     docs_novos: dict[str, set] = {}
@@ -3665,6 +3774,24 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
             r.get("saldo", 0), r.get("tm", ""), r.get("data_lancto", ""),
             data_referencia, now,
         ))
+
+    # Registra as retiradas (saldos que diminuíram em relação ao relatório anterior)
+    data_mov = (data_referencia or "").strip() or datetime.now(tz=_BRT).strftime("%Y-%m-%d")
+    saldos_novos = _agrupar_saldos_terceiros(
+        (
+            r.get("razao_social", ""), r.get("codigo_produto", ""),
+            r.get("descricao", ""), r.get("grupo", ""), r.get("saldo", 0),
+        )
+        for r in records
+    )
+    try:
+        retiradas = _registrar_retiradas_terceiros(
+            conn, saldos_anteriores, saldos_novos, data_mov, data_ref_anterior
+        )
+    except Exception as e:
+        logging.warning(f"Falha ao registrar retiradas de terceiros: {e}")
+        retiradas = 0
+
     conn.commit()
     sync_db()
     get_materiais_terceiros.clear()
@@ -3673,7 +3800,9 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     get_materiais_descricoes.clear()
     get_materiais_resumo.clear()
     get_materiais_separacao.clear()
-    return len(records), removidos
+    get_retiradas_terceiros.clear()
+    get_retiradas_datas.clear()
+    return len(records), removidos, retiradas
 
 
 @st.cache_data(ttl=120)
@@ -3904,6 +4033,76 @@ def get_materiais_resumo() -> dict:
         }
     except Exception:
         return {"parceiros": 0, "itens": 0, "saldo_total": 0.0}
+
+
+@st.cache_data(ttl=120)
+def get_retiradas_terceiros(
+    data_movimento: str | None = None,
+    cooperado: str | None = None,
+    grupos_excluir: tuple[str, ...] | None = None,
+) -> pd.DataFrame:
+    """Retorna as retiradas registradas, opcionalmente filtradas por dia/cooperado."""
+    cols = [
+        "id", "data_movimento", "cooperado", "codigo_produto", "descricao",
+        "grupo", "qtd_anterior", "qtd_atual", "qtd_retirada",
+        "data_ref_anterior", "registrado_em",
+    ]
+    try:
+        where_clauses: list[str] = []
+        params: list = []
+        if data_movimento:
+            where_clauses.append("data_movimento = ?")
+            params.append(data_movimento)
+        if cooperado:
+            where_clauses.append("cooperado = ?")
+            params.append(cooperado)
+        if grupos_excluir:
+            placeholders = ",".join("?" * len(grupos_excluir))
+            where_clauses.append(f"UPPER(COALESCE(grupo,'')) NOT IN ({placeholders})")
+            params.extend(g.upper() for g in grupos_excluir)
+        where = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+        rows = get_db().execute(
+            f"SELECT id, data_movimento, cooperado, codigo_produto, descricao,"
+            f" grupo, qtd_anterior, qtd_atual, qtd_retirada,"
+            f" data_ref_anterior, registrado_em"
+            f" FROM retiradas_terceiros {where}"
+            f" ORDER BY data_movimento DESC, cooperado, descricao",
+            params,
+        ).fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
+
+@st.cache_data(ttl=120)
+def get_retiradas_datas() -> list:
+    """Retorna as datas (YYYY-MM-DD) que possuem retiradas registradas, mais recente primeiro."""
+    try:
+        rows = get_db().execute(
+            "SELECT DISTINCT data_movimento FROM retiradas_terceiros"
+            " WHERE COALESCE(data_movimento,'') != ''"
+            " ORDER BY data_movimento DESC"
+        ).fetchall()
+        return [r[0] for r in rows]
+    except Exception:
+        return []
+
+
+def delete_retiradas_por_data(data_movimento: str) -> bool:
+    """Remove todas as retiradas registradas em um dia (para refazer a comparação)."""
+    try:
+        conn = get_db()
+        conn.execute(
+            "DELETE FROM retiradas_terceiros WHERE data_movimento = ?",
+            (data_movimento,),
+        )
+        conn.commit()
+        sync_db()
+        get_retiradas_terceiros.clear()
+        get_retiradas_datas.clear()
+        return True
+    except Exception:
+        return False
 
 
 def delete_materiais_por_referencia(data_referencia: str) -> bool:
@@ -12727,13 +12926,18 @@ new Chart(document.getElementById('coop-chart'),{
                             debug=True,
                         )
                     if _records:
-                        _ins, _rem = upsert_materiais_terceiros(
+                        _ins, _rem, _ret = upsert_materiais_terceiros(
                             _records, _data_ref_inp.strip()
                         )
                         _rem_txt = f" ({_rem} anteriores substituídos)" if _rem else ""
                         st.success(
                             f"✅ {_ins} registros importados{_rem_txt}."
                         )
+                        if _ret:
+                            st.info(
+                                f"📤 {_ret} retirada(s) detectada(s) ao comparar com o "
+                                f"relatório anterior. Veja em **📤 Retiradas dos cooperados**."
+                            )
                     else:
                         st.warning(
                             "⚠️ Nenhuma movimentação encontrada no PDF. "
@@ -12755,19 +12959,192 @@ new Chart(document.getElementById('coop-chart'),{
                     st.error(f"❌ Erro ao processar PDF: {_ex}")
                     st.code(_tb.format_exc(), language="python")
 
-        # ── Filtros ────────────────────────────────────────────────────────
-        _resumo = get_materiais_resumo()
-        _fc1, _fc2, _fc3 = st.columns(3)
-        _fc1.metric("Parceiros", _resumo["parceiros"])
-        _fc2.metric("Itens", _resumo["itens"])
-        _fc3.metric("Saldo total (un.)", f"{_resumo['saldo_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-
         # Grupos de equipamentos sempre ocultos
         _GRUPOS_OCULTOS_PADRAO = (
             "MAQUINARIOS E FERRAMENTAS",
             "EQUIPAMENTOS DE INFORMATICA",
             "MAQUINAS E IMPLEMENTOS AGRICOLAS",
         )
+
+        # ── Retiradas dos cooperados ───────────────────────────────────────
+        # Cada importação de PDF compara os saldos com os do relatório anterior;
+        # o que diminuiu fica registrado aqui como retirada do cooperado.
+        _ver_retiradas = st.toggle(
+            "📤 Retiradas dos cooperados",
+            key="matr480_ver_retiradas",
+            help=(
+                "Mostra o cooperado, o produto e a quantidade que saiu, comparando "
+                "o PDF importado com o relatório anterior. Escolha o dia no calendário."
+            ),
+        )
+
+        if _ver_retiradas:
+            _datas_ret = get_retiradas_datas()
+
+            def _fmt_qtd(_v: float) -> str:
+                _txt = f"{_v:,.2f}" if abs(_v - round(_v)) > 0.001 else f"{_v:,.0f}"
+                return _txt.replace(",", "X").replace(".", ",").replace("X", ".")
+
+            if not _datas_ret:
+                st.info(
+                    "Nenhuma retirada registrada ainda. As retiradas são detectadas "
+                    "automaticamente na **segunda** importação de PDF em diante: o "
+                    "sistema compara o saldo de cada cooperado com o do relatório "
+                    "anterior e registra o que diminuiu."
+                )
+            else:
+                try:
+                    _data_padrao = datetime.strptime(_datas_ret[0], "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    _data_padrao = datetime.now(tz=_BRT).date()
+
+                _rc1, _rc2 = st.columns([1, 2])
+                with _rc1:
+                    _dia_ret = st.date_input(
+                        "📅 Dia da retirada",
+                        value=_data_padrao,
+                        format="DD/MM/YYYY",
+                        key="matr480_ret_data",
+                    )
+                _dia_ret_str = _dia_ret.strftime("%Y-%m-%d") if _dia_ret else ""
+
+                _df_ret_dia = get_retiradas_terceiros(
+                    data_movimento=_dia_ret_str,
+                    grupos_excluir=_GRUPOS_OCULTOS_PADRAO,
+                )
+
+                with _rc2:
+                    _coop_ret_opts = ["Todos"] + sorted(
+                        _df_ret_dia["cooperado"].dropna().unique().tolist()
+                    )
+                    if st.session_state.get("matr480_ret_coop", "Todos") not in _coop_ret_opts:
+                        st.session_state["matr480_ret_coop"] = "Todos"
+                    _coop_ret_sel = st.selectbox(
+                        "Cooperado",
+                        _coop_ret_opts,
+                        key="matr480_ret_coop",
+                        help="Digite para filtrar por nome do cooperado",
+                    )
+
+                _dias_txt = ", ".join(
+                    datetime.strptime(_d, "%Y-%m-%d").strftime("%d/%m/%Y")
+                    for _d in _datas_ret[:10]
+                    if _d
+                )
+                if len(_datas_ret) > 10:
+                    _dias_txt += f" e mais {len(_datas_ret) - 10}"
+                st.caption(f"📆 Dias com retiradas registradas: {_dias_txt}")
+
+                if _coop_ret_sel != "Todos":
+                    _df_ret_dia = _df_ret_dia[_df_ret_dia["cooperado"] == _coop_ret_sel]
+
+                if _df_ret_dia.empty:
+                    st.info(
+                        f"Nenhuma retirada registrada em "
+                        f"{_dia_ret.strftime('%d/%m/%Y') if _dia_ret else '—'}."
+                    )
+                else:
+                    # Consolida por cooperado + produto (uma linha por produto)
+                    _ret_agg = (
+                        _df_ret_dia
+                        .groupby(["cooperado", "descricao"], as_index=False)
+                        .agg(
+                            codigo_produto=("codigo_produto", "first"),
+                            qtd_anterior=("qtd_anterior", "sum"),
+                            qtd_atual=("qtd_atual", "sum"),
+                            qtd_retirada=("qtd_retirada", "sum"),
+                        )
+                        .sort_values(["cooperado", "descricao"])
+                    )
+
+                    _mr1, _mr2, _mr3 = st.columns(3)
+                    _mr1.metric("Cooperados", _ret_agg["cooperado"].nunique())
+                    _mr2.metric("Produtos", len(_ret_agg))
+                    _mr3.metric(
+                        "Total retirado (un.)",
+                        _fmt_qtd(float(_ret_agg["qtd_retirada"].sum())),
+                    )
+
+                    for _coop_r in _ret_agg["cooperado"].unique().tolist():
+                        _df_cr = _ret_agg[_ret_agg["cooperado"] == _coop_r]
+                        _tot_cr = float(_df_cr["qtd_retirada"].sum())
+                        st.markdown(
+                            f'<div style="margin:16px 0 6px;padding:8px 14px;'
+                            f'background:#1e293b;border-left:4px solid #f97316;border-radius:4px;">'
+                            f'<span style="color:#93c5fd;font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
+                            f'<span style="color:#64748b;font-size:0.73rem;margin-left:10px;">'
+                            f'{len(_df_cr)} produto(s) · Retirado: '
+                            f'<b style="color:#fb923c">{_fmt_qtd(_tot_cr)}</b> un.'
+                            f'</span></div>',
+                            unsafe_allow_html=True,
+                        )
+                        _rows_ret = ""
+                        for _, _rr in _df_cr.iterrows():
+                            _rows_ret += (
+                                f'<tr>'
+                                f'<td style="padding:7px 10px;color:#e0e6ed;">{_rr["descricao"]}</td>'
+                                f'<td style="padding:7px 10px;color:#64748b;font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
+                                f'<td style="padding:7px 10px;color:#94a3b8;font-size:0.78rem;text-align:right;">'
+                                f'{_fmt_qtd(float(_rr["qtd_anterior"]))} → {_fmt_qtd(float(_rr["qtd_atual"]))}</td>'
+                                f'<td style="padding:7px 10px;color:#fb923c;font-weight:700;text-align:right;">'
+                                f'−{_fmt_qtd(float(_rr["qtd_retirada"]))} un.</td>'
+                                f'</tr>'
+                            )
+                        st.markdown(
+                            f'<table style="width:100%;border-collapse:collapse;'
+                            f'background:#0f172a;border-radius:6px;overflow:hidden;margin-bottom:4px;">'
+                            f'<thead><tr style="background:#1e293b;">'
+                            f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">PRODUTO</th>'
+                            f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
+                            f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">ANTES → DEPOIS</th>'
+                            f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">RETIRADO</th>'
+                            f'</tr></thead>'
+                            f'<tbody>{_rows_ret}</tbody>'
+                            f'</table>',
+                            unsafe_allow_html=True,
+                        )
+
+                    _csv_ret = _ret_agg.rename(columns={
+                        "cooperado": "COOPERADO",
+                        "descricao": "PRODUTO",
+                        "codigo_produto": "CODIGO",
+                        "qtd_anterior": "QTD_ANTERIOR",
+                        "qtd_atual": "QTD_ATUAL",
+                        "qtd_retirada": "QTD_RETIRADA",
+                    }).to_csv(index=False, sep=";", decimal=",")
+                    _dl_col, _del_col = st.columns([1, 1])
+                    with _dl_col:
+                        st.download_button(
+                            "⬇️ Baixar retiradas do dia (.csv)",
+                            data=_csv_ret.encode("utf-8-sig"),
+                            file_name=f"retiradas_{_dia_ret_str}.csv",
+                            mime="text/csv",
+                            key="matr480_ret_dl",
+                            use_container_width=True,
+                        )
+                    with _del_col:
+                        _conf_del_ret = st.checkbox(
+                            "Confirmar exclusão do dia",
+                            key="matr480_ret_del_conf",
+                        )
+                        if st.button(
+                            "🗑️ Apagar retiradas deste dia",
+                            key="matr480_ret_del_btn",
+                            use_container_width=True,
+                            disabled=not _conf_del_ret,
+                        ):
+                            if delete_retiradas_por_data(_dia_ret_str):
+                                st.success("✅ Retiradas do dia removidas.")
+                                st.rerun()
+                            else:
+                                st.error("❌ Não foi possível remover as retiradas.")
+
+        # ── Filtros ────────────────────────────────────────────────────────
+        _resumo = get_materiais_resumo()
+        _fc1, _fc2, _fc3 = st.columns(3)
+        _fc1.metric("Parceiros", _resumo["parceiros"])
+        _fc2.metric("Itens", _resumo["itens"])
+        _fc3.metric("Saldo total (un.)", f"{_resumo['saldo_total']:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
 
         # ── Aviso de separação pendente (considera TODOS os clientes, sem filtro) ──
         _df_mat_todos = get_materiais_terceiros(grupos_excluir=_GRUPOS_OCULTOS_PADRAO)
