@@ -3802,6 +3802,7 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     get_materiais_separacao.clear()
     get_retiradas_terceiros.clear()
     get_retiradas_datas.clear()
+    get_retiradas_recentes.clear()
     return len(records), removidos, retiradas
 
 
@@ -4088,6 +4089,36 @@ def get_retiradas_datas() -> list:
         return []
 
 
+@st.cache_data(ttl=120)
+def get_retiradas_recentes(horas: int = 24) -> list:
+    """Retorna as retiradas registradas nas últimas `horas`, agrupadas por cooperado.
+
+    Alimenta o aviso do header, que some sozinho quando a última importação
+    passa de 24h — o registro em si continua no histórico da aba Estocados.
+    """
+    try:
+        corte = (
+            datetime.now(tz=_BRT) - timedelta(hours=horas)
+        ).strftime("%Y-%m-%d %H:%M:%S")
+        rows = get_db().execute(
+            "SELECT cooperado, COUNT(*), SUM(qtd_retirada), MAX(data_movimento)"
+            " FROM retiradas_terceiros WHERE COALESCE(registrado_em,'') >= ?"
+            " GROUP BY cooperado ORDER BY SUM(qtd_retirada) DESC",
+            (corte,),
+        ).fetchall()
+        return [
+            {
+                "cooperado": r[0],
+                "produtos": r[1] or 0,
+                "qtd": float(r[2] or 0),
+                "data_movimento": r[3] or "",
+            }
+            for r in rows
+        ]
+    except Exception:
+        return []
+
+
 def delete_retiradas_por_data(data_movimento: str) -> bool:
     """Remove todas as retiradas registradas em um dia (para refazer a comparação)."""
     try:
@@ -4100,6 +4131,7 @@ def delete_retiradas_por_data(data_movimento: str) -> bool:
         sync_db()
         get_retiradas_terceiros.clear()
         get_retiradas_datas.clear()
+        get_retiradas_recentes.clear()
         return True
     except Exception:
         return False
@@ -9568,6 +9600,13 @@ try:
 except Exception:
     _al_sep_pendentes = []
 
+# ── Retiradas de cooperados detectadas nas últimas 24h ───────────────────────
+# O aviso some sozinho 1 dia depois da importação que o gerou.
+try:
+    _al_retiradas = get_retiradas_recentes(24)
+except Exception:
+    _al_retiradas = []
+
 stock_count = get_stock_count()
 has_mestre = stock_count > 0
 
@@ -9903,8 +9942,38 @@ if has_mestre:
     </script>""", height=0)
 
     # ── Alertas (abaixo da busca, compacto) ──────────────────────────────────
-    if _al_val or _al_pend or _al_reconc or _al_aumento or _al_transf or _al_sep_pendentes:
+    if (_al_val or _al_pend or _al_reconc or _al_aumento or _al_transf
+            or _al_sep_pendentes or _al_retiradas):
         _pills = []
+        if _al_retiradas:
+            _n_coop_ret = len(_al_retiradas)
+            _tot_ret = sum(a["qtd"] for a in _al_retiradas)
+            _tot_ret_txt = (
+                f"{_tot_ret:,.0f}" if abs(_tot_ret - round(_tot_ret)) <= 0.001
+                else f"{_tot_ret:,.2f}"
+            ).replace(",", "X").replace(".", ",").replace("X", ".")
+            if _n_coop_ret == 1:
+                _a_ret = _al_retiradas[0]
+                _n_prod_ret = _a_ret["produtos"]
+                _corpo_ret = (
+                    f'<b>Retirada de estocado — {_a_ret["cooperado"]}:</b> '
+                    f'{_tot_ret_txt} un. em {_n_prod_ret} produto'
+                    f'{"s" if _n_prod_ret > 1 else ""}'
+                )
+            else:
+                _nomes_ret = ", ".join(
+                    f'{a["cooperado"]} ({a["qtd"]:,.0f} un.)'.replace(",", ".")
+                    for a in _al_retiradas[:3]
+                )
+                if _n_coop_ret > 3:
+                    _nomes_ret += f" +{_n_coop_ret - 3}"
+                _corpo_ret = (
+                    f'<b>Retirada de estocado — {_n_coop_ret} cooperados '
+                    f'({_tot_ret_txt} un.):</b> {_nomes_ret}'
+                )
+            _pills.append(
+                f'<div class="al-pill al-retirada">📤 {_corpo_ret}</div>'
+            )
         if _al_sep_pendentes:
             _n_sep = len(_al_sep_pendentes)
             _pills.append(
@@ -9978,6 +10047,7 @@ if has_mestre:
             .al-aumento{background:rgba(34,197,94,0.12);color:#22c55e;border:1px solid rgba(34,197,94,0.35);}
             .al-transferencia{background:rgba(168,85,247,0.12);color:#a855f7;border:1px solid rgba(168,85,247,0.35);}
             .al-sep{background:rgba(249,115,22,0.12);color:#fb923c;border:1px solid rgba(249,115,22,0.4);}
+            .al-retirada{background:rgba(236,72,153,0.12);color:#f472b6;border:1px solid rgba(236,72,153,0.4);}
             </style>
             """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
             unsafe_allow_html=True,
