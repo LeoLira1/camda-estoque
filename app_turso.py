@@ -1721,6 +1721,17 @@ def _get_connection():
             separado_em   TEXT    DEFAULT ''
         )
     """)
+    # Separação por produto: permite marcar item a item o que já foi separado
+    # para cada cooperado (materiais_separacao vira só o espelho "tudo pronto").
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS materiais_separacao_item (
+            razao_social  TEXT    NOT NULL,
+            produto       TEXT    NOT NULL,
+            separado      INTEGER DEFAULT 0,
+            separado_em   TEXT    DEFAULT '',
+            PRIMARY KEY (razao_social, produto)
+        )
+    """)
     # Histórico de retiradas: diferenças detectadas entre dois relatórios
     # MATR480 consecutivos (saldo caiu ⇒ o cooperado retirou material).
     conn.execute("""
@@ -1968,6 +1979,26 @@ def _get_connection():
             """)
             conn.execute("DROP TABLE materiais_terceiros")
             conn.execute("ALTER TABLE materiais_terceiros_new RENAME TO materiais_terceiros")
+            conn.commit()
+    except Exception:
+        pass
+
+    # ── Migração: separação por cooperado → separação por produto ──
+    # Quem já estava marcado como separado passa a ter todos os seus produtos
+    # marcados, para ninguém voltar para a fila por causa da migração.
+    try:
+        if not conn.execute(
+            "SELECT COUNT(*) FROM materiais_separacao_item"
+        ).fetchone()[0]:
+            conn.execute("""
+                INSERT OR IGNORE INTO materiais_separacao_item
+                    (razao_social, produto, separado, separado_em)
+                SELECT DISTINCT mt.razao_social, mt.descricao, 1,
+                       COALESCE(ms.separado_em, '')
+                FROM materiais_terceiros mt
+                JOIN materiais_separacao ms ON ms.razao_social = mt.razao_social
+                WHERE ms.separado = 1 AND COALESCE(mt.descricao, '') != ''
+            """)
             conn.commit()
     except Exception:
         pass
@@ -3614,30 +3645,36 @@ def get_estocados_por_produto(produto: str) -> list:
 # ── Materiais em Poder de Terceiros (MATR480) ─────────────────────────────────
 
 def _agrupar_saldos_terceiros(linhas) -> dict:
-    """Agrega saldos por (cooperado, código do produto).
+    """Agrega saldo e quantidade original por (cooperado, código do produto).
 
     `linhas` é um iterável de tuplas
-    (razao_social, codigo_produto, descricao, grupo, saldo).
-    Retorna {(cooperado, codigo): {"descricao", "grupo", "saldo"}}.
+    (razao_social, codigo_produto, descricao, grupo, saldo, qtd_original).
+    Retorna {(cooperado, codigo): {"descricao", "grupo", "saldo", "original"}}.
     """
+    def _num(valor) -> float:
+        try:
+            return float(valor or 0)
+        except (TypeError, ValueError):
+            return 0.0
+
     agg: dict[tuple[str, str], dict] = {}
-    for razao, codigo, descricao, grupo, saldo in linhas:
+    for razao, codigo, descricao, grupo, saldo, original in linhas:
         razao = (razao or "").strip()
         codigo = (codigo or "").strip()
         if not razao:
             continue
         descricao = (descricao or "").strip()
         grupo = (grupo or "").strip()
-        try:
-            valor = float(saldo or 0)
-        except (TypeError, ValueError):
-            valor = 0.0
         chave = (razao, codigo)
         atual = agg.get(chave)
         if atual is None:
-            agg[chave] = {"descricao": descricao, "grupo": grupo, "saldo": valor}
+            agg[chave] = {
+                "descricao": descricao, "grupo": grupo,
+                "saldo": _num(saldo), "original": _num(original),
+            }
         else:
-            atual["saldo"] += valor
+            atual["saldo"] += _num(saldo)
+            atual["original"] += _num(original)
             if not atual["descricao"]:
                 atual["descricao"] = descricao
             if not atual["grupo"]:
@@ -3645,20 +3682,23 @@ def _agrupar_saldos_terceiros(linhas) -> dict:
     return agg
 
 
-def _clientes_com_material_novo(antes: dict, depois: dict) -> set:
-    """Cooperados que ganharam material no relatório novo.
+def _itens_com_material_novo(antes: dict, depois: dict) -> set:
+    """Pares (cooperado, produto) que ganharam material no relatório novo.
 
-    Conta tanto produto inédito quanto quantidade a mais de um produto que o
-    cooperado já tinha — nos dois casos há material novo para separar, mesmo
-    que a compra tenha vindo em um documento que já existia.
+    Conta produto inédito, quantidade a mais do mesmo produto e nota nova —
+    `original` (o que já chegou) só cresce, então pega até o caso em que o
+    cooperado comprou mais e retirou no mesmo intervalo, deixando o saldo menor.
+    Só o item que mudou volta para a fila: o resto do que já foi separado fica.
     """
-    clientes: set = set()
-    for (cooperado, _codigo), dados in depois.items():
-        anterior = antes.get((cooperado, _codigo))
+    itens: set = set()
+    for (cooperado, codigo), dados in depois.items():
+        anterior = antes.get((cooperado, codigo))
         saldo_anterior = anterior["saldo"] if anterior else 0.0
-        if dados["saldo"] - saldo_anterior > 0.001:
-            clientes.add(cooperado)
-    return clientes
+        orig_anterior = anterior["original"] if anterior else 0.0
+        if (dados["saldo"] - saldo_anterior > 0.001
+                or dados["original"] - orig_anterior > 0.001):
+            itens.add((cooperado, dados["descricao"]))
+    return itens
 
 
 def _registrar_retiradas_terceiros(
@@ -3728,7 +3768,7 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     data_ref_anterior = ""
     try:
         saldos_anteriores = _agrupar_saldos_terceiros(conn.execute(
-            "SELECT razao_social, codigo_produto, descricao, grupo, saldo"
+            "SELECT razao_social, codigo_produto, descricao, grupo, saldo, qtd_original"
             " FROM materiais_terceiros"
         ).fetchall())
         _row_ref = conn.execute(
@@ -3753,18 +3793,42 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
         (
             r.get("razao_social", ""), r.get("codigo_produto", ""),
             r.get("descricao", ""), r.get("grupo", ""), r.get("saldo", 0),
+            r.get("qtd_original", 0),
         )
         for r in records
     )
-    clientes_material_novo = _clientes_com_material_novo(saldos_anteriores, saldos_novos)
+    itens_material_novo = _itens_com_material_novo(saldos_anteriores, saldos_novos)
+    clientes_material_novo = {cooperado for cooperado, _ in itens_material_novo}
 
     # Remove TODOS os registros anteriores (qualquer data de referência)
     cur = conn.execute("DELETE FROM materiais_terceiros")
     removidos = getattr(cur, "rowcount", 0) or 0
 
-    # Reset seletivo: desmarca quem ganhou documento novo OU material novo
-    # (produto inédito ou quantidade a mais do mesmo produto). Clientes com
-    # exatamente o mesmo material de antes mantêm o "separado".
+    # Reset seletivo, item a item: só o produto que ganhou material volta para
+    # a fila de separação. O que o cooperado já tinha e continua igual segue
+    # marcado como separado.
+    for cooperado, produto in itens_material_novo:
+        conn.execute(
+            "DELETE FROM materiais_separacao_item"
+            " WHERE razao_social = ? AND produto = ?",
+            (cooperado, produto),
+        )
+    # Itens que sumiram do relatório não têm mais o que separar
+    produtos_novos: dict[str, set] = {}
+    for (cooperado, _cod), dados in saldos_novos.items():
+        produtos_novos.setdefault(cooperado, set()).add(dados["descricao"])
+    for cooperado, produto in conn.execute(
+        "SELECT razao_social, produto FROM materiais_separacao_item"
+    ).fetchall():
+        if produto not in produtos_novos.get(cooperado, set()):
+            conn.execute(
+                "DELETE FROM materiais_separacao_item"
+                " WHERE razao_social = ? AND produto = ?",
+                (cooperado, produto),
+            )
+
+    # Espelho por cooperado (materiais_separacao): desmarca quem ganhou
+    # documento novo ou material novo, e quem sumiu do relatório.
     clientes_separados = {
         r[0] for r in conn.execute(
             "SELECT razao_social FROM materiais_separacao WHERE separado = 1"
@@ -3773,13 +3837,7 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     for razao in clientes_separados:
         anteriores = docs_anteriores.get(razao, set())
         novos = docs_novos.get(razao, set())
-        if (novos - anteriores) or razao in clientes_material_novo:
-            conn.execute(
-                "DELETE FROM materiais_separacao WHERE razao_social = ?", (razao,)
-            )
-    # Clientes que sumiram completamente do relatório também são removidos
-    for razao in clientes_separados:
-        if razao not in docs_novos:
+        if (novos - anteriores) or razao in clientes_material_novo or razao not in docs_novos:
             conn.execute(
                 "DELETE FROM materiais_separacao WHERE razao_social = ?", (razao,)
             )
@@ -3819,6 +3877,7 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     get_materiais_descricoes.clear()
     get_materiais_resumo.clear()
     get_materiais_separacao.clear()
+    get_materiais_separacao_itens.clear()
     get_retiradas_terceiros.clear()
     get_retiradas_datas.clear()
     get_retiradas_recentes.clear()
@@ -3837,36 +3896,130 @@ def get_materiais_separacao() -> dict:
         return {}
 
 
-def set_materiais_separado(razao_social: str, separado: bool) -> None:
-    """Marca ou desmarca um parceiro como já tendo os produtos separados."""
+@st.cache_data(ttl=120)
+def get_materiais_separacao_itens() -> set:
+    """Retorna {(razao_social, produto)} dos itens já separados."""
+    try:
+        rows = get_db().execute(
+            "SELECT razao_social, produto FROM materiais_separacao_item"
+            " WHERE separado = 1"
+        ).fetchall()
+        return {(r[0], r[1]) for r in rows}
+    except Exception:
+        return set()
+
+
+def cooperados_com_itens_pendentes(df, itens_separados: set) -> list:
+    """Cooperados que ainda têm pelo menos um produto por separar."""
+    if df is None or df.empty:
+        return []
+    pendentes = []
+    for razao, df_coop in df.groupby("razao_social"):
+        produtos = [p for p in df_coop["descricao"].dropna().unique().tolist() if p]
+        if any((razao, produto) not in itens_separados for produto in produtos):
+            pendentes.append(razao)
+    return sorted(pendentes)
+
+
+def _espelhar_separacao_cooperado(conn, razao_social: str, produtos) -> None:
+    """Atualiza materiais_separacao: cooperado só fica separado com tudo pronto.
+
+    A tabela por cooperado deixou de ser a fonte da verdade (agora é a por
+    item), mas continua sendo mantida para quem lê o banco por fora.
+    """
+    produtos = [p for p in produtos if p]
+    separados_do_cliente = {
+        r[0] for r in conn.execute(
+            "SELECT produto FROM materiais_separacao_item"
+            " WHERE razao_social = ? AND separado = 1",
+            (razao_social,),
+        ).fetchall()
+    }
+    tudo_separado = bool(produtos) and all(p in separados_do_cliente for p in produtos)
+    if tudo_separado:
+        conn.execute(
+            "INSERT OR REPLACE INTO materiais_separacao"
+            " (razao_social, separado, separado_em) VALUES (?, 1, ?)",
+            (razao_social, datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")),
+        )
+    else:
+        conn.execute(
+            "DELETE FROM materiais_separacao WHERE razao_social = ?", (razao_social,)
+        )
+
+
+def set_materiais_separado_item(
+    razao_social: str, produto: str, separado: bool, produtos_cooperado=None
+) -> None:
+    """Marca ou desmarca UM produto de um cooperado como já separado."""
     conn = get_db()
-    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S") if separado else ""
-    conn.execute(
-        "INSERT OR REPLACE INTO materiais_separacao (razao_social, separado, separado_em)"
-        " VALUES (?, ?, ?)",
-        (razao_social, int(separado), now),
-    )
+    if separado:
+        conn.execute(
+            "INSERT OR REPLACE INTO materiais_separacao_item"
+            " (razao_social, produto, separado, separado_em) VALUES (?, ?, 1, ?)",
+            (razao_social, produto,
+             datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")),
+        )
+    else:
+        conn.execute(
+            "DELETE FROM materiais_separacao_item"
+            " WHERE razao_social = ? AND produto = ?",
+            (razao_social, produto),
+        )
+    _espelhar_separacao_cooperado(conn, razao_social, produtos_cooperado or [])
     conn.commit()
     sync_db()
     get_materiais_separacao.clear()
+    get_materiais_separacao_itens.clear()
 
 
-def render_checkbox_separado(parceiro: str, ja_separado: bool, key: str) -> None:
-    """Checkbox "Já separei" mantido em sincronia com o banco.
+def set_materiais_separado(razao_social: str, separado: bool, produtos=None) -> None:
+    """Marca ou desmarca TODOS os produtos de um parceiro de uma vez."""
+    conn = get_db()
+    produtos = [p for p in (produtos or []) if p]
+    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S") if separado else ""
+    if separado:
+        for produto in produtos:
+            conn.execute(
+                "INSERT OR REPLACE INTO materiais_separacao_item"
+                " (razao_social, produto, separado, separado_em) VALUES (?, ?, 1, ?)",
+                (razao_social, produto, now),
+            )
+    else:
+        for produto in produtos:
+            conn.execute(
+                "DELETE FROM materiais_separacao_item"
+                " WHERE razao_social = ? AND produto = ?",
+                (razao_social, produto),
+            )
+    _espelhar_separacao_cooperado(conn, razao_social, produtos)
+    conn.commit()
+    sync_db()
+    get_materiais_separacao.clear()
+    get_materiais_separacao_itens.clear()
+
+
+def render_checkbox_separado(
+    label: str, valor_banco: bool, key: str, ao_mudar,
+    label_visibility: str = "visible", help: str | None = None,
+) -> None:
+    """Checkbox de separação mantido em sincronia com o banco.
 
     O Streamlit dá prioridade ao valor que já está na session_state sobre o
     `value=` passado ao widget. Sem o espelho abaixo, o "marcado" de antes
-    vencia e re-separava sozinho o cliente que a importação de um relatório
+    vencia e re-separava sozinho o item que a importação de um relatório
     novo tinha acabado de desmarcar por ter recebido material novo.
     """
     espelho = f"_db_{key}"
-    if st.session_state.get(espelho) != ja_separado:
+    if st.session_state.get(espelho) != valor_banco:
         # O banco mudou por fora (nova importação): o widget acompanha.
-        st.session_state[key] = ja_separado
-        st.session_state[espelho] = ja_separado
-    novo_valor = st.checkbox("Já separei", key=key)
-    if novo_valor != ja_separado:
-        set_materiais_separado(parceiro, novo_valor)
+        st.session_state[key] = valor_banco
+        st.session_state[espelho] = valor_banco
+    novo_valor = st.checkbox(
+        label, key=key, label_visibility=label_visibility, help=help,
+    )
+    if novo_valor != valor_banco:
+        ao_mudar(novo_valor)
         st.session_state[espelho] = novo_valor
         st.rerun()
 
@@ -9631,11 +9784,9 @@ _GRUPOS_EQUIP = (
 )
 try:
     _df_mat_home = get_materiais_terceiros(grupos_excluir=_GRUPOS_EQUIP)
-    _al_sep_pendentes: list[str] = []
-    if not _df_mat_home.empty:
-        _sep_dict_home = get_materiais_separacao()
-        _parceiros_home = sorted(_df_mat_home["razao_social"].dropna().unique().tolist())
-        _al_sep_pendentes = [p for p in _parceiros_home if p not in _sep_dict_home]
+    _al_sep_pendentes = cooperados_com_itens_pendentes(
+        _df_mat_home, get_materiais_separacao_itens()
+    )
 except Exception:
     _al_sep_pendentes = []
 
@@ -13259,8 +13410,9 @@ new Chart(document.getElementById('coop-chart'),{
         _df_mat_todos = get_materiais_terceiros(grupos_excluir=_GRUPOS_OCULTOS_PADRAO)
         if not _df_mat_todos.empty:
             _parceiros_todos = sorted(_df_mat_todos["razao_social"].dropna().unique().tolist())
-            _sep_status = get_materiais_separacao()
-            _parceiros_pendentes = [p for p in _parceiros_todos if p not in _sep_status]
+            _parceiros_pendentes = cooperados_com_itens_pendentes(
+                _df_mat_todos, get_materiais_separacao_itens()
+            )
             if _parceiros_pendentes:
                 _lista_pend = ", ".join(_parceiros_pendentes[:8])
                 if len(_parceiros_pendentes) > 8:
@@ -13340,7 +13492,7 @@ new Chart(document.getElementById('coop-chart'),{
             )
 
             _parceiros_ordenados = sorted(_df_mat["razao_social"].dropna().unique().tolist())
-            _sep_status = get_materiais_separacao()
+            _sep_itens = get_materiais_separacao_itens()
 
             if _modo_view == "Resumo":
                 # ── Modo Resumo: tabela por parceiro ──────────────────────
@@ -13375,13 +13527,28 @@ new Chart(document.getElementById('coop-chart'),{
                         _img_ok = False
                         _img_err = _e
 
-                    _ja_separado = _parceiro in _sep_status
-                    _cor_borda = "#22c55e" if _ja_separado else "#f97316"
-                    _status_txt = (
-                        f'<span style="color:#4ade80;font-weight:700;">✅ Separado</span>'
-                        if _ja_separado else
-                        f'<span style="color:#fb923c;font-weight:700;">⚠️ Falta separar</span>'
+                    _produtos_p = _resumo["descricao"].tolist()
+                    _n_sep_p = sum(
+                        1 for _p in _produtos_p if (_parceiro, _p) in _sep_itens
                     )
+                    _ja_separado = bool(_produtos_p) and _n_sep_p == len(_produtos_p)
+                    _cor_borda = (
+                        "#22c55e" if _ja_separado
+                        else ("#eab308" if _n_sep_p else "#f97316")
+                    )
+                    if _ja_separado:
+                        _status_txt = (
+                            '<span style="color:#4ade80;font-weight:700;">✅ Separado</span>'
+                        )
+                    elif _n_sep_p:
+                        _status_txt = (
+                            f'<span style="color:#facc15;font-weight:700;">'
+                            f'🟡 Parcial — {_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
+                        )
+                    else:
+                        _status_txt = (
+                            '<span style="color:#fb923c;font-weight:700;">⚠️ Falta separar</span>'
+                        )
 
                     # cabeçalho do parceiro com checkbox de separação e botão de download
                     _col_header, _col_chk, _col_btn = st.columns([7, 2, 1])
@@ -13399,8 +13566,13 @@ new Chart(document.getElementById('coop-chart'),{
                         )
                     with _col_chk:
                         render_checkbox_separado(
-                            _parceiro, _ja_separado,
+                            "Separei tudo", _ja_separado,
                             key=f"mat_sep_resumo_{_parceiro}",
+                            ao_mudar=(
+                                lambda v, _p=_parceiro, _lst=_produtos_p:
+                                set_materiais_separado(_p, v, _lst)
+                            ),
+                            help="Marca ou desmarca todos os produtos deste cooperado de uma vez",
                         )
                     with _col_btn:
                         if _img_ok:
@@ -13416,30 +13588,56 @@ new Chart(document.getElementById('coop-chart'),{
                                 unsafe_allow_html=True,
                             )
 
-                    # tabela
-                    _rows_html = ""
-                    for _, _r in _resumo.iterrows():
-                        _rows_html += (
-                            f'<tr>'
-                            f'<td style="padding:7px 10px;color:#e0e6ed;">{_r["descricao"]}</td>'
-                            f'<td style="padding:7px 10px;color:#94a3b8;font-size:0.78rem;">{_r["linhas"]}</td>'
-                            f'<td style="padding:7px 10px;color:#f87171;font-weight:700;text-align:right;">'
-                            f'{int(_r["total"]):,} un.</td>'
-                            f'</tr>'
-                        )
+                    # tabela: uma linha por produto, com checkbox de separação
+                    _hc1, _hc2, _hc3, _hc4 = st.columns([0.7, 5, 2, 1.8])
+                    _hc1.markdown(
+                        '<div style="color:#64748b;font-size:0.72rem;font-weight:600;'
+                        'padding:6px 0 0 2px;">SEP.</div>', unsafe_allow_html=True)
+                    _hc2.markdown(
+                        '<div style="color:#64748b;font-size:0.72rem;font-weight:600;'
+                        'padding:6px 0 0;">PRODUTO</div>', unsafe_allow_html=True)
+                    _hc3.markdown(
+                        '<div style="color:#64748b;font-size:0.72rem;font-weight:600;'
+                        'padding:6px 0 0;">LINHAS (SALDO)</div>', unsafe_allow_html=True)
+                    _hc4.markdown(
+                        '<div style="color:#64748b;font-size:0.72rem;font-weight:600;'
+                        'padding:6px 0 0;text-align:right;">TOTAL</div>',
+                        unsafe_allow_html=True)
 
-                    st.markdown(
-                        f'<table style="width:100%;border-collapse:collapse;'
-                        f'background:#0f172a;border-radius:6px;overflow:hidden;margin-bottom:4px;">'
-                        f'<thead><tr style="background:#1e293b;">'
-                        f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">PRODUTO</th>'
-                        f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">LINHAS (SALDO)</th>'
-                        f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">TOTAL</th>'
-                        f'</tr></thead>'
-                        f'<tbody>{_rows_html}</tbody>'
-                        f'</table>',
-                        unsafe_allow_html=True,
-                    )
+                    for _, _r in _resumo.iterrows():
+                        _prod_nome_r = _r["descricao"]
+                        _item_sep = (_parceiro, _prod_nome_r) in _sep_itens
+                        _rc1, _rc2, _rc3, _rc4 = st.columns(
+                            [0.7, 5, 2, 1.8], vertical_alignment="center",
+                        )
+                        with _rc1:
+                            render_checkbox_separado(
+                                f"Separado — {_prod_nome_r}", _item_sep,
+                                key=f"mat_sep_item_{_parceiro}|{_prod_nome_r}",
+                                ao_mudar=(
+                                    lambda v, _p=_parceiro, _prod=_prod_nome_r,
+                                    _lst=_produtos_p:
+                                    set_materiais_separado_item(_p, _prod, v, _lst)
+                                ),
+                                label_visibility="collapsed",
+                            )
+                        _cor_prod = "#4ade80" if _item_sep else "#e0e6ed"
+                        _risco = "text-decoration:line-through;opacity:0.65;" if _item_sep else ""
+                        _rc2.markdown(
+                            f'<div style="color:{_cor_prod};font-size:0.84rem;{_risco}">'
+                            f'{"✅ " if _item_sep else ""}{_prod_nome_r}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        _rc3.markdown(
+                            f'<div style="color:#94a3b8;font-size:0.78rem;">{_r["linhas"]}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        _rc4.markdown(
+                            f'<div style="color:{"#4ade80" if _item_sep else "#f87171"};'
+                            f'font-weight:700;font-size:0.84rem;text-align:right;">'
+                            f'{int(_r["total"]):,} un.</div>',
+                            unsafe_allow_html=True,
+                        )
 
             else:
                 # ── Modo Detalhado: cards individuais ─────────────────────
@@ -13448,13 +13646,28 @@ new Chart(document.getElementById('coop-chart'),{
                     _tot_saldo = _df_p["saldo"].sum()
                     _n_itens = len(_df_p)
 
-                    _ja_separado = _parceiro in _sep_status
-                    _cor_borda = "#22c55e" if _ja_separado else "#f97316"
-                    _status_txt = (
-                        f'<span style="color:#4ade80;font-weight:700;">✅ Separado</span>'
-                        if _ja_separado else
-                        f'<span style="color:#fb923c;font-weight:700;">⚠️ Falta separar</span>'
+                    _produtos_p = sorted(_df_p["descricao"].dropna().unique().tolist())
+                    _n_sep_p = sum(
+                        1 for _p in _produtos_p if (_parceiro, _p) in _sep_itens
                     )
+                    _ja_separado = bool(_produtos_p) and _n_sep_p == len(_produtos_p)
+                    _cor_borda = (
+                        "#22c55e" if _ja_separado
+                        else ("#eab308" if _n_sep_p else "#f97316")
+                    )
+                    if _ja_separado:
+                        _status_txt = (
+                            '<span style="color:#4ade80;font-weight:700;">✅ Separado</span>'
+                        )
+                    elif _n_sep_p:
+                        _status_txt = (
+                            f'<span style="color:#facc15;font-weight:700;">'
+                            f'🟡 Parcial — {_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
+                        )
+                    else:
+                        _status_txt = (
+                            '<span style="color:#fb923c;font-weight:700;">⚠️ Falta separar</span>'
+                        )
 
                     _col_header_d, _col_chk_d = st.columns([8, 2])
                     with _col_header_d:
@@ -13471,19 +13684,37 @@ new Chart(document.getElementById('coop-chart'),{
                         )
                     with _col_chk_d:
                         render_checkbox_separado(
-                            _parceiro, _ja_separado,
+                            "Separei tudo", _ja_separado,
                             key=f"mat_sep_detalhado_{_parceiro}",
+                            ao_mudar=(
+                                lambda v, _p=_parceiro, _lst=_produtos_p:
+                                set_materiais_separado(_p, v, _lst)
+                            ),
+                            help=(
+                                "Marca ou desmarca todos os produtos deste cooperado. "
+                                "Para marcar produto a produto, use a visualização Resumo."
+                            ),
                         )
 
                     for _, _mrow in _df_p.iterrows():
                         _saldo_cor = "#ef4444" if _mrow["saldo"] > 0 else "#22c55e"
                         _tm_label = "📤 Saída" if _mrow["tm"] == "D" else "📥 Entrada"
+                        _item_sep_d = (_parceiro, _mrow["descricao"]) in _sep_itens
+                        _sel_prod_d = (
+                            '<span style="color:#4ade80;font-size:0.72rem;'
+                            'margin-left:8px;">✅ separado</span>'
+                            if _item_sep_d else
+                            '<span style="color:#fb923c;font-size:0.72rem;'
+                            'margin-left:8px;">⚠️ falta separar</span>'
+                        )
                         st.markdown(
                             f'<div style="background:#0f172a;border:1px solid #1e293b;'
-                            f'border-left:3px solid #3b82f688;border-radius:6px;'
+                            f'border-left:3px solid {"#22c55e88" if _item_sep_d else "#3b82f688"};'
+                            f'border-radius:6px;'
                             f'padding:8px 12px;margin-bottom:3px;font-size:0.8rem;">'
                             f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                            f'<span style="color:#e0e6ed;font-weight:600;">{_mrow["descricao"]}</span>'
+                            f'<span style="color:#e0e6ed;font-weight:600;">{_mrow["descricao"]}'
+                            f'{_sel_prod_d}</span>'
                             f'<span style="color:{_saldo_cor};font-weight:700;">'
                             f'Saldo: {_mrow["saldo"]:,.0f} un.</span></div>'
                             f'<div style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;color:#64748b;">'
