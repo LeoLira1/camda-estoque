@@ -3,7 +3,17 @@ from datetime import datetime, timedelta, timezone, date
 
 import streamlit as st
 
-from inventario_ciclico_tab import parse_dt as _parse_dt
+try:
+    from inventario_ciclico_tab import parse_dt as _parse_dt
+except ImportError:
+    # Módulo antigo em cache entre deploys no Streamlit Cloud — ver comentário
+    # equivalente no app_turso.py. Degrada para o parse antigo em vez de
+    # derrubar o app.
+    def _parse_dt(s):
+        try:
+            return datetime.strptime(str(s or "").strip(), "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            return None
 
 _NOMES_INVALIDOS_COOP = {
     "faltando", "falta", "sobra", "sobrando", "ok", "none", "nan",
