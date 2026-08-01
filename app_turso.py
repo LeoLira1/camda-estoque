@@ -36,8 +36,17 @@ from mural_tab import mural_tab as _render_mural_tab
 from inventario_ciclico_tab import (
     build_inventario_ciclico_tab as _render_ciclico_tab,
     _upsert_inventario_cicli as _cicli_upsert,
-    contagem_ciclo_prevalece as _ciclo_prevalece,
 )
+try:
+    from inventario_ciclico_tab import contagem_ciclo_prevalece as _ciclo_prevalece
+except ImportError:
+    # No Streamlit Cloud o processo sobrevive ao deploy: ele passa a executar o
+    # app_turso.py novo com o inventario_ciclico_tab ANTIGO ainda em sys.modules,
+    # e um nome recém-criado lá derruba o app inteiro com ImportError até alguém
+    # rebootar. Degrada para a precedência antiga (divergência aberta vence) em
+    # vez de tirar o dashboard do ar; volta ao normal no próximo restart.
+    def _ciclo_prevalece(row, entries, divergencias_cicli=None):
+        return False
 from historico_contagem_tab import build_historico_contagem_tab as _render_historico_contagem_tab
 
 # ── Page Config ──────────────────────────────────────────────────────────────
