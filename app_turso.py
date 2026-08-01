@@ -7387,8 +7387,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             qtd_av = avarias_map_norm.get(cod_str, 0)
 
             # divergencias_map é a fonte de verdade das divergências ativas: sobrepõe
-            # estoque_mestre — exceto quando existe contagem cíclica POSTERIOR a elas,
-            # que passa a ser a verdade (ver contagem_ciclo_prevalece).
+            # estoque_mestre — exceto no inventário cíclico, onde a contagem do ciclo
+            # predomina sobre tudo (ver contagem_ciclo_prevalece).
             _div_entries = divergencias_map_norm.get(cod_str)
             _ciclo_vence = (color_mode == "ciclico"
                             and _ciclo_prevalece(r, _div_entries))
@@ -7402,18 +7402,16 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 status_c = str(r.get("status_ciclo", "") or "")
                 if status_c in ("ok", "divergencia"):
                     # A cor segue a diferença efetiva, não o status gravado —
-                    # precedência: contagem do ciclo (quando é a mais recente,
-                    # ou quando difere) > divergências abertas > diferença
-                    # geral. Item conferido "ok" em app sincronizado mas com
-                    # falta apontada DEPOIS fica vermelho; sobra fica azul.
+                    # precedência: contagem do ciclo > divergências abertas >
+                    # diferença geral. Item já conferido no ciclo vale pelo que
+                    # foi contado: falta fica vermelho, sobra azul, e contagem
+                    # que bateu fica verde mesmo com falta antiga em aberto.
                     _qtd_cont = r.get("qtd_contada_ciclo")
                     _qtd_sis  = r.get("qtd_sistema_na_contagem")
                     _tem_contagem = pd.notnull(_qtd_cont) and pd.notnull(_qtd_sis)
                     if _tem_contagem:
                         try:
                             _diff_ciclo = int(float(_qtd_cont)) - int(float(_qtd_sis))
-                            # Contagem posterior às divergências abertas manda mesmo
-                            # quando bateu: zera a falta/sobra antiga (card verde).
                             if _diff_ciclo != 0 or _ciclo_vence:
                                 diff = _diff_ciclo
                         except (ValueError, TypeError):

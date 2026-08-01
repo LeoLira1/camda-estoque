@@ -467,44 +467,34 @@ def parse_dt(s):
     return dt
 
 
-def contagem_ciclo_prevalece(row, entries, divergencias_cicli=None) -> bool:
-    """A contagem cíclica do produto é mais recente que tudo que compete com ela?
+def contagem_ciclo_prevalece(row, entries=None, divergencias_cicli=None) -> bool:
+    """O produto tem contagem cíclica? Se tem, ela é a verdade.
 
-    Competem: as divergências abertas do produto (`divergencias.criado_em`) e a
-    contagem geral que gerou `estoque_mestre.diferenca` (`ultima_contagem`).
-    Quando a contagem cíclica é a mais nova, ela é a verdade — inclusive quando
-    bateu com o sistema, caso em que zera a divergência antiga em vez de ser
-    sobreposta por ela. Timestamps ausentes ou ilegíveis não bloqueiam: sem data
-    não há como afirmar que o registro concorrente é posterior.
+    A contagem do inventário cíclico predomina sobre as divergências abertas e
+    sobre `estoque_mestre.diferenca` — inclusive quando bateu com o sistema,
+    caso em que zera a falta/sobra antiga em vez de ser sobreposta por ela.
+    É o mesmo critério do app mobile, que só olha `inventario_cicli`.
+
+    Comparar datas não serve aqui: `divergencias.criado_em` é carimbado com a
+    hora em que a migração de divergências órfãs rodou (ver app_turso.py), não
+    com a data real do apontamento, e `ultima_contagem` é reescrito a cada
+    upload de planilha. Nos dois casos a divergência antiga parecia mais nova
+    que a contagem e continuava vencendo.
+
+    `entries` é aceito e ignorado — mantido para não quebrar chamadas antigas
+    quando o Streamlit Cloud roda com um dos módulos ainda em cache.
     """
-    divergencias_cicli = divergencias_cicli or {}
-    if not _tem_contagem_ciclo(row, divergencias_cicli):
-        return False
-    dt_cont = parse_dt(_contado_em_row(row, divergencias_cicli))
-    if dt_cont is None:
-        return False
-    for e in (entries or []):
-        dt_div = parse_dt(e.get("criado_em"))
-        if dt_div is not None and dt_div > dt_cont:
-            return False
-    dt_geral = parse_dt(row.get("ultima_contagem"))
-    if dt_geral is not None and dt_geral > dt_cont:
-        return False
-    return True
+    return _tem_contagem_ciclo(row, divergencias_cicli or {})
 
 
 def _diff_efetivo_row(row, divergencias_cicli: dict, divs_map: dict) -> float:
     """Diferença efetiva do produto — mesma precedência da cor dos cards:
-    contagem do ciclo (quando é a mais recente, ou quando difere) >
-    divergências abertas > diferença geral.
-    Captura faltas/sobras de itens conferidos "ok" em apps sincronizados sem
-    ressuscitar divergências antigas que a contagem posterior já desmentiu."""
-    d = _diff_ciclo_row(row, divergencias_cicli)
-    if d:
-        return float(d)
+    contagem do ciclo > divergências abertas > diferença geral.
+    Item já conferido no ciclo vale pelo que foi contado; só quem ainda não
+    passou pelo ciclo cai nas divergências abertas / diferença geral."""
+    if contagem_ciclo_prevalece(row, None, divergencias_cicli):
+        return float(_diff_ciclo_row(row, divergencias_cicli))
     entries = divs_map.get(_norm_cod(row["codigo"]))
-    if contagem_ciclo_prevalece(row, entries, divergencias_cicli):
-        return 0.0
     if entries:
         total = sum(int(e.get("delta") or 0) for e in entries)
         if total:
