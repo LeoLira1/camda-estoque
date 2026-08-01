@@ -33,7 +33,11 @@ from db_mapa import (
 )
 from mapa_3d_component import render_rack_3d
 from mural_tab import mural_tab as _render_mural_tab
-from inventario_ciclico_tab import build_inventario_ciclico_tab as _render_ciclico_tab, _upsert_inventario_cicli as _cicli_upsert
+from inventario_ciclico_tab import (
+    build_inventario_ciclico_tab as _render_ciclico_tab,
+    _upsert_inventario_cicli as _cicli_upsert,
+    contagem_ciclo_prevalece as _ciclo_prevalece,
+)
 from historico_contagem_tab import build_historico_contagem_tab as _render_historico_contagem_tab
 
 # ── Page Config ──────────────────────────────────────────────────────────────
@@ -7373,9 +7377,14 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Aviso de avarias abertas
             qtd_av = avarias_map_norm.get(cod_str, 0)
 
-            # divergencias_map é a fonte de verdade das divergências ativas: sobrepõe estoque_mestre
-            if cod_str in divergencias_map_norm:
-                total_div_delta = sum(e["delta"] for e in divergencias_map_norm[cod_str])
+            # divergencias_map é a fonte de verdade das divergências ativas: sobrepõe
+            # estoque_mestre — exceto quando existe contagem cíclica POSTERIOR a elas,
+            # que passa a ser a verdade (ver contagem_ciclo_prevalece).
+            _div_entries = divergencias_map_norm.get(cod_str)
+            _ciclo_vence = (color_mode == "ciclico"
+                            and _ciclo_prevalece(r, _div_entries))
+            if _div_entries and not _ciclo_vence:
+                total_div_delta = sum(e["delta"] for e in _div_entries)
                 if total_div_delta != 0:
                     diff = total_div_delta
 
@@ -7384,17 +7393,19 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 status_c = str(r.get("status_ciclo", "") or "")
                 if status_c in ("ok", "divergencia"):
                     # A cor segue a diferença efetiva, não o status gravado —
-                    # precedência: contagem do ciclo (quando difere) >
-                    # divergências abertas > diferença geral. Item conferido
-                    # "ok" em app sincronizado mas com falta apontada fica
-                    # vermelho; sobra fica azul.
+                    # precedência: contagem do ciclo (quando é a mais recente,
+                    # ou quando difere) > divergências abertas > diferença
+                    # geral. Item conferido "ok" em app sincronizado mas com
+                    # falta apontada DEPOIS fica vermelho; sobra fica azul.
                     _qtd_cont = r.get("qtd_contada_ciclo")
                     _qtd_sis  = r.get("qtd_sistema_na_contagem")
                     _tem_contagem = pd.notnull(_qtd_cont) and pd.notnull(_qtd_sis)
                     if _tem_contagem:
                         try:
                             _diff_ciclo = int(float(_qtd_cont)) - int(float(_qtd_sis))
-                            if _diff_ciclo != 0:
+                            # Contagem posterior às divergências abertas manda mesmo
+                            # quando bateu: zera a falta/sobra antiga (card verde).
+                            if _diff_ciclo != 0 or _ciclo_vence:
                                 diff = _diff_ciclo
                         except (ValueError, TypeError):
                             _tem_contagem = False

@@ -378,22 +378,32 @@ def _desfazer_conferencia(codigo: str, get_db, sync_db) -> bool:
 
 
 def _get_divergencias_cicli(get_db) -> dict:
-    """Retorna {produto_id: divergencia} com o registro mais recente de inventario_cicli."""
+    """Retorna {produto_id: (divergencia, contado_em)} com o registro mais
+    recente de inventario_cicli."""
     try:
         conn = get_db()
         rows = conn.execute("""
-            SELECT produto_id, divergencia
+            SELECT produto_id, divergencia, contado_em
             FROM inventario_cicli
             WHERE divergencia IS NOT NULL
             ORDER BY data_contagem DESC, contado_em DESC
         """).fetchall()
         result = {}
-        for produto_id, divergencia in rows:
+        for produto_id, divergencia, contado_em in rows:
             if str(produto_id) not in result:
-                result[str(produto_id)] = divergencia
+                result[str(produto_id)] = (divergencia, str(contado_em or ""))
         return result
     except Exception:
         return {}
+
+
+def _ciclo_entry(divergencias_cicli: dict, codigo) -> tuple:
+    """(divergencia, contado_em) do histórico cíclico, tolerando o formato
+    antigo do map ({produto_id: divergencia})."""
+    v = divergencias_cicli.get(str(codigo))
+    if isinstance(v, tuple):
+        return v
+    return (v, "")
 
 
 def _diff_ciclo_row(row, divergencias_cicli: dict) -> float:
@@ -402,7 +412,23 @@ def _diff_ciclo_row(row, divergencias_cicli: dict) -> float:
     qc, qs = row["qtd_contada_ciclo"], row["qtd_sistema_na_contagem"]
     if pd.notna(qc) and pd.notna(qs):
         return float(qc) - float(qs)
-    return float(divergencias_cicli.get(str(row["codigo"]), 0) or 0)
+    return float(_ciclo_entry(divergencias_cicli, row["codigo"])[0] or 0)
+
+
+def _tem_contagem_ciclo(row, divergencias_cicli: dict) -> bool:
+    """True quando existe uma contagem cíclica registrada para o produto."""
+    if pd.notna(row.get("qtd_contada_ciclo")) and pd.notna(row.get("qtd_sistema_na_contagem")):
+        return True
+    return str(row.get("codigo")) in divergencias_cicli
+
+
+def _contado_em_row(row, divergencias_cicli: dict) -> str:
+    """Timestamp da contagem cíclica: coluna de estoque_mestre ou, na falta
+    dela, o contado_em do registro mais recente de inventario_cicli."""
+    ts = str(row.get("contado_ciclo_em") or "").strip()
+    if ts and ts.lower() != "none":
+        return ts
+    return _ciclo_entry(divergencias_cicli, row.get("codigo"))[1]
 
 
 def _norm_cod(v) -> str:
@@ -413,14 +439,72 @@ def _norm_cod(v) -> str:
     return s.upper()
 
 
+def parse_dt(s):
+    """Timestamp de qualquer uma das duas origens → datetime naive em BRT.
+
+    O dashboard grava '2026-07-15 14:32:07'; o app mobile grava ISO-8601
+    ('2026-08-01T09:34:12.345678', eventualmente com fuso). Devolve None
+    quando a string está vazia ou não é reconhecida.
+    """
+    txt = str(s or "").strip()
+    if not txt or txt.lower() in ("none", "nan", "nat"):
+        return None
+    dt = None
+    try:
+        dt = datetime.fromisoformat(txt.replace("Z", "+00:00"))
+    except ValueError:
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d",
+                    "%d/%m/%Y %H:%M:%S", "%d/%m/%Y"):
+            try:
+                dt = datetime.strptime(txt, fmt)
+                break
+            except ValueError:
+                continue
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(_BRT).replace(tzinfo=None)
+    return dt
+
+
+def contagem_ciclo_prevalece(row, entries, divergencias_cicli=None) -> bool:
+    """A contagem cíclica do produto é mais recente que tudo que compete com ela?
+
+    Competem: as divergências abertas do produto (`divergencias.criado_em`) e a
+    contagem geral que gerou `estoque_mestre.diferenca` (`ultima_contagem`).
+    Quando a contagem cíclica é a mais nova, ela é a verdade — inclusive quando
+    bateu com o sistema, caso em que zera a divergência antiga em vez de ser
+    sobreposta por ela. Timestamps ausentes ou ilegíveis não bloqueiam: sem data
+    não há como afirmar que o registro concorrente é posterior.
+    """
+    divergencias_cicli = divergencias_cicli or {}
+    if not _tem_contagem_ciclo(row, divergencias_cicli):
+        return False
+    dt_cont = parse_dt(_contado_em_row(row, divergencias_cicli))
+    if dt_cont is None:
+        return False
+    for e in (entries or []):
+        dt_div = parse_dt(e.get("criado_em"))
+        if dt_div is not None and dt_div > dt_cont:
+            return False
+    dt_geral = parse_dt(row.get("ultima_contagem"))
+    if dt_geral is not None and dt_geral > dt_cont:
+        return False
+    return True
+
+
 def _diff_efetivo_row(row, divergencias_cicli: dict, divs_map: dict) -> float:
     """Diferença efetiva do produto — mesma precedência da cor dos cards:
-    contagem do ciclo (quando difere) > divergências abertas > diferença geral.
-    Captura faltas/sobras de itens conferidos "ok" em apps sincronizados."""
+    contagem do ciclo (quando é a mais recente, ou quando difere) >
+    divergências abertas > diferença geral.
+    Captura faltas/sobras de itens conferidos "ok" em apps sincronizados sem
+    ressuscitar divergências antigas que a contagem posterior já desmentiu."""
     d = _diff_ciclo_row(row, divergencias_cicli)
     if d:
         return float(d)
     entries = divs_map.get(_norm_cod(row["codigo"]))
+    if contagem_ciclo_prevalece(row, entries, divergencias_cicli):
+        return 0.0
     if entries:
         total = sum(int(e.get("delta") or 0) for e in entries)
         if total:
@@ -551,12 +635,12 @@ def _get_ultima_observacao_cicli(get_db, codigo: str):
 
 
 def _fmt_dt_br(s) -> str:
-    """'2026-07-11 15:42:07' → '11/07 15:42'; devolve a string original se não parsear."""
+    """'2026-07-11 15:42:07' → '11/07 15:42'; devolve a string original se não
+    parsear. Aceita também o ISO-8601 gravado pelo app mobile
+    ('2026-08-01T09:34:12.345678')."""
     txt = str(s or "").strip()
-    try:
-        return datetime.strptime(txt, "%Y-%m-%d %H:%M:%S").strftime("%d/%m %H:%M")
-    except (ValueError, TypeError):
-        return txt
+    dt = parse_dt(txt)
+    return dt.strftime("%d/%m %H:%M") if dt is not None else txt
 
 
 def _get_observacoes_cicli(get_db) -> dict:
@@ -776,6 +860,9 @@ def build_inventario_ciclico_tab(
                     "cooperado": str(_drow["cooperado"]) if _drow["cooperado"] else "—",
                     "delta": int(_drow["delta"]) if pd.notna(_drow["delta"]) else 0,
                     "status": str(_drow["status"]),
+                    # Usado para decidir se a contagem cíclica (posterior) já
+                    # desmentiu esta divergência — ver contagem_ciclo_prevalece.
+                    "criado_em": str(_drow.get("criado_em") or ""),
                 })
     obs_map = _get_observacoes_cicli(get_db)
 

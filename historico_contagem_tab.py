@@ -3,6 +3,8 @@ from datetime import datetime, timedelta, timezone, date
 
 import streamlit as st
 
+from inventario_ciclico_tab import parse_dt as _parse_dt
+
 _NOMES_INVALIDOS_COOP = {
     "faltando", "falta", "sobra", "sobrando", "ok", "none", "nan",
     "", "sem cooperado", "sem vínculo", "sem vinculo",
@@ -156,13 +158,15 @@ def _get_contagem_do_dia(conn, data: str) -> list[dict]:
 
 
 def _fmt_hora(contado_em: str) -> str:
+    """Hora da contagem. Aceita o formato do dashboard ('2026-07-15 14:32:07')
+    e o ISO-8601 gravado pelo app mobile ('2026-08-01T09:34:12.345678') — sem
+    isso o ISO caía no fatiamento e virava '2026-'."""
     if not contado_em:
         return ""
-    try:
-        dt = datetime.strptime(contado_em, "%Y-%m-%d %H:%M:%S")
+    dt = _parse_dt(contado_em)
+    if dt is not None:
         return dt.strftime("%H:%M")
-    except Exception:
-        return contado_em[:5] if len(contado_em) >= 5 else contado_em
+    return contado_em[:5] if len(contado_em) >= 5 else contado_em
 
 
 def _fmt_data_br(data_iso: str) -> str:
