@@ -142,8 +142,14 @@ _CORES = [
 ]
 
 
-def _ensure_codigo_column(conn):
-    """Adiciona mapa_produtos.codigo e seu índice único (idempotente).
+def _ensure_codigo_schema(conn):
+    """Cria o schema de códigos do mapa (idempotente).
+
+    Um produto da CAMDA pode ter mais de um código ativo ao mesmo tempo —
+    tipicamente um puramente numérico e outro alfanumérico ('254185' e
+    'US254185'), cada um com seu próprio saldo em estoque_mestre. Por isso
+    o conjunto de códigos vive numa tabela filha, e mapa_produtos.codigo
+    guarda apenas o código principal (o de exibição).
 
     SQLite não aceita ADD COLUMN IF NOT EXISTS — o ALTER falha se a coluna
     já existir — então a presença é verificada antes via PRAGMA table_info.
@@ -161,7 +167,28 @@ def _ensure_codigo_column(conn):
         "CREATE UNIQUE INDEX IF NOT EXISTS ux_mapa_produtos_codigo "
         "ON mapa_produtos(codigo) WHERE codigo IS NOT NULL"
     )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS mapa_produtos_codigos (
+            produto_id TEXT NOT NULL,
+            codigo     TEXT NOT NULL,
+            PRIMARY KEY (produto_id, codigo)
+        )
+    """)
+    # Um código pertence a um único produto do mapa, seja como principal
+    # ou como secundário — esta é a garantia global de unicidade.
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_mapa_prod_cod_codigo "
+        "ON mapa_produtos_codigos(codigo)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_mapa_prod_cod_produto "
+        "ON mapa_produtos_codigos(produto_id)"
+    )
     _codigo_migrado = True
+
+
+# Nome antigo mantido: era o que a primeira versão da migração expunha.
+_ensure_codigo_column = _ensure_codigo_schema
 
 
 def ensure_mapa_tables(conn):
@@ -197,7 +224,7 @@ def ensure_mapa_tables(conn):
             cor_hex      TEXT
         )
     """)
-    _ensure_codigo_column(conn)
+    _ensure_codigo_schema(conn)
     # Seed inicial dos racks (INSERT OR IGNORE = idempotente)
     conn.execute("""
         INSERT OR IGNORE INTO racks VALUES
@@ -296,17 +323,34 @@ def get_todos_paletes(_conn) -> dict:
 
 @st.cache_data(ttl=300)
 def get_produtos_mapa(_conn) -> list:
-    """Retorna lista de {produto_id, nome, unidade_pad, cor_hex, codigo} por nome."""
+    """
+    Retorna lista ordenada por nome de
+    {produto_id, nome, unidade_pad, cor_hex, codigo, codigos}.
+
+    `codigo` é o principal (pode ser None); `codigos` é a lista completa,
+    já que um produto da CAMDA pode ter mais de um código ativo.
+    """
     rows = _conn.execute(
         "SELECT produto_id, nome, unidade_pad, cor_hex, codigo FROM mapa_produtos ORDER BY nome"
     ).fetchall()
-    return [
-        {
+    extras: dict = {}
+    for pid, cod in _conn.execute(
+        "SELECT produto_id, codigo FROM mapa_produtos_codigos"
+    ).fetchall():
+        cod_n = _norm_codigo(cod)
+        if cod_n:
+            extras.setdefault(pid, set()).add(cod_n)
+    saida = []
+    for r in rows:
+        cods = set(extras.get(r[0], set()))
+        principal = _norm_codigo(r[4])
+        if principal:
+            cods.add(principal)
+        saida.append({
             "produto_id": r[0], "nome": r[1], "unidade_pad": r[2],
-            "cor_hex": r[3], "codigo": r[4],
-        }
-        for r in rows
-    ]
+            "cor_hex": r[3], "codigo": r[4], "codigos": sorted(cods),
+        })
+    return saida
 
 
 @st.cache_data(ttl=300)
@@ -356,6 +400,10 @@ def buscar_por_codigo(_conn, codigo: str) -> list:
     """
     Busca posições pelo código de produto (match exato normalizado, não LIKE).
 
+    Encontra o produto por **qualquer** um de seus códigos — principal ou
+    secundário — já que um produto da CAMDA pode ter mais de um código
+    ativo ('254185' e 'US254185' levam às mesmas posições).
+
     Mesma forma de buscar_produto_todas_ruas, acrescida de `codigo`:
     [{pos_key, rua, face, coluna, nivel, produto, quantidade, unidade, codigo}]
     """
@@ -368,10 +416,15 @@ def buscar_por_codigo(_conn, codigo: str) -> list:
                mp.nome, p.quantidade, p.unidade, mp.codigo
         FROM   mapa_posicoes p
         JOIN   mapa_produtos mp ON mp.produto_id = p.produto_id
-        WHERE  mp.codigo IS NOT NULL AND UPPER(TRIM(mp.codigo)) = ?
+        WHERE  (mp.codigo IS NOT NULL AND UPPER(TRIM(mp.codigo)) = ?)
+            OR EXISTS (
+                SELECT 1 FROM mapa_produtos_codigos mpc
+                WHERE  mpc.produto_id = mp.produto_id
+                  AND  UPPER(TRIM(mpc.codigo)) = ?
+            )
         ORDER BY p.rua, p.face, p.coluna, p.nivel
         """,
-        (cod,),
+        (cod, cod),
     ).fetchall()
     return [
         {
@@ -564,6 +617,11 @@ def add_produto_mapa(conn, nome: str, unidade: str, codigo=None) -> str:
         "INSERT OR IGNORE INTO mapa_produtos (produto_id, nome, unidade_pad, cor_hex, codigo) VALUES (?, ?, ?, ?, ?)",
         (pid, nome, unidade, cor, cod),
     )
+    if cod:
+        conn.execute(
+            "INSERT OR IGNORE INTO mapa_produtos_codigos (produto_id, codigo) VALUES (?, ?)",
+            (pid, cod),
+        )
     conn.commit()
     _clear_mapa_caches()
 
@@ -572,35 +630,137 @@ def add_produto_mapa(conn, nome: str, unidade: str, codigo=None) -> str:
 
 
 def _assert_codigo_livre(conn, cod: str, produto_id: str):
-    """Levanta ValueError se `cod` já pertencer a outro produto do mapa."""
+    """Levanta ValueError se `cod` já pertencer a outro produto do mapa.
+
+    Checa as duas formas de posse: o código principal em mapa_produtos e o
+    conjunto completo em mapa_produtos_codigos.
+    """
     dono = conn.execute(
-        "SELECT produto_id, nome FROM mapa_produtos "
-        "WHERE codigo IS NOT NULL AND UPPER(TRIM(codigo)) = ?",
-        (cod,),
+        """
+        SELECT mp.produto_id, mp.nome
+        FROM   mapa_produtos mp
+        WHERE  mp.codigo IS NOT NULL AND UPPER(TRIM(mp.codigo)) = ?
+        UNION
+        SELECT mpc.produto_id, mp.nome
+        FROM   mapa_produtos_codigos mpc
+        JOIN   mapa_produtos mp ON mp.produto_id = mpc.produto_id
+        WHERE  UPPER(TRIM(mpc.codigo)) = ?
+        """,
+        (cod, cod),
+    ).fetchall()
+    for pid_dono, nome_dono in dono:
+        if pid_dono != produto_id:
+            raise ValueError(
+                f"Código '{cod}' já está em uso pelo produto "
+                f"'{nome_dono}' (produto_id={pid_dono})."
+            )
+
+
+def get_codigos_produto(conn, produto_id: str) -> list:
+    """Retorna todos os códigos do produto (principal + secundários), ordenados."""
+    ensure_mapa_tables(conn)
+    cods = {
+        _norm_codigo(r[0])
+        for r in conn.execute(
+            "SELECT codigo FROM mapa_produtos_codigos WHERE produto_id = ?",
+            (produto_id,),
+        ).fetchall()
+    }
+    principal = conn.execute(
+        "SELECT codigo FROM mapa_produtos WHERE produto_id = ?", (produto_id,)
     ).fetchone()
-    if dono and dono[0] != produto_id:
-        raise ValueError(
-            f"Código '{cod}' já está em uso pelo produto "
-            f"'{dono[1]}' (produto_id={dono[0]})."
+    if principal:
+        cods.add(_norm_codigo(principal[0]))
+    return sorted(c for c in cods if c)
+
+
+def add_codigo_produto(conn, produto_id: str, codigo):
+    """
+    Registra mais um código para o produto (ex.: o par numérico do US*).
+
+    Produtos da CAMDA podem ter vários códigos ativos ao mesmo tempo; o
+    sync soma o saldo de todos eles. Quando o produto ainda não tem código
+    principal, o primeiro registrado assume esse papel.
+    Retorna a lista completa de códigos do produto após a inclusão.
+    """
+    ensure_mapa_tables(conn)
+    cod = _norm_codigo(codigo)
+    if not cod:
+        raise ValueError("Código vazio.")
+
+    alvo = conn.execute(
+        "SELECT nome, codigo FROM mapa_produtos WHERE produto_id = ?", (produto_id,)
+    ).fetchone()
+    if not alvo:
+        raise ValueError(f"Produto '{produto_id}' não existe no mapa.")
+
+    _assert_codigo_livre(conn, cod, produto_id)
+
+    conn.execute(
+        "INSERT OR IGNORE INTO mapa_produtos_codigos (produto_id, codigo) VALUES (?, ?)",
+        (produto_id, cod),
+    )
+    if not _norm_codigo(alvo[1]):
+        conn.execute(
+            "UPDATE mapa_produtos SET codigo = ? WHERE produto_id = ?", (cod, produto_id)
         )
+    conn.commit()
+    _clear_mapa_caches()
+    return get_codigos_produto(conn, produto_id)
+
+
+def remove_codigo_produto(conn, produto_id: str, codigo):
+    """
+    Desvincula um código do produto.
+
+    Se o código removido era o principal, o próximo código restante assume
+    o lugar; não restando nenhum, o principal fica NULL.
+    Retorna a lista de códigos remanescentes.
+    """
+    ensure_mapa_tables(conn)
+    cod = _norm_codigo(codigo)
+    if not cod:
+        raise ValueError("Código vazio.")
+
+    conn.execute(
+        "DELETE FROM mapa_produtos_codigos WHERE produto_id = ? "
+        "AND UPPER(TRIM(codigo)) = ?",
+        (produto_id, cod),
+    )
+    principal = conn.execute(
+        "SELECT codigo FROM mapa_produtos WHERE produto_id = ?", (produto_id,)
+    ).fetchone()
+    if principal and _norm_codigo(principal[0]) == cod:
+        restantes = get_codigos_produto(conn, produto_id)
+        novo = next((c for c in restantes if c != cod), None)
+        conn.execute(
+            "UPDATE mapa_produtos SET codigo = ? WHERE produto_id = ?", (novo, produto_id)
+        )
+    conn.commit()
+    _clear_mapa_caches()
+    return get_codigos_produto(conn, produto_id)
 
 
 def set_codigo_produto(conn, produto_id: str, codigo):
     """
-    Atribui/atualiza o código de um produto já cadastrado no mapa.
+    Define o código **principal** (de exibição) de um produto do mapa e o
+    registra no conjunto de códigos do produto.
 
-    Passar `codigo` vazio/None limpa o campo. Retorna o código normalizado
-    que ficou gravado. Levanta ValueError com mensagem clara — indicando
-    qual produto já usa o código — quando o índice único seria violado.
+    Não remove códigos secundários já vinculados — para isso use
+    remove_codigo_produto. Passar `codigo` vazio/None limpa o principal e
+    desvincula esse código do produto. Retorna o código normalizado que
+    ficou gravado. Levanta ValueError com mensagem clara — indicando qual
+    produto já usa o código — quando a unicidade seria violada.
     """
     ensure_mapa_tables(conn)
     cod = _norm_codigo(codigo)
 
     alvo = conn.execute(
-        "SELECT nome FROM mapa_produtos WHERE produto_id = ?", (produto_id,)
+        "SELECT nome, codigo FROM mapa_produtos WHERE produto_id = ?", (produto_id,)
     ).fetchone()
     if not alvo:
         raise ValueError(f"Produto '{produto_id}' não existe no mapa.")
+    anterior = _norm_codigo(alvo[1])
 
     if cod:
         _assert_codigo_livre(conn, cod, produto_id)
@@ -609,6 +769,18 @@ def set_codigo_produto(conn, produto_id: str, codigo):
         conn.execute(
             "UPDATE mapa_produtos SET codigo = ? WHERE produto_id = ?", (cod, produto_id)
         )
+        if cod:
+            conn.execute(
+                "INSERT OR IGNORE INTO mapa_produtos_codigos (produto_id, codigo) "
+                "VALUES (?, ?)",
+                (produto_id, cod),
+            )
+        elif anterior:
+            conn.execute(
+                "DELETE FROM mapa_produtos_codigos WHERE produto_id = ? "
+                "AND UPPER(TRIM(codigo)) = ?",
+                (produto_id, anterior),
+            )
         conn.commit()
     except Exception as exc:
         # Backstop: corrida entre a checagem acima e o UPDATE cai no índice
@@ -629,6 +801,7 @@ def delete_produto_mapa(conn, produto_id: str):
     """Remove produto do catálogo (e limpa todas as posições que o usam)."""
     ensure_mapa_tables(conn)
     conn.execute("DELETE FROM mapa_posicoes WHERE produto_id = ?", (produto_id,))
+    conn.execute("DELETE FROM mapa_produtos_codigos WHERE produto_id = ?", (produto_id,))
     conn.execute("DELETE FROM mapa_produtos WHERE produto_id = ?", (produto_id,))
     conn.commit()
     _clear_mapa_caches()
@@ -667,11 +840,15 @@ def sync_quantidades_from_estoque(conn) -> dict:
     Atualiza a quantidade de cada posição do mapa com o valor de
     estoque_mestre.qtd_sistema.
 
-    O casamento é feito **por código de produto** quando os dois lados têm
-    código preenchido; o match por nome (case-insensitive) fica apenas
-    como fallback. Isso corrige o furo silencioso de produtos cadastrados
-    no mapa com o nome encurtado — 'BORAL 500 SC 20L' no mapa contra
-    'HERBICIDA BORAL 500 SC 20L' no estoque — que nunca casavam por nome.
+    O casamento é feito **por código de produto** quando o produto do mapa
+    tem código vinculado; o match por nome (case-insensitive) fica apenas
+    como fallback.
+
+    Um produto da CAMDA pode ter mais de um código ativo — tipicamente um
+    numérico e outro alfanumérico ('254185' e 'US254185') —, cada um com
+    seu próprio saldo em estoque_mestre. A quantidade considerada é a
+    **soma** de todos os códigos vinculados ao produto. Casar por nome
+    pegava só uma das linhas e descartava a outra sem aviso.
 
     Produtos em múltiplas posições têm sua quantidade distribuída
     proporcionalmente às quantidades já registradas em cada posição
@@ -725,11 +902,21 @@ def sync_quantidades_from_estoque(conn) -> dict:
     from collections import defaultdict
     posicoes_por_produto: dict  = defaultdict(list)   # pid → [(pos_key, qtd_atual)]
     nome_por_produto:     dict  = {}
-    codigo_por_produto:   dict  = {}
+    codigos_por_produto:  dict  = defaultdict(set)    # pid → {codigos}
     for pid, nome, codigo, pos_key, qtd in mapa_rows:
         posicoes_por_produto[pid].append((pos_key, qtd))
-        nome_por_produto[pid]   = nome
-        codigo_por_produto[pid] = _norm_codigo(codigo)
+        nome_por_produto[pid] = nome
+        cod_principal = _norm_codigo(codigo)
+        if cod_principal:
+            codigos_por_produto[pid].add(cod_principal)
+
+    # Códigos secundários: o saldo de cada um entra na soma do produto.
+    for pid, cod in conn.execute(
+        "SELECT produto_id, codigo FROM mapa_produtos_codigos"
+    ).fetchall():
+        cod_n = _norm_codigo(cod)
+        if cod_n and pid in posicoes_por_produto:
+            codigos_por_produto[pid].add(cod_n)
 
     atualizadas = 0
     sem_match:   list = []
@@ -744,13 +931,16 @@ def sync_quantidades_from_estoque(conn) -> dict:
 
     for pid, posicoes in posicoes_por_produto.items():
         nome = nome_por_produto[pid]
-        cod  = codigo_por_produto[pid]
+        cods = codigos_por_produto.get(pid) or set()
 
-        if not cod:
+        if not cods:
             sem_codigo.append(nome)
 
-        # Código manda; nome só entra quando o código não resolve.
-        qtd_estoque = estoque_por_codigo.get(cod) if cod else None
+        # Código manda, somando o saldo de todos os códigos do produto.
+        # Nome só entra quando nenhum código resolve.
+        achados = [estoque_por_codigo[c] for c in sorted(cods)
+                   if c in estoque_por_codigo]
+        qtd_estoque = sum(achados) if achados else None
         via_codigo  = qtd_estoque is not None
         if qtd_estoque is None:
             qtd_estoque = estoque_por_nome.get(nome.strip().lower())
