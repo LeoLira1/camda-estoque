@@ -19,6 +19,19 @@ import streamlit as st
 _BRT = timezone(timedelta(hours=-3))
 
 _update_from_supported = None
+_codigo_migrado = False
+
+
+def _norm_codigo(codigo):
+    """Normaliza um código de produto para a forma canônica: UPPER(TRIM()).
+
+    Retorna None para valores vazios — a coluna aceita NULL enquanto o
+    backfill não termina, e o índice único é parcial justamente para isso.
+    """
+    if codigo is None:
+        return None
+    texto = str(codigo).strip().upper()
+    return texto or None
 
 
 def _supports_update_from(conn) -> bool:
@@ -129,6 +142,28 @@ _CORES = [
 ]
 
 
+def _ensure_codigo_column(conn):
+    """Adiciona mapa_produtos.codigo e seu índice único (idempotente).
+
+    SQLite não aceita ADD COLUMN IF NOT EXISTS — o ALTER falha se a coluna
+    já existir — então a presença é verificada antes via PRAGMA table_info.
+    Também não aceita UNIQUE em ADD COLUMN: o índice vai à parte e é
+    *parcial* (WHERE codigo IS NOT NULL) para permitir vários NULL enquanto
+    o backfill não termina.
+    """
+    global _codigo_migrado
+    if _codigo_migrado:
+        return
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(mapa_produtos)").fetchall()}
+    if "codigo" not in cols:
+        conn.execute("ALTER TABLE mapa_produtos ADD COLUMN codigo TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_mapa_produtos_codigo "
+        "ON mapa_produtos(codigo) WHERE codigo IS NOT NULL"
+    )
+    _codigo_migrado = True
+
+
 def ensure_mapa_tables(conn):
     """Cria tabelas do mapa se não existirem (idempotente)."""
     conn.execute("""
@@ -162,6 +197,7 @@ def ensure_mapa_tables(conn):
             cor_hex      TEXT
         )
     """)
+    _ensure_codigo_column(conn)
     # Seed inicial dos racks (INSERT OR IGNORE = idempotente)
     conn.execute("""
         INSERT OR IGNORE INTO racks VALUES
