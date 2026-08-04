@@ -70,10 +70,12 @@ CRIT_SEM = "Sem lote (só produto + QR)"
 
 _MAX_ETIQUETAS = 400  # trava de segurança: acima disso é engano de filtro
 
-# Nomes em validade_lotes vêm com prefixo de código do BI ("100235440 -
-# FUNGICIDA FOX XPRO 20L"); estoque_mestre guarda só o nome. Mesmo regex do
-# app_turso._RE_VAL_PREFIX — o match precisa ser idêntico ao do resto do app.
-_RE_VAL_PREFIX = re.compile(r"^\s*[A-Z0-9\-]{3,20}\s*[-–]\s*(.+)$", re.IGNORECASE)
+# A coluna PRODUTO da planilha SIG traz o CÓDIGO junto do nome
+# ("254185 - HERBICIDA BORAL 500 SC 20L"), e o upload grava a string inteira
+# em validade_lotes.produto; estoque_mestre guarda só o nome. Este regex
+# captura as duas partes — o resto do app (app_turso._RE_VAL_PREFIX) só
+# aproveita o nome, mas o código ali é o que permite casar de forma exata.
+_RE_VAL_COD_NOME = re.compile(r"^\s*([A-Z0-9\-]{3,20})\s*[-–]\s*(.+)$", re.IGNORECASE)
 
 
 def _sem_acentos(s: str) -> str:
@@ -82,11 +84,23 @@ def _sem_acentos(s: str) -> str:
     )
 
 
+def _split_produto_validade(produto):
+    """'254185 - HERBICIDA BORAL 20L' → ('254185', 'HERBICIDA BORAL 20L').
+
+    Sem prefixo de código devolve (None, texto). A classe de caracteres não
+    atravessa espaço, então nome sem código ('ADJUVANTE 2-4D 20L') não é
+    confundido com prefixo.
+    """
+    s = str(produto or "").strip()
+    m = _RE_VAL_COD_NOME.match(s)
+    if not m:
+        return None, s
+    return _norm_codigo(m.group(1)), m.group(2).strip()
+
+
 def _nome_key(nome) -> str:
     """Chave de match validade_lotes ↔ estoque_mestre (sem prefixo/acentos)."""
-    s = str(nome or "").strip()
-    m = _RE_VAL_PREFIX.match(s)
-    return _sem_acentos((m.group(1) if m else s).strip().upper())
+    return _sem_acentos(_split_produto_validade(nome)[1].upper())
 
 
 def _parse_data(valor):
@@ -212,13 +226,31 @@ def _carregar_produtos(_conn) -> list:
     return itens, sorted(set(sem_codigo))
 
 
+def _ordem_fefo(lotes: list) -> list:
+    """Ordena por vencimento crescente — FEFO. Sem data vai para o fim, para
+    nunca ser escolhido por engano como "o mais próximo"."""
+    return sorted(
+        lotes,
+        key=lambda l: (l["vencimento"] is None, l["vencimento"] or date.max, l["lote"]),
+    )
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def _carregar_lotes(_conn) -> dict:
-    """{chave_do_nome: [lotes ordenados por vencimento crescente]}.
+    """Lotes indexados por código E por nome: {"por_codigo": {...}, "por_nome": {...}}.
 
-    Ordem crescente = FEFO: o primeiro da lista é o que vence antes. Lotes
-    sem data de vencimento vão para o fim (nunca são escolhidos por engano
-    como "o mais próximo").
+    O índice por código é o que vale: a planilha SIG traz o código na coluna
+    PRODUTO ("254185 - HERBICIDA BORAL 500 SC 20L") e casar por ele é exato.
+    Casar por nome depende da grafia bater entre o BI e estoque_mestre — um
+    espaço a mais ou um acento faz o lote sumir da etiqueta sem aviso, e aí
+    alguém digita à mão um lote que já estava no banco.
+
+    O índice por nome continua como fallback, para as linhas da planilha que
+    vierem sem o prefixo de código.
+
+    Um prefixo que não corresponda a nenhum código real é inofensivo: a
+    consulta só usa os códigos que o produto tem de fato, então essa entrada
+    do índice nunca é procurada.
     """
     try:
         rows = _conn.execute(
@@ -227,21 +259,26 @@ def _carregar_lotes(_conn) -> dict:
     except Exception:
         rows = []
 
-    por_produto = defaultdict(list)
+    por_codigo = defaultdict(list)
+    por_nome = defaultdict(list)
     for produto, lote, vencimento, quantidade in rows:
         nome_lote = str(lote or "").strip()
         if not nome_lote:
             continue
-        por_produto[_nome_key(produto)].append({
+        registro = {
             "lote": nome_lote,
             "vencimento": _parse_data(vencimento),
             "quantidade": quantidade or 0,
-        })
-    for chave in por_produto:
-        por_produto[chave].sort(
-            key=lambda l: (l["vencimento"] is None, l["vencimento"] or date.max, l["lote"])
-        )
-    return dict(por_produto)
+        }
+        codigo, _ = _split_produto_validade(produto)
+        if codigo:
+            por_codigo[codigo].append(registro)
+        por_nome[_nome_key(produto)].append(registro)
+
+    return {
+        "por_codigo": {k: _ordem_fefo(v) for k, v in por_codigo.items()},
+        "por_nome": {k: _ordem_fefo(v) for k, v in por_nome.items()},
+    }
 
 
 # ── QR + HTML da etiqueta ─────────────────────────────────────────────────────
@@ -415,9 +452,34 @@ def _montar_documento(blocos: list, titulo: str) -> str:
     )
 
 
+def _lotes_do_item(item: dict, lotes: dict) -> list:
+    """Todos os lotes do produto, em ordem FEFO.
+
+    Procura pelo **grupo de códigos** do produto — o do QR mais os
+    secundários. Lotes do BORAL lançados sob '254185' e sob 'US254185' são o
+    mesmo produto e entram na mesma etiqueta, com o FEFO considerando os dois.
+
+    Só cai no match por nome quando nenhum código encontrou nada: é a saída
+    para linhas da planilha sem o prefixo de código.
+    """
+    por_codigo = lotes.get("por_codigo", {})
+    achados = []
+    vistos = set()
+    for cod in [item["codigo_qr"], *item["codigos_extras"]]:
+        for registro in por_codigo.get(cod, []):
+            assinatura = (registro["lote"], registro["vencimento"])
+            if assinatura in vistos:
+                continue
+            vistos.add(assinatura)
+            achados.append(registro)
+    if achados:
+        return _ordem_fefo(achados)
+    return lotes.get("por_nome", {}).get(_nome_key(item["nome"]), [])
+
+
 def _lote_fefo(item: dict, lotes: dict):
     """Lote de vencimento mais próximo do produto, ou None se não há lote."""
-    disponiveis = lotes.get(_nome_key(item["nome"]), [])
+    disponiveis = _lotes_do_item(item, lotes)
     return disponiveis[0] if disponiveis else None
 
 
@@ -433,7 +495,7 @@ def _etiquetas_do_item(item: dict, lotes: dict, criterio: str,
         return [(item, None)]
     if criterio == CRIT_MANUAL:
         return [(item, (manuais or {}).get(item["chave"]))]
-    disponiveis = lotes.get(_nome_key(item["nome"]), [])
+    disponiveis = _lotes_do_item(item, lotes)
     if not disponiveis:
         return [(item, None)]
     if criterio == CRIT_TODOS:
@@ -459,6 +521,13 @@ _CSS_TAB = """<style>
 .etq-section{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
              color:#64748b;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #1e293b;}
 .etq-empty{text-align:center;padding:36px 20px;color:#475569;font-size:0.85rem;}
+.etq-falta-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
+               border-radius:8px;padding:6px 10px;margin-bottom:3px;
+               display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.etq-falta-cod{font-family:'JetBrains Mono',monospace;font-size:0.72rem;color:#3b82f6;
+               min-width:80px;}
+.etq-falta-prod{font-size:0.82rem;color:#e0e6ed;flex:1;min-width:160px;}
+.etq-falta-extra{font-family:'JetBrains Mono',monospace;font-size:0.66rem;color:#64748b;}
 /* Prévia: mesma marcação da folha, só com a base tipográfica menor. */
 .etq-preview{background:#e5e7eb;border-radius:10px;padding:14px;overflow-x:auto;}
 .etq-preview .etiqueta{background:#fff;color:#000;border-radius:6px;padding:10px 12px;
@@ -700,6 +769,36 @@ def build_etiquetas_tab(get_db):
             "mais próximo do vencimento que existe cadastrado para o produto. "
             "Confira a aba 📅 Validade antes de colar na prateleira."
         )
+
+    # Sem esta lista a falha de match fica silenciosa: a etiqueta sai sem lote
+    # e ninguém sabe se é porque a planilha não tem, ou porque o casamento
+    # errou. Com o código à mostra dá para conferir na planilha.
+    if n_sem_lote and criterio != CRIT_SEM:
+        faltantes = [i for i, l in pares if not l]
+        with st.expander(f"🔎 {n_sem_lote} produto(s) sem lote — ver quais"):
+            st.caption(
+                "Os lotes vêm da planilha SIG enviada em **📅 Validade** "
+                "(tabela `validade_lotes`), casados pelo código do produto. "
+                "Se um destes está na planilha, o código abaixo é o que "
+                "procurar nela."
+            )
+            # Lista em HTML como o resto do módulo — st.dataframe serializa
+            # para Arrow e derruba o processo neste app (crash nativo, sem
+            # traceback; ver CLAUDE.md, armadilha 1).
+            linhas = []
+            for i in faltantes:
+                extras = (
+                    f'<span class="etq-falta-extra">também '
+                    f'{_esc.escape(", ".join(i["codigos_extras"]))}</span>'
+                    if i["codigos_extras"] else ""
+                )
+                linhas.append(
+                    f'<div class="etq-falta-row">'
+                    f'<span class="etq-falta-cod">{_esc.escape(i["codigo_qr"])}</span>'
+                    f'<span class="etq-falta-prod">{_esc.escape(i["nome"] or "")}</span>'
+                    f'{extras}</div>'
+                )
+            st.markdown("".join(linhas), unsafe_allow_html=True)
     if sem_codigo:
         st.info(
             f"ℹ️ {len(sem_codigo)} produto(s) do mapa não têm código vinculado e "
