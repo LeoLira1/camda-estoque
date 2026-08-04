@@ -2414,6 +2414,49 @@ def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
 
 
 _MOTIVO_TRANSF = "🔄 Saída sem venda (possível transferência)"
+_MOTIVO_ENTRADA = "📥 Entrada de estoque (produto novo/recebido)"
+# Janela (em dias) das entradas que entram na lista de contagem: cobre o dia
+# atual e o(s) anterior(es), sem trazer variações antigas de volta.
+_DIAS_ENTRADA_CONTAGEM = 2
+
+
+def _incluir_entradas_na_contagem(entradas: list, conn) -> None:
+    """Coloca os produtos que ENTRARAM no estoque (delta > 0 em
+    variacao_estoque: compra/recebimento/produto novo) na lista de contagem
+    (contagem_itens), para conferir fisicamente o que chegou.
+
+    Espelha _incluir_saidas_na_contagem: mesmo upsert de popular_contagem —
+    se o código já está na lista volta para 'pendente'; senão insere.
+
+    entradas: lista de dicts com codigo, produto, qtd_atual, delta.
+    """
+    now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+    for e in entradas:
+        codigo = e["codigo"]
+        qtd_atual = int(e["qtd_atual"])
+        delta = int(e["delta"])
+        motivo = f"{_MOTIVO_ENTRADA} +{delta} un"
+        row = conn.execute(
+            "SELECT categoria FROM estoque_mestre WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        categoria = row[0] if row else "OUTROS"
+        existe = conn.execute(
+            "SELECT id FROM contagem_itens WHERE codigo = ?", (codigo,)
+        ).fetchone()
+        if existe:
+            conn.execute(
+                "UPDATE contagem_itens SET status='pendente', motivo=?, "
+                "qtd_estoque=?, qtd_divergencia=0, registrado_em=? WHERE id=?",
+                (motivo, qtd_atual, now, existe[0]),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO contagem_itens (upload_id, codigo, produto, categoria, "
+                "qtd_estoque, status, motivo, qtd_divergencia, registrado_em) "
+                "VALUES (0, ?, ?, ?, ?, 'pendente', ?, 0, ?)",
+                (codigo, e["produto"], categoria, qtd_atual, motivo, now),
+            )
+    _invalidar_cache_contagem()
 
 
 def _incluir_saidas_na_contagem(grupos: list, conn) -> None:
@@ -2533,6 +2576,47 @@ def _registrar_alertas_no_banco():
                     ("aumento_estoque", chave, hoje.isoformat()),
                 )
                 houve_escrita = True
+    except Exception:
+        pass
+
+    # ── Entradas de estoque (compra/recebimento/produto novo) → Contagem ─────
+    # Marcador próprio (tipo 'contagem_entrada'), separado do alerta
+    # 'aumento_estoque': assim a inclusão na contagem não depende de o alerta
+    # ainda não ter sido disparado, e entradas detectadas ONTEM continuam
+    # entrando na contagem de hoje. A janela de _DIAS_ENTRADA_CONTAGEM dias
+    # evita que variações antigas ainda 'pendente' inundem a lista.
+    try:
+        corte_ent = (hoje - timedelta(days=_DIAS_ENTRADA_CONTAGEM)).isoformat()
+        entradas = conn.execute(
+            "SELECT codigo, produto, delta, detectado_em, qtd_atual FROM variacao_estoque "
+            "WHERE delta > 0 AND detectado_em >= ? ORDER BY detectado_em ASC",
+            (corte_ent,),
+        ).fetchall()
+        # Um mesmo código pode ter várias entradas na janela (uploads
+        # diferentes): acumula o delta e guarda o qtd_atual mais recente.
+        novas_entradas: dict = {}
+        for codigo, produto, delta, detectado_em, qtd_atual in entradas:
+            chave = f"{codigo}|{str(detectado_em)[:10]}"
+            rec = conn.execute(
+                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
+                ("contagem_entrada", chave),
+            ).fetchone()
+            if rec is not None:
+                continue
+            conn.execute(
+                "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
+                ("contagem_entrada", chave, hoje.isoformat()),
+            )
+            houve_escrita = True
+            ent = novas_entradas.setdefault(codigo, {
+                "codigo": codigo, "produto": produto,
+                "qtd_atual": qtd_atual, "delta": 0,
+            })
+            ent["produto"] = produto
+            ent["qtd_atual"] = qtd_atual  # ASC ⇒ o último visto é o mais recente
+            ent["delta"] += int(delta)
+        if novas_entradas:
+            _incluir_entradas_na_contagem(list(novas_entradas.values()), conn)
     except Exception:
         pass
 
@@ -12591,6 +12675,18 @@ new Chart(document.getElementById('coop-chart'),{
                     limpar_contagem()
                     st.rerun()
 
+            # Origem dos pendentes: entradas (chegaram) × saídas sem venda
+            _mot_pend = df_ct.loc[df_ct["status"] == "pendente", "motivo"].astype(str)
+            _n_ent_ct = int(_mot_pend.str.startswith(_MOTIVO_ENTRADA).sum())
+            _n_tr_ct = int(_mot_pend.str.startswith(_MOTIVO_TRANSF).sum())
+            if _n_ent_ct or _n_tr_ct:
+                _partes_ct = []
+                if _n_ent_ct:
+                    _partes_ct.append(f"📥 {_n_ent_ct} entrada(s) recente(s) (produto novo/recebido)")
+                if _n_tr_ct:
+                    _partes_ct.append(f"🔄 {_n_tr_ct} saída(s) sem venda (possível transferência)")
+                st.caption("Nesta lista: " + " · ".join(_partes_ct))
+
             # Banner de conclusão quando tudo foi revisado
             if n_pend == 0 and n_total > 0:
                 st.success(f"✅ Contagem concluída! {n_certas} certa(s) · {n_divs} divergência(s). Clique em 'Limpar lista' para encerrar.")
@@ -13847,7 +13943,7 @@ new Chart(document.getElementById('coop-chart'),{
             unsafe_allow_html=True,
         )
         if _n_entradas_pending > 0:
-            st.info(f"🟢 {_n_entradas_pending} aumento(s) de estoque recente(s) — veja o alerta no topo do dashboard.")
+            st.info(f"🟢 {_n_entradas_pending} aumento(s) de estoque recente(s) — veja o alerta no topo do dashboard. Os produtos que entraram também vão para a 📋 Contagem para conferência física.")
         if _al_transf:
             st.info(f"🔄 {len(_al_transf)} saída(s) sem venda associada — possível(is) transferência(s); veja a seção 📤 abaixo. Os produtos também entraram na 📋 Contagem para conferência física.")
 
