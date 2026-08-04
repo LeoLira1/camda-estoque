@@ -296,12 +296,15 @@ def get_todos_paletes(_conn) -> dict:
 
 @st.cache_data(ttl=300)
 def get_produtos_mapa(_conn) -> list:
-    """Retorna lista de {produto_id, nome, unidade_pad, cor_hex} ordenada por nome."""
+    """Retorna lista de {produto_id, nome, unidade_pad, cor_hex, codigo} por nome."""
     rows = _conn.execute(
-        "SELECT produto_id, nome, unidade_pad, cor_hex FROM mapa_produtos ORDER BY nome"
+        "SELECT produto_id, nome, unidade_pad, cor_hex, codigo FROM mapa_produtos ORDER BY nome"
     ).fetchall()
     return [
-        {"produto_id": r[0], "nome": r[1], "unidade_pad": r[2], "cor_hex": r[3]}
+        {
+            "produto_id": r[0], "nome": r[1], "unidade_pad": r[2],
+            "cor_hex": r[3], "codigo": r[4],
+        }
         for r in rows
     ]
 
@@ -343,6 +346,39 @@ def buscar_produto_todas_ruas(_conn, nome_parcial: str) -> list:
             "pos_key":    r[0], "rua":       r[1], "face":      r[2],
             "coluna":     r[3], "nivel":     r[4],
             "produto":    r[5], "quantidade": r[6], "unidade":  r[7],
+        }
+        for r in rows
+    ]
+
+
+@st.cache_data(ttl=300)
+def buscar_por_codigo(_conn, codigo: str) -> list:
+    """
+    Busca posições pelo código de produto (match exato normalizado, não LIKE).
+
+    Mesma forma de buscar_produto_todas_ruas, acrescida de `codigo`:
+    [{pos_key, rua, face, coluna, nivel, produto, quantidade, unidade, codigo}]
+    """
+    cod = _norm_codigo(codigo)
+    if not cod:
+        return []
+    rows = _conn.execute(
+        """
+        SELECT p.pos_key, p.rua, p.face, p.coluna, p.nivel,
+               mp.nome, p.quantidade, p.unidade, mp.codigo
+        FROM   mapa_posicoes p
+        JOIN   mapa_produtos mp ON mp.produto_id = p.produto_id
+        WHERE  mp.codigo IS NOT NULL AND UPPER(TRIM(mp.codigo)) = ?
+        ORDER BY p.rua, p.face, p.coluna, p.nivel
+        """,
+        (cod,),
+    ).fetchall()
+    return [
+        {
+            "pos_key":    r[0], "rua":       r[1], "face":      r[2],
+            "coluna":     r[3], "nivel":     r[4],
+            "produto":    r[5], "quantidade": r[6], "unidade":  r[7],
+            "codigo":     r[8],
         }
         for r in rows
     ]
@@ -401,6 +437,7 @@ def _clear_mapa_caches():
     get_posicoes_vazias.clear()
     buscar_produto_no_mapa.clear()
     buscar_produto_todas_ruas.clear()
+    buscar_por_codigo.clear()
 
 
 def upsert_palete(conn, pos_key: str, produto_id: str, quantidade: float, unidade: str):
@@ -495,32 +532,97 @@ def mover_palete(conn, pos_key_origem: str, pos_key_destino: str):
         raise
 
 
-def add_produto_mapa(conn, nome: str, unidade: str) -> str:
+def add_produto_mapa(conn, nome: str, unidade: str, codigo=None) -> str:
     """
     Cria produto no mapa e retorna produto_id.
     Se já existir com o mesmo nome, retorna o id existente.
+
+    `codigo` é opcional e gravado normalizado (UPPER(TRIM())). Quando o
+    produto já existe e ainda não tem código, o código informado é
+    atribuído; um código já preenchido nunca é sobrescrito aqui.
     """
     ensure_mapa_tables(conn)
     nome = nome.strip()
+    cod = _norm_codigo(codigo)
     existing = conn.execute(
-        "SELECT produto_id FROM mapa_produtos WHERE LOWER(nome) = LOWER(?)", (nome,)
+        "SELECT produto_id, codigo FROM mapa_produtos WHERE LOWER(nome) = LOWER(?)", (nome,)
     ).fetchone()
     if existing:
-        return existing[0]
+        pid_existente, cod_existente = existing[0], existing[1]
+        if cod and not _norm_codigo(cod_existente):
+            set_codigo_produto(conn, pid_existente, cod)
+        return pid_existente
 
     pid = str(uuid.uuid4())[:8]
     count = conn.execute("SELECT COUNT(*) FROM mapa_produtos").fetchone()[0]
     cor = _CORES[count % len(_CORES)]
 
+    if cod:
+        _assert_codigo_livre(conn, cod, pid)
+
     conn.execute(
-        "INSERT OR IGNORE INTO mapa_produtos (produto_id, nome, unidade_pad, cor_hex) VALUES (?, ?, ?, ?)",
-        (pid, nome, unidade, cor),
+        "INSERT OR IGNORE INTO mapa_produtos (produto_id, nome, unidade_pad, cor_hex, codigo) VALUES (?, ?, ?, ?, ?)",
+        (pid, nome, unidade, cor, cod),
     )
     conn.commit()
     _clear_mapa_caches()
 
     row = conn.execute("SELECT produto_id FROM mapa_produtos WHERE LOWER(nome) = LOWER(?)", (nome,)).fetchone()
     return row[0] if row else pid
+
+
+def _assert_codigo_livre(conn, cod: str, produto_id: str):
+    """Levanta ValueError se `cod` já pertencer a outro produto do mapa."""
+    dono = conn.execute(
+        "SELECT produto_id, nome FROM mapa_produtos "
+        "WHERE codigo IS NOT NULL AND UPPER(TRIM(codigo)) = ?",
+        (cod,),
+    ).fetchone()
+    if dono and dono[0] != produto_id:
+        raise ValueError(
+            f"Código '{cod}' já está em uso pelo produto "
+            f"'{dono[1]}' (produto_id={dono[0]})."
+        )
+
+
+def set_codigo_produto(conn, produto_id: str, codigo):
+    """
+    Atribui/atualiza o código de um produto já cadastrado no mapa.
+
+    Passar `codigo` vazio/None limpa o campo. Retorna o código normalizado
+    que ficou gravado. Levanta ValueError com mensagem clara — indicando
+    qual produto já usa o código — quando o índice único seria violado.
+    """
+    ensure_mapa_tables(conn)
+    cod = _norm_codigo(codigo)
+
+    alvo = conn.execute(
+        "SELECT nome FROM mapa_produtos WHERE produto_id = ?", (produto_id,)
+    ).fetchone()
+    if not alvo:
+        raise ValueError(f"Produto '{produto_id}' não existe no mapa.")
+
+    if cod:
+        _assert_codigo_livre(conn, cod, produto_id)
+
+    try:
+        conn.execute(
+            "UPDATE mapa_produtos SET codigo = ? WHERE produto_id = ?", (cod, produto_id)
+        )
+        conn.commit()
+    except Exception as exc:
+        # Backstop: corrida entre a checagem acima e o UPDATE cai no índice
+        # único. Traduz o erro cru do SQLite na mesma mensagem clara.
+        if cod and "unique" in str(exc).lower():
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            _assert_codigo_livre(conn, cod, produto_id)
+        raise
+
+    _clear_mapa_caches()
+    return cod
 
 
 def delete_produto_mapa(conn, produto_id: str):
