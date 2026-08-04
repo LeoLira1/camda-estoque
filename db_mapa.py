@@ -19,6 +19,19 @@ import streamlit as st
 _BRT = timezone(timedelta(hours=-3))
 
 _update_from_supported = None
+_codigo_migrado = False
+
+
+def _norm_codigo(codigo):
+    """Normaliza um código de produto para a forma canônica: UPPER(TRIM()).
+
+    Retorna None para valores vazios — a coluna aceita NULL enquanto o
+    backfill não termina, e o índice único é parcial justamente para isso.
+    """
+    if codigo is None:
+        return None
+    texto = str(codigo).strip().upper()
+    return texto or None
 
 
 def _supports_update_from(conn) -> bool:
@@ -129,6 +142,28 @@ _CORES = [
 ]
 
 
+def _ensure_codigo_column(conn):
+    """Adiciona mapa_produtos.codigo e seu índice único (idempotente).
+
+    SQLite não aceita ADD COLUMN IF NOT EXISTS — o ALTER falha se a coluna
+    já existir — então a presença é verificada antes via PRAGMA table_info.
+    Também não aceita UNIQUE em ADD COLUMN: o índice vai à parte e é
+    *parcial* (WHERE codigo IS NOT NULL) para permitir vários NULL enquanto
+    o backfill não termina.
+    """
+    global _codigo_migrado
+    if _codigo_migrado:
+        return
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(mapa_produtos)").fetchall()}
+    if "codigo" not in cols:
+        conn.execute("ALTER TABLE mapa_produtos ADD COLUMN codigo TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_mapa_produtos_codigo "
+        "ON mapa_produtos(codigo) WHERE codigo IS NOT NULL"
+    )
+    _codigo_migrado = True
+
+
 def ensure_mapa_tables(conn):
     """Cria tabelas do mapa se não existirem (idempotente)."""
     conn.execute("""
@@ -162,6 +197,7 @@ def ensure_mapa_tables(conn):
             cor_hex      TEXT
         )
     """)
+    _ensure_codigo_column(conn)
     # Seed inicial dos racks (INSERT OR IGNORE = idempotente)
     conn.execute("""
         INSERT OR IGNORE INTO racks VALUES
@@ -260,12 +296,15 @@ def get_todos_paletes(_conn) -> dict:
 
 @st.cache_data(ttl=300)
 def get_produtos_mapa(_conn) -> list:
-    """Retorna lista de {produto_id, nome, unidade_pad, cor_hex} ordenada por nome."""
+    """Retorna lista de {produto_id, nome, unidade_pad, cor_hex, codigo} por nome."""
     rows = _conn.execute(
-        "SELECT produto_id, nome, unidade_pad, cor_hex FROM mapa_produtos ORDER BY nome"
+        "SELECT produto_id, nome, unidade_pad, cor_hex, codigo FROM mapa_produtos ORDER BY nome"
     ).fetchall()
     return [
-        {"produto_id": r[0], "nome": r[1], "unidade_pad": r[2], "cor_hex": r[3]}
+        {
+            "produto_id": r[0], "nome": r[1], "unidade_pad": r[2],
+            "cor_hex": r[3], "codigo": r[4],
+        }
         for r in rows
     ]
 
@@ -307,6 +346,39 @@ def buscar_produto_todas_ruas(_conn, nome_parcial: str) -> list:
             "pos_key":    r[0], "rua":       r[1], "face":      r[2],
             "coluna":     r[3], "nivel":     r[4],
             "produto":    r[5], "quantidade": r[6], "unidade":  r[7],
+        }
+        for r in rows
+    ]
+
+
+@st.cache_data(ttl=300)
+def buscar_por_codigo(_conn, codigo: str) -> list:
+    """
+    Busca posições pelo código de produto (match exato normalizado, não LIKE).
+
+    Mesma forma de buscar_produto_todas_ruas, acrescida de `codigo`:
+    [{pos_key, rua, face, coluna, nivel, produto, quantidade, unidade, codigo}]
+    """
+    cod = _norm_codigo(codigo)
+    if not cod:
+        return []
+    rows = _conn.execute(
+        """
+        SELECT p.pos_key, p.rua, p.face, p.coluna, p.nivel,
+               mp.nome, p.quantidade, p.unidade, mp.codigo
+        FROM   mapa_posicoes p
+        JOIN   mapa_produtos mp ON mp.produto_id = p.produto_id
+        WHERE  mp.codigo IS NOT NULL AND UPPER(TRIM(mp.codigo)) = ?
+        ORDER BY p.rua, p.face, p.coluna, p.nivel
+        """,
+        (cod,),
+    ).fetchall()
+    return [
+        {
+            "pos_key":    r[0], "rua":       r[1], "face":      r[2],
+            "coluna":     r[3], "nivel":     r[4],
+            "produto":    r[5], "quantidade": r[6], "unidade":  r[7],
+            "codigo":     r[8],
         }
         for r in rows
     ]
@@ -365,6 +437,7 @@ def _clear_mapa_caches():
     get_posicoes_vazias.clear()
     buscar_produto_no_mapa.clear()
     buscar_produto_todas_ruas.clear()
+    buscar_por_codigo.clear()
 
 
 def upsert_palete(conn, pos_key: str, produto_id: str, quantidade: float, unidade: str):
@@ -459,32 +532,97 @@ def mover_palete(conn, pos_key_origem: str, pos_key_destino: str):
         raise
 
 
-def add_produto_mapa(conn, nome: str, unidade: str) -> str:
+def add_produto_mapa(conn, nome: str, unidade: str, codigo=None) -> str:
     """
     Cria produto no mapa e retorna produto_id.
     Se já existir com o mesmo nome, retorna o id existente.
+
+    `codigo` é opcional e gravado normalizado (UPPER(TRIM())). Quando o
+    produto já existe e ainda não tem código, o código informado é
+    atribuído; um código já preenchido nunca é sobrescrito aqui.
     """
     ensure_mapa_tables(conn)
     nome = nome.strip()
+    cod = _norm_codigo(codigo)
     existing = conn.execute(
-        "SELECT produto_id FROM mapa_produtos WHERE LOWER(nome) = LOWER(?)", (nome,)
+        "SELECT produto_id, codigo FROM mapa_produtos WHERE LOWER(nome) = LOWER(?)", (nome,)
     ).fetchone()
     if existing:
-        return existing[0]
+        pid_existente, cod_existente = existing[0], existing[1]
+        if cod and not _norm_codigo(cod_existente):
+            set_codigo_produto(conn, pid_existente, cod)
+        return pid_existente
 
     pid = str(uuid.uuid4())[:8]
     count = conn.execute("SELECT COUNT(*) FROM mapa_produtos").fetchone()[0]
     cor = _CORES[count % len(_CORES)]
 
+    if cod:
+        _assert_codigo_livre(conn, cod, pid)
+
     conn.execute(
-        "INSERT OR IGNORE INTO mapa_produtos (produto_id, nome, unidade_pad, cor_hex) VALUES (?, ?, ?, ?)",
-        (pid, nome, unidade, cor),
+        "INSERT OR IGNORE INTO mapa_produtos (produto_id, nome, unidade_pad, cor_hex, codigo) VALUES (?, ?, ?, ?, ?)",
+        (pid, nome, unidade, cor, cod),
     )
     conn.commit()
     _clear_mapa_caches()
 
     row = conn.execute("SELECT produto_id FROM mapa_produtos WHERE LOWER(nome) = LOWER(?)", (nome,)).fetchone()
     return row[0] if row else pid
+
+
+def _assert_codigo_livre(conn, cod: str, produto_id: str):
+    """Levanta ValueError se `cod` já pertencer a outro produto do mapa."""
+    dono = conn.execute(
+        "SELECT produto_id, nome FROM mapa_produtos "
+        "WHERE codigo IS NOT NULL AND UPPER(TRIM(codigo)) = ?",
+        (cod,),
+    ).fetchone()
+    if dono and dono[0] != produto_id:
+        raise ValueError(
+            f"Código '{cod}' já está em uso pelo produto "
+            f"'{dono[1]}' (produto_id={dono[0]})."
+        )
+
+
+def set_codigo_produto(conn, produto_id: str, codigo):
+    """
+    Atribui/atualiza o código de um produto já cadastrado no mapa.
+
+    Passar `codigo` vazio/None limpa o campo. Retorna o código normalizado
+    que ficou gravado. Levanta ValueError com mensagem clara — indicando
+    qual produto já usa o código — quando o índice único seria violado.
+    """
+    ensure_mapa_tables(conn)
+    cod = _norm_codigo(codigo)
+
+    alvo = conn.execute(
+        "SELECT nome FROM mapa_produtos WHERE produto_id = ?", (produto_id,)
+    ).fetchone()
+    if not alvo:
+        raise ValueError(f"Produto '{produto_id}' não existe no mapa.")
+
+    if cod:
+        _assert_codigo_livre(conn, cod, produto_id)
+
+    try:
+        conn.execute(
+            "UPDATE mapa_produtos SET codigo = ? WHERE produto_id = ?", (cod, produto_id)
+        )
+        conn.commit()
+    except Exception as exc:
+        # Backstop: corrida entre a checagem acima e o UPDATE cai no índice
+        # único. Traduz o erro cru do SQLite na mesma mensagem clara.
+        if cod and "unique" in str(exc).lower():
+            try:
+                conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            _assert_codigo_livre(conn, cod, produto_id)
+        raise
+
+    _clear_mapa_caches()
+    return cod
 
 
 def delete_produto_mapa(conn, produto_id: str):
@@ -527,8 +665,13 @@ def _distribuir_proporcional(total: float, qtd_atuais: list) -> list:
 def sync_quantidades_from_estoque(conn) -> dict:
     """
     Atualiza a quantidade de cada posição do mapa com o valor de
-    estoque_mestre.qtd_sistema, casando pelo nome do produto
-    (case-insensitive).
+    estoque_mestre.qtd_sistema.
+
+    O casamento é feito **por código de produto** quando os dois lados têm
+    código preenchido; o match por nome (case-insensitive) fica apenas
+    como fallback. Isso corrige o furo silencioso de produtos cadastrados
+    no mapa com o nome encurtado — 'BORAL 500 SC 20L' no mapa contra
+    'HERBICIDA BORAL 500 SC 20L' no estoque — que nunca casavam por nome.
 
     Produtos em múltiplas posições têm sua quantidade distribuída
     proporcionalmente às quantidades já registradas em cada posição
@@ -538,6 +681,10 @@ def sync_quantidades_from_estoque(conn) -> dict:
         {
             "atualizadas": int,   # posições atualizadas com sucesso
             "sem_match":   list,  # nomes sem correspondência no estoque
+            "alteradas":   int,   # posições cuja quantidade realmente mudou
+            "por_codigo":  int,   # posições que casaram via código
+            "por_nome":    int,   # posições que casaram via fallback de nome
+            "sem_codigo":  list,  # produtos do mapa ainda sem código atribuído
         }
     """
     ensure_mapa_tables(conn)
@@ -545,7 +692,7 @@ def sync_quantidades_from_estoque(conn) -> dict:
     # 1. Busca todos os produtos do mapa com suas posições e quantidades atuais
     mapa_rows = conn.execute(
         """
-        SELECT mp.produto_id, mp.nome, p.pos_key, p.quantidade
+        SELECT mp.produto_id, mp.nome, mp.codigo, p.pos_key, p.quantidade
         FROM   mapa_produtos mp
         JOIN   mapa_posicoes p ON p.produto_id = mp.produto_id
         WHERE  p.produto_id IS NOT NULL
@@ -554,24 +701,41 @@ def sync_quantidades_from_estoque(conn) -> dict:
     ).fetchall()
 
     if not mapa_rows:
-        return {"atualizadas": 0, "sem_match": []}
+        return {
+            "atualizadas": 0, "sem_match": [], "alteradas": 0,
+            "por_codigo": 0, "por_nome": 0, "sem_codigo": [],
+        }
 
-    # 2. Busca quantidades do estoque_mestre indexadas por nome em lowercase
+    # 2. Indexa o estoque por código (chave preferida) e por nome (fallback)
     estoque_rows = conn.execute(
-        "SELECT produto, qtd_sistema FROM estoque_mestre WHERE produto IS NOT NULL"
+        "SELECT codigo, produto, qtd_sistema FROM estoque_mestre WHERE produto IS NOT NULL"
     ).fetchall()
-    estoque_map = {r[0].strip().lower(): (r[1] or 0) for r in estoque_rows if r[0]}
+    estoque_por_codigo: dict = {}
+    estoque_por_nome:   dict = {}
+    for cod_e, prod_e, qtd_e in estoque_rows:
+        if not prod_e:
+            continue
+        qtd_e = qtd_e or 0
+        cod_norm = _norm_codigo(cod_e)
+        if cod_norm:
+            estoque_por_codigo[cod_norm] = qtd_e
+        estoque_por_nome[prod_e.strip().lower()] = qtd_e
 
     # 3. Agrupa posições e quantidades por produto_id
     from collections import defaultdict
     posicoes_por_produto: dict  = defaultdict(list)   # pid → [(pos_key, qtd_atual)]
     nome_por_produto:     dict  = {}
-    for pid, nome, pos_key, qtd in mapa_rows:
+    codigo_por_produto:   dict  = {}
+    for pid, nome, codigo, pos_key, qtd in mapa_rows:
         posicoes_por_produto[pid].append((pos_key, qtd))
-        nome_por_produto[pid] = nome
+        nome_por_produto[pid]   = nome
+        codigo_por_produto[pid] = _norm_codigo(codigo)
 
     atualizadas = 0
     sem_match:   list = []
+    sem_codigo:  list = []
+    por_codigo = 0
+    por_nome   = 0
     now = datetime.now(tz=_BRT).isoformat()
 
     # Acumula apenas posições cuja quantidade realmente muda — no Turso
@@ -579,12 +743,26 @@ def sync_quantidades_from_estoque(conn) -> dict:
     to_write: list = []
 
     for pid, posicoes in posicoes_por_produto.items():
-        nome        = nome_por_produto[pid]
-        qtd_estoque = estoque_map.get(nome.strip().lower())
+        nome = nome_por_produto[pid]
+        cod  = codigo_por_produto[pid]
+
+        if not cod:
+            sem_codigo.append(nome)
+
+        # Código manda; nome só entra quando o código não resolve.
+        qtd_estoque = estoque_por_codigo.get(cod) if cod else None
+        via_codigo  = qtd_estoque is not None
+        if qtd_estoque is None:
+            qtd_estoque = estoque_por_nome.get(nome.strip().lower())
 
         if qtd_estoque is None:
             sem_match.append(nome)
             continue
+
+        if via_codigo:
+            por_codigo += len(posicoes)
+        else:
+            por_nome += len(posicoes)
 
         pos_keys   = [p[0] for p in posicoes]
         qtd_atuais = [p[1] for p in posicoes]
@@ -621,4 +799,11 @@ def sync_quantidades_from_estoque(conn) -> dict:
 
     conn.commit()
     _clear_mapa_caches()
-    return {"atualizadas": atualizadas, "sem_match": sem_match, "alteradas": len(to_write)}
+    return {
+        "atualizadas": atualizadas,
+        "sem_match":   sem_match,
+        "alteradas":   len(to_write),
+        "por_codigo":  por_codigo,
+        "por_nome":    por_nome,
+        "sem_codigo":  sem_codigo,
+    }
