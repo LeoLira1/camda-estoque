@@ -48,6 +48,7 @@ except ImportError:
     def _ciclo_prevalece(row, entries, divergencias_cicli=None):
         return False
 from historico_contagem_tab import build_historico_contagem_tab as _render_historico_contagem_tab
+from etiquetas_tab import build_etiquetas_tab as _render_etiquetas_tab
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -10479,12 +10480,13 @@ if has_mestre:
         "📦 Pendências", "🔴 Avarias", "📅 Agenda", "📋 Contagem",
         "📅 Validade", "📊 Histórico", "🧬 P. Ativos", "📦 Estocados",
         "🔄 Inv. Cíclico", "📋 Hist. Contagem", "📥📤 Movimentações",
+        "🏷️ Etiquetas",
     ]
     (_TAB_INFO, _TAB_MAPA, _TAB_DIVERG, _TAB_REPOR, _TAB_VENDAS,
      _TAB_COBERTURA, _TAB_MURAL, _TAB_ULT_VENDA, _TAB_PENDENCIAS,
      _TAB_AVARIAS, _TAB_AGENDA, _TAB_CONTAGEM, _TAB_VALIDADE,
      _TAB_HISTORICO, _TAB_PATIVOS, _TAB_ESTOCADOS, _TAB_CICLICO,
-     _TAB_HIST_CONTAGEM, _TAB_ENTRADAS) = _DASH_TABS
+     _TAB_HIST_CONTAGEM, _TAB_ENTRADAS, _TAB_ETIQUETAS) = _DASH_TABS
 
     # st.pills permite "desmarcar" a pill ativa (retorna None); restaura a
     # última aba escolhida antes de instanciar o widget para nunca ficar
@@ -14159,6 +14161,14 @@ new Chart(document.getElementById('coop-chart'),{
                 )
             st.markdown("".join(_html_lanc), unsafe_allow_html=True)
 
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB ETIQUETAS — folhas A4 com QR code para colar nos racks do galpão
+    # As etiquetas são lidas pelo app Flutter do galpão; o QR carrega apenas o
+    # código, em texto puro. Aba somente leitura.
+    # ══════════════════════════════════════════════════════════════════════════
+    if _dash_tab == _TAB_ETIQUETAS:
+        _render_etiquetas_tab(get_db)
 
 
 # ── Upload Section ───────────────────────────────────────────────────────────

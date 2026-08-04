@@ -9,3 +9,6 @@ libsql>=0.0.3
 python-dotenv>=1.0.0
 plotly>=5.18.0
 pdfplumber>=0.11.0
+# QR das etiquetas de rack (aba 🏷️ Etiquetas). Python puro, sem Pillow, e
+# gera SVG — que imprime nítido nos 7 cm que o código ocupa na folha A4.
+segno>=1.6.0
