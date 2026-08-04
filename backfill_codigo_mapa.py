@@ -132,6 +132,21 @@ def checar_tabelas(conn, tabelas=_TABELAS_NECESSARIAS):
         )
 
 
+def checar_coluna_codigo(conn):
+    """Falha cedo se a migração do passo 1 ainda não rodou neste banco."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(mapa_produtos)").fetchall()}
+    if "codigo" not in cols:
+        raise SystemExit(
+            "ERRO: mapa_produtos ainda não tem a coluna 'codigo'.\n"
+            f"  Colunas atuais: {', '.join(sorted(cols))}\n"
+            "  A migração roda em ensure_mapa_tables(), ou seja, na primeira\n"
+            "  inicialização do app com o código novo. Suba o app (ou chame\n"
+            "  db_mapa.ensure_mapa_tables(conn)) antes de rodar o backfill.\n"
+            "  O backfill não altera schema de propósito: ALTER TABLE em\n"
+            "  produção deve ser uma decisão explícita, não efeito colateral."
+        )
+
+
 # ── Normalização ──────────────────────────────────────────────────────────────
 
 def norm_codigo(codigo):
@@ -406,6 +421,7 @@ def main(argv=None):
         return 0
 
     checar_tabelas(conn)
+    checar_coluna_codigo(conn)
     if args.source == "xlsx":
         fonte = carregar_do_xlsx(args.xlsx)
         print(f"→ fonte: {args.xlsx} ({len(fonte)} produto(s) com código)")
