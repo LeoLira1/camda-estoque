@@ -665,8 +665,13 @@ def _distribuir_proporcional(total: float, qtd_atuais: list) -> list:
 def sync_quantidades_from_estoque(conn) -> dict:
     """
     Atualiza a quantidade de cada posição do mapa com o valor de
-    estoque_mestre.qtd_sistema, casando pelo nome do produto
-    (case-insensitive).
+    estoque_mestre.qtd_sistema.
+
+    O casamento é feito **por código de produto** quando os dois lados têm
+    código preenchido; o match por nome (case-insensitive) fica apenas
+    como fallback. Isso corrige o furo silencioso de produtos cadastrados
+    no mapa com o nome encurtado — 'BORAL 500 SC 20L' no mapa contra
+    'HERBICIDA BORAL 500 SC 20L' no estoque — que nunca casavam por nome.
 
     Produtos em múltiplas posições têm sua quantidade distribuída
     proporcionalmente às quantidades já registradas em cada posição
@@ -676,6 +681,10 @@ def sync_quantidades_from_estoque(conn) -> dict:
         {
             "atualizadas": int,   # posições atualizadas com sucesso
             "sem_match":   list,  # nomes sem correspondência no estoque
+            "alteradas":   int,   # posições cuja quantidade realmente mudou
+            "por_codigo":  int,   # posições que casaram via código
+            "por_nome":    int,   # posições que casaram via fallback de nome
+            "sem_codigo":  list,  # produtos do mapa ainda sem código atribuído
         }
     """
     ensure_mapa_tables(conn)
@@ -683,7 +692,7 @@ def sync_quantidades_from_estoque(conn) -> dict:
     # 1. Busca todos os produtos do mapa com suas posições e quantidades atuais
     mapa_rows = conn.execute(
         """
-        SELECT mp.produto_id, mp.nome, p.pos_key, p.quantidade
+        SELECT mp.produto_id, mp.nome, mp.codigo, p.pos_key, p.quantidade
         FROM   mapa_produtos mp
         JOIN   mapa_posicoes p ON p.produto_id = mp.produto_id
         WHERE  p.produto_id IS NOT NULL
@@ -692,24 +701,41 @@ def sync_quantidades_from_estoque(conn) -> dict:
     ).fetchall()
 
     if not mapa_rows:
-        return {"atualizadas": 0, "sem_match": []}
+        return {
+            "atualizadas": 0, "sem_match": [], "alteradas": 0,
+            "por_codigo": 0, "por_nome": 0, "sem_codigo": [],
+        }
 
-    # 2. Busca quantidades do estoque_mestre indexadas por nome em lowercase
+    # 2. Indexa o estoque por código (chave preferida) e por nome (fallback)
     estoque_rows = conn.execute(
-        "SELECT produto, qtd_sistema FROM estoque_mestre WHERE produto IS NOT NULL"
+        "SELECT codigo, produto, qtd_sistema FROM estoque_mestre WHERE produto IS NOT NULL"
     ).fetchall()
-    estoque_map = {r[0].strip().lower(): (r[1] or 0) for r in estoque_rows if r[0]}
+    estoque_por_codigo: dict = {}
+    estoque_por_nome:   dict = {}
+    for cod_e, prod_e, qtd_e in estoque_rows:
+        if not prod_e:
+            continue
+        qtd_e = qtd_e or 0
+        cod_norm = _norm_codigo(cod_e)
+        if cod_norm:
+            estoque_por_codigo[cod_norm] = qtd_e
+        estoque_por_nome[prod_e.strip().lower()] = qtd_e
 
     # 3. Agrupa posições e quantidades por produto_id
     from collections import defaultdict
     posicoes_por_produto: dict  = defaultdict(list)   # pid → [(pos_key, qtd_atual)]
     nome_por_produto:     dict  = {}
-    for pid, nome, pos_key, qtd in mapa_rows:
+    codigo_por_produto:   dict  = {}
+    for pid, nome, codigo, pos_key, qtd in mapa_rows:
         posicoes_por_produto[pid].append((pos_key, qtd))
-        nome_por_produto[pid] = nome
+        nome_por_produto[pid]   = nome
+        codigo_por_produto[pid] = _norm_codigo(codigo)
 
     atualizadas = 0
     sem_match:   list = []
+    sem_codigo:  list = []
+    por_codigo = 0
+    por_nome   = 0
     now = datetime.now(tz=_BRT).isoformat()
 
     # Acumula apenas posições cuja quantidade realmente muda — no Turso
@@ -717,12 +743,26 @@ def sync_quantidades_from_estoque(conn) -> dict:
     to_write: list = []
 
     for pid, posicoes in posicoes_por_produto.items():
-        nome        = nome_por_produto[pid]
-        qtd_estoque = estoque_map.get(nome.strip().lower())
+        nome = nome_por_produto[pid]
+        cod  = codigo_por_produto[pid]
+
+        if not cod:
+            sem_codigo.append(nome)
+
+        # Código manda; nome só entra quando o código não resolve.
+        qtd_estoque = estoque_por_codigo.get(cod) if cod else None
+        via_codigo  = qtd_estoque is not None
+        if qtd_estoque is None:
+            qtd_estoque = estoque_por_nome.get(nome.strip().lower())
 
         if qtd_estoque is None:
             sem_match.append(nome)
             continue
+
+        if via_codigo:
+            por_codigo += len(posicoes)
+        else:
+            por_nome += len(posicoes)
 
         pos_keys   = [p[0] for p in posicoes]
         qtd_atuais = [p[1] for p in posicoes]
@@ -759,4 +799,11 @@ def sync_quantidades_from_estoque(conn) -> dict:
 
     conn.commit()
     _clear_mapa_caches()
-    return {"atualizadas": atualizadas, "sem_match": sem_match, "alteradas": len(to_write)}
+    return {
+        "atualizadas": atualizadas,
+        "sem_match":   sem_match,
+        "alteradas":   len(to_write),
+        "por_codigo":  por_codigo,
+        "por_nome":    por_nome,
+        "sem_codigo":  sem_codigo,
+    }
