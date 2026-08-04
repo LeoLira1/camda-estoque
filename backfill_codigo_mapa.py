@@ -270,13 +270,22 @@ def executar(conn, fonte: list, aplicar: bool, forcar: bool) -> dict:
     nome_por_codigo = {cod: nome for cod, nome in fonte}
 
     casados, ambiguos, nao_encontrados, ja_tinham, conflitos = [], [], [], [], []
-    escritas = []
-    # Códigos já em uso no mapa: o índice único é global, então o backfill
-    # precisa respeitá-lo antes de propor qualquer escrita.
+    escritas_principal, escritas_conjunto = [], []
+    # Todo código já vinculado no mapa, principal ou secundário: a unicidade
+    # é global, então o backfill precisa respeitá-la antes de propor escrita.
     em_uso = {
         norm_codigo(c): (pid, nome)
         for pid, nome, c in produtos if norm_codigo(c)
     }
+    ja_vinculados = defaultdict(set)
+    for pid, cod in conn.execute(
+        "SELECT produto_id, codigo FROM mapa_produtos_codigos"
+    ).fetchall():
+        cod_n = norm_codigo(cod)
+        if cod_n:
+            ja_vinculados[pid].add(cod_n)
+            nome_pid = next((n for p, n, _ in produtos if p == pid), "")
+            em_uso.setdefault(cod_n, (pid, nome_pid))
 
     for pid, nome, cod_atual in produtos:
         cod_atual_n = norm_codigo(cod_atual)
@@ -289,35 +298,57 @@ def executar(conn, fonte: list, aplicar: bool, forcar: bool) -> dict:
         if not candidatos:
             nao_encontrados.append(nome)
             continue
-        if len(candidatos) > 1:
+
+        # Vários candidatos com o MESMO nome de produto não são ambiguidade:
+        # são os múltiplos códigos ativos do mesmo item (o par numérico e o
+        # alfanumérico). Ambiguidade real é candidato com nome diferente.
+        nomes_distintos = {norm_nome(nome_por_codigo.get(c, "")) for c in candidatos}
+        if len(nomes_distintos) > 1:
             ambiguos.append((nome, camada, [
                 (c, nome_por_codigo.get(c, "")) for c in candidatos[:6]
             ]))
             continue
 
-        novo = candidatos[0]
-        if novo == cod_atual_n:
+        livres = []
+        for c in candidatos:
+            dono = em_uso.get(c)
+            if dono and dono[0] != pid:
+                conflitos.append((nome, c, dono[1]))
+            else:
+                livres.append(c)
+        if not livres:
+            continue
+
+        novos = [c for c in livres if c not in ja_vinculados.get(pid, set())]
+        if not novos and cod_atual_n in livres:
             ja_tinham.append((nome, cod_atual_n))
             continue
 
-        dono = em_uso.get(novo)
-        if dono and dono[0] != pid:
-            conflitos.append((nome, novo, dono[1]))
-            continue
+        principal = cod_atual_n if (cod_atual_n in livres and not forcar) else livres[0]
+        casados.append((nome, principal, nome_por_codigo.get(principal, ""),
+                        camada, cod_atual_n, livres))
+        if principal != cod_atual_n:
+            escritas_principal.append((principal, pid))
+        for c in livres:
+            if c not in ja_vinculados.get(pid, set()):
+                escritas_conjunto.append((pid, c))
+            em_uso[c] = (pid, nome)
+            ja_vinculados[pid].add(c)
 
-        casados.append((nome, novo, nome_por_codigo.get(novo, ""), camada,
-                        cod_atual_n))
-        escritas.append((novo, pid))
-        em_uso[novo] = (pid, nome)
-        if cod_atual_n:
-            em_uso.pop(cod_atual_n, None)
-
-    if escritas and aplicar:
+    if aplicar and (escritas_principal or escritas_conjunto):
         # Turso embedded replica: cada escrita é round-trip de rede, então
-        # o UPDATE vai em lote único em vez de um por produto.
-        conn.executemany(
-            "UPDATE mapa_produtos SET codigo = ? WHERE produto_id = ?", escritas
-        )
+        # tudo vai em lote em vez de um statement por produto.
+        if escritas_principal:
+            conn.executemany(
+                "UPDATE mapa_produtos SET codigo = ? WHERE produto_id = ?",
+                escritas_principal,
+            )
+        if escritas_conjunto:
+            conn.executemany(
+                "INSERT OR IGNORE INTO mapa_produtos_codigos (produto_id, codigo) "
+                "VALUES (?, ?)",
+                escritas_conjunto,
+            )
         conn.commit()
         try:
             conn.sync()
@@ -327,7 +358,9 @@ def executar(conn, fonte: list, aplicar: bool, forcar: bool) -> dict:
     return {
         "casados": casados, "ambiguos": ambiguos,
         "nao_encontrados": nao_encontrados, "ja_tinham": ja_tinham,
-        "conflitos": conflitos, "escritas": len(escritas),
+        "conflitos": conflitos,
+        "escritas": len(escritas_principal) + len(escritas_conjunto),
+        "vinculos": len(escritas_conjunto),
         "total_mapa": len(produtos),
     }
 
@@ -359,9 +392,13 @@ def imprimir_relatorio(res: dict, aplicar: bool):
     print(f"\n{'=' * 72}\nBACKFILL mapa_produtos.codigo — {modo}\n{'=' * 72}")
 
     print(f"\n── Casados: {len(res['casados'])} ──")
-    for nome, cod, nome_fonte, camada, antigo in res["casados"]:
+    for nome, cod, nome_fonte, camada, antigo, todos in res["casados"]:
         antes = f" (era {antigo})" if antigo else ""
         print(f"  ✓ {nome}{antes}\n      → {cod}  [{camada}]  {nome_fonte}")
+        extras = [c for c in todos if c != cod]
+        if extras:
+            print(f"      + {len(extras)} código(s) adicional(is) do mesmo "
+                  f"produto: {', '.join(extras)}")
 
     print(f"\n── Ambíguos (não escritos): {len(res['ambiguos'])} ──")
     for nome, camada, cands in res["ambiguos"]:
@@ -389,9 +426,11 @@ def imprimir_relatorio(res: dict, aplicar: bool):
           f"{len(res['nao_encontrados'])} | conflitos: {len(res['conflitos'])} "
           f"| já tinham: {len(res['ja_tinham'])}")
     if aplicar:
-        print(f"Linhas atualizadas: {res['escritas']}")
+        print(f"Escritas: {res['escritas']} "
+              f"({res['vinculos']} vínculo(s) de código)")
     else:
-        print(f"Seriam atualizadas: {res['escritas']}  → rode com --apply "
+        print(f"Seriam escritas: {res['escritas']} "
+              f"({res['vinculos']} vínculo(s) de código)  → rode com --apply "
               f"para gravar")
     print("-" * 72)
 
