@@ -79,11 +79,18 @@ def _get_secret(key: str) -> str:
 
 def conectar():
     """Abre a mesma conexão que o app usa (réplica embarcada + sync)."""
-    import libsql
+    try:
+        import libsql
+    except ModuleNotFoundError:
+        raise SystemExit(
+            "ERRO: módulo 'libsql' não instalado.\n"
+            "  pip install -r requirements.txt"
+        )
 
     url = _get_secret("TURSO_DATABASE_URL")
     token = _get_secret("TURSO_AUTH_TOKEN")
 
+    ja_existia = os.path.exists(LOCAL_DB_PATH)
     if url and token:
         conn = libsql.connect(LOCAL_DB_PATH, sync_url=url, auth_token=token)
         conn.sync()
@@ -92,7 +99,37 @@ def conectar():
         conn = libsql.connect(LOCAL_DB_PATH)
         print(f"→ MODO LOCAL: {LOCAL_DB_PATH} "
               "(sem TURSO_DATABASE_URL/TURSO_AUTH_TOKEN)")
+        if not ja_existia:
+            # Conectar já cria o arquivo vazio. Deixá-lo para trás faz a
+            # próxima execução COM credenciais falhar com "invalid local
+            # state: db file exists but metadata file does not".
+            print(f"  ATENÇÃO: {os.path.basename(LOCAL_DB_PATH)} não existia e "
+                  "foi criado vazio por esta conexão.\n"
+                  "  Configure TURSO_DATABASE_URL/TURSO_AUTH_TOKEN e apague "
+                  "esse arquivo antes de rodar de novo.")
     return conn
+
+
+_TABELAS_NECESSARIAS = ("mapa_produtos", "estoque_mestre")
+
+
+def checar_tabelas(conn, tabelas=_TABELAS_NECESSARIAS):
+    """Falha cedo e com mensagem clara se o banco não tiver as tabelas."""
+    existentes = {
+        r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    faltando = [t for t in tabelas if t not in existentes]
+    if faltando:
+        raise SystemExit(
+            f"ERRO: banco sem a(s) tabela(s): {', '.join(faltando)}.\n"
+            f"  Tabelas encontradas: {', '.join(sorted(existentes)) or '(nenhuma)'}\n"
+            "  Provável causa: rodou sem credenciais e caiu num camda_local.db "
+            "vazio.\n"
+            "  Configure TURSO_DATABASE_URL e TURSO_AUTH_TOKEN "
+            "(.streamlit/secrets.toml, .env ou ambiente) e tente de novo."
+        )
 
 
 # ── Normalização ──────────────────────────────────────────────────────────────
@@ -364,9 +401,11 @@ def main(argv=None):
     conn = conectar()
 
     if args.orfaos:
+        checar_tabelas(conn)
         relatar_orfaos(conn)
         return 0
 
+    checar_tabelas(conn)
     if args.source == "xlsx":
         fonte = carregar_do_xlsx(args.xlsx)
         print(f"→ fonte: {args.xlsx} ({len(fonte)} produto(s) com código)")
