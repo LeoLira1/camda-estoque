@@ -1,6 +1,17 @@
 # Fixado: atualizações automáticas do Streamlit Cloud já quebraram o app
 # (abas, deprecação de st.components.v1.html). st.iframe requer >= 1.58.
 streamlit==1.59.0
+# starlette 1.4.0 tornou `thread_minimum_size` um argumento keyword-only
+# OBRIGATÓRIO em GZipResponder.__init__. O middleware de gzip do próprio
+# streamlit 1.59.0 (MediaAwareGZipMiddleware) não passa esse argumento, então
+# TODA requisição HTTP morre com
+#   TypeError: GZipResponder.__init__() missing 1 required keyword-only
+#              argument: 'thread_minimum_size'
+# e o app nem chega a servir a página — o Streamlit Cloud mostra só
+# "Oh no. Error running app.". Como o streamlit declara apenas
+# `starlette>=0.40.0` (sem teto), qualquer redeploy instala a versão nova e
+# derruba o dashboard. Mantenha o teto até subir de versão do streamlit.
+starlette>=0.40.0,<1.4
 # pandas 3.x muda o dtype padrão de strings (Arrow) e causa segfault na
 # construção de DataFrames deste app — manter na série 2.x.
 pandas>=2.0.0,<3
