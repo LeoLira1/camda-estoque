@@ -13581,6 +13581,18 @@ new Chart(document.getElementById('coop-chart'),{
             else:
                 st.success(f"✅ Todos os {len(_parceiros_todos)} clientes já tiveram os produtos separados!")
 
+        st.markdown("""<style>
+.st-key-mat_armazem_sel [data-baseweb="select"] [data-baseweb="value"],
+.st-key-mat_armazem_sel [data-baseweb="select"] input,
+.st-key-mat_tipo_sel [data-baseweb="select"] [data-baseweb="value"],
+.st-key-mat_tipo_sel [data-baseweb="select"] input,
+.st-key-mat_cooperado_sel [data-baseweb="select"] [data-baseweb="value"],
+.st-key-mat_cooperado_sel [data-baseweb="select"] input,
+.st-key-mat_busca_produto [data-baseweb="select"] [data-baseweb="value"],
+.st-key-mat_busca_produto [data-baseweb="select"] input {
+    color: #60a5fa !important;
+}
+</style>""", unsafe_allow_html=True)
         st.markdown('<div style="margin:10px 0 6px;"></div>', unsafe_allow_html=True)
         _mf1, _mf2 = st.columns(2)
         with _mf1:
