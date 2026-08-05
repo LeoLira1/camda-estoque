@@ -13581,16 +13581,27 @@ new Chart(document.getElementById('coop-chart'),{
             else:
                 st.success(f"✅ Todos os {len(_parceiros_todos)} clientes já tiveram os produtos separados!")
 
+        # Os nomes dos filtros (Armazém, Tipo, Cooperado, Produto, Visualização)
+        # saíam ilegíveis: o app pinta o próprio fundo escuro (#0a0f1a), mas o
+        # tema do Streamlit continua o claro, então o label fica no #31333F
+        # padrão — contraste de ~1.4:1 sobre o fundo escuro.
+        #
+        # A tentativa anterior mirava [data-baseweb="select"], que não existe
+        # mais: o selectbox do Streamlit 1.59 é react-aria (.react-aria-ComboBox),
+        # não BaseWeb, então aquele CSS não casava com nada. O alvo certo é o
+        # <p> dentro de label[data-testid="stWidgetLabel"].
+        #
+        # Só o label muda de cor. O valor selecionado fica como está: ele é
+        # escuro sobre a caixa clara (#f0f2f6) e já se lê bem — pintá-lo de
+        # azul pioraria o contraste (cairia para ~2.6:1).
         st.markdown("""<style>
-.st-key-mat_armazem_sel [data-baseweb="select"] [data-baseweb="value"],
-.st-key-mat_armazem_sel [data-baseweb="select"] input,
-.st-key-mat_tipo_sel [data-baseweb="select"] [data-baseweb="value"],
-.st-key-mat_tipo_sel [data-baseweb="select"] input,
-.st-key-mat_cooperado_sel [data-baseweb="select"] [data-baseweb="value"],
-.st-key-mat_cooperado_sel [data-baseweb="select"] input,
-.st-key-mat_busca_produto [data-baseweb="select"] [data-baseweb="value"],
-.st-key-mat_busca_produto [data-baseweb="select"] input {
+.st-key-mat_armazem_sel [data-testid="stWidgetLabel"] p,
+.st-key-mat_tipo_sel [data-testid="stWidgetLabel"] p,
+.st-key-mat_cooperado_sel [data-testid="stWidgetLabel"] p,
+.st-key-mat_busca_produto [data-testid="stWidgetLabel"] p,
+.st-key-mat_modo_view [data-testid="stWidgetLabel"] p {
     color: #60a5fa !important;
+    font-weight: 600;
 }
 </style>""", unsafe_allow_html=True)
         st.markdown('<div style="margin:10px 0 6px;"></div>', unsafe_allow_html=True)
