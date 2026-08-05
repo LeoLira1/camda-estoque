@@ -13284,7 +13284,7 @@ new Chart(document.getElementById('coop-chart'),{
     if _dash_tab == _TAB_ESTOCADOS:
         st.markdown(
             '<div style="font-size:1.05rem;font-weight:700;color:#e0e6ed;'
-            'margin-bottom:12px;">📦 Materiais Em Poder de Terceiros — MATR480</div>',
+            'margin-bottom:12px;">🏪 Produtos armazenados dos Cooperados</div>',
             unsafe_allow_html=True,
         )
 
