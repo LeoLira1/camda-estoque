@@ -4407,6 +4407,38 @@ def get_retiradas_terceiros(
 
 
 @st.cache_data(ttl=120)
+def get_retiradas_mes(
+    ano_mes: str,
+    grupos_excluir: tuple[str, ...] | None = None,
+) -> pd.DataFrame:
+    """Retorna as retiradas de um mês inteiro (ano_mes no formato 'YYYY-MM')."""
+    cols = [
+        "id", "data_movimento", "cooperado", "codigo_produto", "descricao",
+        "grupo", "qtd_anterior", "qtd_atual", "qtd_retirada",
+        "data_ref_anterior", "registrado_em",
+    ]
+    try:
+        where_clauses: list[str] = ["strftime('%Y-%m', data_movimento) = ?"]
+        params: list = [ano_mes]
+        if grupos_excluir:
+            placeholders = ",".join("?" * len(grupos_excluir))
+            where_clauses.append(f"UPPER(COALESCE(grupo,'')) NOT IN ({placeholders})")
+            params.extend(g.upper() for g in grupos_excluir)
+        where = "WHERE " + " AND ".join(where_clauses)
+        rows = get_db().execute(
+            f"SELECT id, data_movimento, cooperado, codigo_produto, descricao,"
+            f" grupo, qtd_anterior, qtd_atual, qtd_retirada,"
+            f" data_ref_anterior, registrado_em"
+            f" FROM retiradas_terceiros {where}"
+            f" ORDER BY data_movimento DESC, cooperado, descricao",
+            params,
+        ).fetchall()
+        return pd.DataFrame(rows, columns=cols)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
+
+@st.cache_data(ttl=120)
 def get_retiradas_datas() -> list:
     """Retorna as datas (YYYY-MM-DD) que possuem retiradas registradas, mais recente primeiro."""
     try:
@@ -13415,146 +13447,286 @@ new Chart(document.getElementById('coop-chart'),{
                 except (ValueError, TypeError):
                     _data_padrao = datetime.now(tz=_BRT).date()
 
-                _rc1, _rc2 = st.columns([1, 2])
-                with _rc1:
-                    _dia_ret = st.date_input(
-                        "📅 Dia da retirada",
-                        value=_data_padrao,
-                        format="DD/MM/YYYY",
-                        key="matr480_ret_data",
-                    )
-                _dia_ret_str = _dia_ret.strftime("%Y-%m-%d") if _dia_ret else ""
-
-                _df_ret_dia = get_retiradas_terceiros(
-                    data_movimento=_dia_ret_str,
-                    grupos_excluir=_GRUPOS_OCULTOS_PADRAO,
+                # Modo de visualização: dia específico ou mês inteiro
+                _ret_modo = st.radio(
+                    "Período",
+                    ["📅 Por dia", "📆 Mês inteiro"],
+                    horizontal=True,
+                    key="matr480_ret_modo",
+                    label_visibility="collapsed",
                 )
+                _ret_modo_mes = _ret_modo == "📆 Mês inteiro"
 
-                with _rc2:
-                    _coop_ret_opts = ["Todos"] + sorted(
-                        _df_ret_dia["cooperado"].dropna().unique().tolist()
+                if _ret_modo_mes:
+                    # Extrai meses únicos das datas disponíveis
+                    _meses_disp = sorted(
+                        {_d[:7] for _d in _datas_ret if _d},
+                        reverse=True,
                     )
-                    if st.session_state.get("matr480_ret_coop", "Todos") not in _coop_ret_opts:
-                        st.session_state["matr480_ret_coop"] = "Todos"
-                    _coop_ret_sel = st.selectbox(
-                        "Cooperado",
-                        _coop_ret_opts,
-                        key="matr480_ret_coop",
-                        help="Digite para filtrar por nome do cooperado",
-                    )
-
-                _dias_txt = ", ".join(
-                    datetime.strptime(_d, "%Y-%m-%d").strftime("%d/%m/%Y")
-                    for _d in _datas_ret[:10]
-                    if _d
-                )
-                if len(_datas_ret) > 10:
-                    _dias_txt += f" e mais {len(_datas_ret) - 10}"
-                st.caption(f"📆 Dias com retiradas registradas: {_dias_txt}")
-
-                if _coop_ret_sel != "Todos":
-                    _df_ret_dia = _df_ret_dia[_df_ret_dia["cooperado"] == _coop_ret_sel]
-
-                if _df_ret_dia.empty:
-                    st.info(
-                        f"Nenhuma retirada registrada em "
-                        f"{_dia_ret.strftime('%d/%m/%Y') if _dia_ret else '—'}."
-                    )
-                else:
-                    # Consolida por cooperado + produto (uma linha por produto)
-                    _ret_agg = (
-                        _df_ret_dia
-                        .groupby(["cooperado", "descricao"], as_index=False)
-                        .agg(
-                            codigo_produto=("codigo_produto", "first"),
-                            qtd_anterior=("qtd_anterior", "sum"),
-                            qtd_atual=("qtd_atual", "sum"),
-                            qtd_retirada=("qtd_retirada", "sum"),
+                    _mes_opts = [
+                        datetime.strptime(_m, "%Y-%m").strftime("%B/%Y").capitalize()
+                        for _m in _meses_disp
+                    ]
+                    _rmc1, _rmc2 = st.columns([1, 2])
+                    with _rmc1:
+                        _mes_idx = st.selectbox(
+                            "📆 Mês",
+                            range(len(_mes_opts)),
+                            format_func=lambda i: _mes_opts[i],
+                            key="matr480_ret_mes",
                         )
-                        .sort_values(["cooperado", "descricao"])
+                    _ano_mes_sel = _meses_disp[_mes_idx]
+
+                    _df_ret_mes = get_retiradas_mes(
+                        ano_mes=_ano_mes_sel,
+                        grupos_excluir=_GRUPOS_OCULTOS_PADRAO,
                     )
 
-                    _mr1, _mr2, _mr3 = st.columns(3)
-                    _mr1.metric("Cooperados", _ret_agg["cooperado"].nunique())
-                    _mr2.metric("Produtos", len(_ret_agg))
-                    _mr3.metric(
-                        "Total retirado (un.)",
-                        _fmt_qtd(float(_ret_agg["qtd_retirada"].sum())),
-                    )
-
-                    for _coop_r in _ret_agg["cooperado"].unique().tolist():
-                        _df_cr = _ret_agg[_ret_agg["cooperado"] == _coop_r]
-                        _tot_cr = float(_df_cr["qtd_retirada"].sum())
-                        st.markdown(
-                            f'<div style="margin:16px 0 6px;padding:8px 14px;'
-                            f'background:#1e293b;border-left:4px solid #f97316;border-radius:4px;">'
-                            f'<span style="color:#93c5fd;font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
-                            f'<span style="color:#64748b;font-size:0.73rem;margin-left:10px;">'
-                            f'{len(_df_cr)} produto(s) · Retirado: '
-                            f'<b style="color:#fb923c">{_fmt_qtd(_tot_cr)}</b> un.'
-                            f'</span></div>',
-                            unsafe_allow_html=True,
+                    with _rmc2:
+                        _coop_mes_opts = ["Todos"] + sorted(
+                            _df_ret_mes["cooperado"].dropna().unique().tolist()
                         )
-                        _rows_ret = ""
-                        for _, _rr in _df_cr.iterrows():
-                            _rows_ret += (
-                                f'<tr>'
-                                f'<td style="padding:7px 10px;color:#e0e6ed;">{_rr["descricao"]}</td>'
-                                f'<td style="padding:7px 10px;color:#64748b;font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
-                                f'<td style="padding:7px 10px;color:#94a3b8;font-size:0.78rem;text-align:right;">'
-                                f'{_fmt_qtd(float(_rr["qtd_anterior"]))} → {_fmt_qtd(float(_rr["qtd_atual"]))}</td>'
-                                f'<td style="padding:7px 10px;color:#fb923c;font-weight:700;text-align:right;">'
-                                f'−{_fmt_qtd(float(_rr["qtd_retirada"]))} un.</td>'
-                                f'</tr>'
+                        if st.session_state.get("matr480_ret_coop_mes", "Todos") not in _coop_mes_opts:
+                            st.session_state["matr480_ret_coop_mes"] = "Todos"
+                        _coop_mes_sel = st.selectbox(
+                            "Cooperado",
+                            _coop_mes_opts,
+                            key="matr480_ret_coop_mes",
+                            help="Digite para filtrar por nome do cooperado",
+                        )
+
+                    _dias_mes = sorted(
+                        {_d for _d in _datas_ret if _d and _d[:7] == _ano_mes_sel}
+                    )
+                    _dias_mes_txt = ", ".join(
+                        datetime.strptime(_d, "%Y-%m-%d").strftime("%d/%m")
+                        for _d in _dias_mes
+                    )
+                    st.caption(f"📆 Dias com retiradas neste mês: {_dias_mes_txt or '—'}")
+
+                    if _coop_mes_sel != "Todos":
+                        _df_ret_mes = _df_ret_mes[_df_ret_mes["cooperado"] == _coop_mes_sel]
+
+                    if _df_ret_mes.empty:
+                        st.info(f"Nenhuma retirada registrada em {_mes_opts[_mes_idx]}.")
+                    else:
+                        # Consolida por cooperado + produto somando todas as retiradas do mês
+                        _ret_mes_agg = (
+                            _df_ret_mes
+                            .groupby(["cooperado", "descricao"], as_index=False)
+                            .agg(
+                                codigo_produto=("codigo_produto", "first"),
+                                qtd_retirada=("qtd_retirada", "sum"),
+                                ocorrencias=("data_movimento", "nunique"),
                             )
-                        st.markdown(
-                            f'<table style="width:100%;border-collapse:collapse;'
-                            f'background:#0f172a;border-radius:6px;overflow:hidden;margin-bottom:4px;">'
-                            f'<thead><tr style="background:#1e293b;">'
-                            f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">PRODUTO</th>'
-                            f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
-                            f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">ANTES → DEPOIS</th>'
-                            f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">RETIRADO</th>'
-                            f'</tr></thead>'
-                            f'<tbody>{_rows_ret}</tbody>'
-                            f'</table>',
-                            unsafe_allow_html=True,
+                            .sort_values(["cooperado", "descricao"])
                         )
 
-                    _csv_ret = _ret_agg.rename(columns={
-                        "cooperado": "COOPERADO",
-                        "descricao": "PRODUTO",
-                        "codigo_produto": "CODIGO",
-                        "qtd_anterior": "QTD_ANTERIOR",
-                        "qtd_atual": "QTD_ATUAL",
-                        "qtd_retirada": "QTD_RETIRADA",
-                    }).to_csv(index=False, sep=";", decimal=",")
-                    _dl_col, _del_col = st.columns([1, 1])
-                    with _dl_col:
+                        _mr1, _mr2, _mr3 = st.columns(3)
+                        _mr1.metric("Cooperados", _ret_mes_agg["cooperado"].nunique())
+                        _mr2.metric("Produtos distintos", _ret_mes_agg["descricao"].nunique())
+                        _mr3.metric(
+                            "Total retirado (un.)",
+                            _fmt_qtd(float(_ret_mes_agg["qtd_retirada"].sum())),
+                        )
+
+                        for _coop_r in _ret_mes_agg["cooperado"].unique().tolist():
+                            _df_cr = _ret_mes_agg[_ret_mes_agg["cooperado"] == _coop_r]
+                            _tot_cr = float(_df_cr["qtd_retirada"].sum())
+                            st.markdown(
+                                f'<div style="margin:16px 0 6px;padding:8px 14px;'
+                                f'background:#1e293b;border-left:4px solid #f97316;border-radius:4px;">'
+                                f'<span style="color:#93c5fd;font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
+                                f'<span style="color:#64748b;font-size:0.73rem;margin-left:10px;">'
+                                f'{len(_df_cr)} produto(s) · Retirado no mês: '
+                                f'<b style="color:#fb923c">{_fmt_qtd(_tot_cr)}</b> un.'
+                                f'</span></div>',
+                                unsafe_allow_html=True,
+                            )
+                            _rows_mes = ""
+                            for _, _rr in _df_cr.iterrows():
+                                _ocorr = int(_rr["ocorrencias"])
+                                _dias_label = f"{_ocorr} dia{'s' if _ocorr != 1 else ''}"
+                                _rows_mes += (
+                                    f'<tr>'
+                                    f'<td style="padding:7px 10px;color:#e0e6ed;">{_rr["descricao"]}</td>'
+                                    f'<td style="padding:7px 10px;color:#64748b;font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
+                                    f'<td style="padding:7px 10px;color:#94a3b8;font-size:0.78rem;text-align:center;">{_dias_label}</td>'
+                                    f'<td style="padding:7px 10px;color:#fb923c;font-weight:700;text-align:right;">'
+                                    f'−{_fmt_qtd(float(_rr["qtd_retirada"]))} un.</td>'
+                                    f'</tr>'
+                                )
+                            st.markdown(
+                                f'<table style="width:100%;border-collapse:collapse;'
+                                f'background:#0f172a;border-radius:6px;overflow:hidden;margin-bottom:4px;">'
+                                f'<thead><tr style="background:#1e293b;">'
+                                f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">PRODUTO</th>'
+                                f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
+                                f'<th style="padding:8px 10px;text-align:center;color:#64748b;font-size:0.75rem;font-weight:600;">OCORRÊNCIAS</th>'
+                                f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">TOTAL RETIRADO</th>'
+                                f'</tr></thead>'
+                                f'<tbody>{_rows_mes}</tbody>'
+                                f'</table>',
+                                unsafe_allow_html=True,
+                            )
+
+                        _csv_mes = _ret_mes_agg.rename(columns={
+                            "cooperado": "COOPERADO",
+                            "descricao": "PRODUTO",
+                            "codigo_produto": "CODIGO",
+                            "qtd_retirada": "QTD_RETIRADA_MES",
+                            "ocorrencias": "DIAS_COM_RETIRADA",
+                        }).to_csv(index=False, sep=";", decimal=",")
                         st.download_button(
-                            "⬇️ Baixar retiradas do dia (.csv)",
-                            data=_csv_ret.encode("utf-8-sig"),
-                            file_name=f"retiradas_{_dia_ret_str}.csv",
+                            f"⬇️ Baixar retiradas de {_mes_opts[_mes_idx]} (.csv)",
+                            data=_csv_mes.encode("utf-8-sig"),
+                            file_name=f"retiradas_{_ano_mes_sel}.csv",
                             mime="text/csv",
-                            key="matr480_ret_dl",
+                            key="matr480_ret_mes_dl",
                             use_container_width=True,
                         )
-                    with _del_col:
-                        _conf_del_ret = st.checkbox(
-                            "Confirmar exclusão do dia",
-                            key="matr480_ret_del_conf",
+
+                else:
+                    _rc1, _rc2 = st.columns([1, 2])
+                    with _rc1:
+                        _dia_ret = st.date_input(
+                            "📅 Dia da retirada",
+                            value=_data_padrao,
+                            format="DD/MM/YYYY",
+                            key="matr480_ret_data",
                         )
-                        if st.button(
-                            "🗑️ Apagar retiradas deste dia",
-                            key="matr480_ret_del_btn",
-                            use_container_width=True,
-                            disabled=not _conf_del_ret,
-                        ):
-                            if delete_retiradas_por_data(_dia_ret_str):
-                                st.success("✅ Retiradas do dia removidas.")
-                                st.rerun()
-                            else:
-                                st.error("❌ Não foi possível remover as retiradas.")
+                    _dia_ret_str = _dia_ret.strftime("%Y-%m-%d") if _dia_ret else ""
+
+                    _df_ret_dia = get_retiradas_terceiros(
+                        data_movimento=_dia_ret_str,
+                        grupos_excluir=_GRUPOS_OCULTOS_PADRAO,
+                    )
+
+                    with _rc2:
+                        _coop_ret_opts = ["Todos"] + sorted(
+                            _df_ret_dia["cooperado"].dropna().unique().tolist()
+                        )
+                        if st.session_state.get("matr480_ret_coop", "Todos") not in _coop_ret_opts:
+                            st.session_state["matr480_ret_coop"] = "Todos"
+                        _coop_ret_sel = st.selectbox(
+                            "Cooperado",
+                            _coop_ret_opts,
+                            key="matr480_ret_coop",
+                            help="Digite para filtrar por nome do cooperado",
+                        )
+
+                    _dias_txt = ", ".join(
+                        datetime.strptime(_d, "%Y-%m-%d").strftime("%d/%m/%Y")
+                        for _d in _datas_ret[:10]
+                        if _d
+                    )
+                    if len(_datas_ret) > 10:
+                        _dias_txt += f" e mais {len(_datas_ret) - 10}"
+                    st.caption(f"📆 Dias com retiradas registradas: {_dias_txt}")
+
+                    if _coop_ret_sel != "Todos":
+                        _df_ret_dia = _df_ret_dia[_df_ret_dia["cooperado"] == _coop_ret_sel]
+
+                    if _df_ret_dia.empty:
+                        st.info(
+                            f"Nenhuma retirada registrada em "
+                            f"{_dia_ret.strftime('%d/%m/%Y') if _dia_ret else '—'}."
+                        )
+                    else:
+                        # Consolida por cooperado + produto (uma linha por produto)
+                        _ret_agg = (
+                            _df_ret_dia
+                            .groupby(["cooperado", "descricao"], as_index=False)
+                            .agg(
+                                codigo_produto=("codigo_produto", "first"),
+                                qtd_anterior=("qtd_anterior", "sum"),
+                                qtd_atual=("qtd_atual", "sum"),
+                                qtd_retirada=("qtd_retirada", "sum"),
+                            )
+                            .sort_values(["cooperado", "descricao"])
+                        )
+
+                        _mr1, _mr2, _mr3 = st.columns(3)
+                        _mr1.metric("Cooperados", _ret_agg["cooperado"].nunique())
+                        _mr2.metric("Produtos", len(_ret_agg))
+                        _mr3.metric(
+                            "Total retirado (un.)",
+                            _fmt_qtd(float(_ret_agg["qtd_retirada"].sum())),
+                        )
+
+                        for _coop_r in _ret_agg["cooperado"].unique().tolist():
+                            _df_cr = _ret_agg[_ret_agg["cooperado"] == _coop_r]
+                            _tot_cr = float(_df_cr["qtd_retirada"].sum())
+                            st.markdown(
+                                f'<div style="margin:16px 0 6px;padding:8px 14px;'
+                                f'background:#1e293b;border-left:4px solid #f97316;border-radius:4px;">'
+                                f'<span style="color:#93c5fd;font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
+                                f'<span style="color:#64748b;font-size:0.73rem;margin-left:10px;">'
+                                f'{len(_df_cr)} produto(s) · Retirado: '
+                                f'<b style="color:#fb923c">{_fmt_qtd(_tot_cr)}</b> un.'
+                                f'</span></div>',
+                                unsafe_allow_html=True,
+                            )
+                            _rows_ret = ""
+                            for _, _rr in _df_cr.iterrows():
+                                _rows_ret += (
+                                    f'<tr>'
+                                    f'<td style="padding:7px 10px;color:#e0e6ed;">{_rr["descricao"]}</td>'
+                                    f'<td style="padding:7px 10px;color:#64748b;font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
+                                    f'<td style="padding:7px 10px;color:#94a3b8;font-size:0.78rem;text-align:right;">'
+                                    f'{_fmt_qtd(float(_rr["qtd_anterior"]))} → {_fmt_qtd(float(_rr["qtd_atual"]))}</td>'
+                                    f'<td style="padding:7px 10px;color:#fb923c;font-weight:700;text-align:right;">'
+                                    f'−{_fmt_qtd(float(_rr["qtd_retirada"]))} un.</td>'
+                                    f'</tr>'
+                                )
+                            st.markdown(
+                                f'<table style="width:100%;border-collapse:collapse;'
+                                f'background:#0f172a;border-radius:6px;overflow:hidden;margin-bottom:4px;">'
+                                f'<thead><tr style="background:#1e293b;">'
+                                f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">PRODUTO</th>'
+                                f'<th style="padding:8px 10px;text-align:left;color:#64748b;font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
+                                f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">ANTES → DEPOIS</th>'
+                                f'<th style="padding:8px 10px;text-align:right;color:#64748b;font-size:0.75rem;font-weight:600;">RETIRADO</th>'
+                                f'</tr></thead>'
+                                f'<tbody>{_rows_ret}</tbody>'
+                                f'</table>',
+                                unsafe_allow_html=True,
+                            )
+
+                        _csv_ret = _ret_agg.rename(columns={
+                            "cooperado": "COOPERADO",
+                            "descricao": "PRODUTO",
+                            "codigo_produto": "CODIGO",
+                            "qtd_anterior": "QTD_ANTERIOR",
+                            "qtd_atual": "QTD_ATUAL",
+                            "qtd_retirada": "QTD_RETIRADA",
+                        }).to_csv(index=False, sep=";", decimal=",")
+                        _dl_col, _del_col = st.columns([1, 1])
+                        with _dl_col:
+                            st.download_button(
+                                "⬇️ Baixar retiradas do dia (.csv)",
+                                data=_csv_ret.encode("utf-8-sig"),
+                                file_name=f"retiradas_{_dia_ret_str}.csv",
+                                mime="text/csv",
+                                key="matr480_ret_dl",
+                                use_container_width=True,
+                            )
+                        with _del_col:
+                            _conf_del_ret = st.checkbox(
+                                "Confirmar exclusão do dia",
+                                key="matr480_ret_del_conf",
+                            )
+                            if st.button(
+                                "🗑️ Apagar retiradas deste dia",
+                                key="matr480_ret_del_btn",
+                                use_container_width=True,
+                                disabled=not _conf_del_ret,
+                            ):
+                                if delete_retiradas_por_data(_dia_ret_str):
+                                    st.success("✅ Retiradas do dia removidas.")
+                                    st.rerun()
+                                else:
+                                    st.error("❌ Não foi possível remover as retiradas.")
 
         # ── Filtros ────────────────────────────────────────────────────────
         _resumo = get_materiais_resumo()
