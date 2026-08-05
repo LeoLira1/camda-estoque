@@ -13854,9 +13854,8 @@ new Chart(document.getElementById('coop-chart'),{
                                 label_visibility="collapsed",
                             )
                         _cor_prod = "#4ade80" if _item_sep else "#e0e6ed"
-                        _risco = "text-decoration:line-through;opacity:0.65;" if _item_sep else ""
                         _rc2.markdown(
-                            f'<div style="color:{_cor_prod};font-size:0.84rem;{_risco}">'
+                            f'<div style="color:{_cor_prod};font-size:0.84rem;">'
                             f'{"✅ " if _item_sep else ""}{_prod_nome_r}</div>',
                             unsafe_allow_html=True,
                         )
