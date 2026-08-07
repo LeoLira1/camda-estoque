@@ -72,11 +72,16 @@ antemão em vez de redescobri-las:
    container, senão você inspeciona o esqueleto. E a `.camda-topbar` (além
    do overlay do item 4) intercepta cliques: use `click(force=True)`.
 
-8. **`pdfplumber` não importa neste sandbox.** O `cryptography` do sistema
-   levanta `pyo3_runtime.PanicException` no import, então qualquer teste que
-   abra PDF com ele morre. Não é problema do app (lá o parser MATR480 roda no
-   Streamlit Cloud). Para contar páginas de um PDF no teste, leia a estrutura:
-   `/Type /Page` e `/Count` nos bytes do arquivo.
+8. **`pdfplumber` não importa neste sandbox — conserte com `cffi`.** O import
+   morre com `pyo3_runtime.PanicException: Python API call failed` vindo do
+   `cryptography` do sistema, e o mesmo derruba `pypdf`. A causa **não** é o
+   `cryptography`: é o `_cffi_backend` que falta. `pip install cffi` resolve e
+   destrava os dois (não tente reinstalar o `cryptography` — ele vem do
+   Debian, sem RECORD, e o pip se recusa a desinstalar). Nada disso é problema
+   do app: no Streamlit Cloud o parser MATR480 roda normalmente.
+
+   Se por algum motivo o `cffi` não colar, o plano B para contar páginas de um
+   PDF é ler a estrutura: `/Type /Page` e `/Count` nos bytes do arquivo.
 
 ## Estrutura do dashboard
 
