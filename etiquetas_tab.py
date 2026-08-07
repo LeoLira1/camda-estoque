@@ -668,13 +668,53 @@ def _folhas_grade(itens: list, cfg: dict) -> list:
     ]
 
 
+# Aviso de impressão, visível na TELA e ausente na folha.
+#
+# O navegador imprime data, título e a URL `file:///home/.../etiquetas_x.html`
+# nas bordas quando "Cabeçalhos e rodapés" está marcado, e não existe CSS que
+# desligue isso — a decisão é do diálogo de impressão. Medido no Chromium com
+# a opção ligada: o cabeçalho termina a 8,6 mm do topo e o rodapé começa a
+# 8,2 mm da borda de baixo, então com as margens deste CSS (10 mm na grade,
+# 12 mm na etiqueta grande) ele NÃO alcança o QR nem invade a zona de
+# silêncio. Só que a folga no topo da grade é de 1,4 mm, e some se a pessoa
+# trocar "Margens" para "Nenhuma" no diálogo — aí a grade inteira sai
+# deslocada, não só o cabeçalho. Por isso o aviso fica no arquivo, onde quem
+# imprime está olhando, e não só na aba do Streamlit.
+_AVISO_IMPRESSAO = """<div class="etq-aviso">
+  <b>Para imprimir:</b> Ctrl+P → <b>A4</b>, <b>retrato</b>, escala
+  <b>100%</b> (não use "Ajustar à página") e <b>Margens: Padrão</b>.
+  Desmarque <b>“Cabeçalhos e rodapés”</b> para a data e o endereço do arquivo
+  não saírem impressos na borda da folha.
+  <span>Esta faixa não é impressa.</span>
+</div>"""
+
+_CSS_AVISO = """
+.etq-aviso {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.45;
+  color: #111;
+  background: #fff8c4;
+  border: 1px solid #d9c257;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 0 auto 8mm;
+  max-width: 186mm;
+}
+.etq-aviso span { display: block; font-size: 9pt; color: #6b6b4a; margin-top: 4px; }
+@media print { .etq-aviso { display: none !important; } }
+"""
+
+
 def _montar_documento(blocos: list, titulo: str, css: str = _CSS_ETIQUETA) -> str:
     """Documento HTML completo e autocontido (SVGs embutidos, zero rede)."""
     return (
         "<!DOCTYPE html>\n"
         '<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n'
         f"<title>{_esc.escape(titulo)}</title>\n"
-        f"<style>{css}</style>\n</head>\n<body>\n"
+        f"<style>{css}{_CSS_AVISO}</style>\n</head>\n<body>\n"
+        + _AVISO_IMPRESSAO
+        + "\n"
         + "\n".join(blocos)
         + "\n</body>\n</html>\n"
     )
@@ -1159,9 +1199,12 @@ def build_etiquetas_tab(get_db):
     # ── Download ─────────────────────────────────────────────────────────────
     st.markdown('<div class="etq-section">⬇️ Gerar folhas</div>', unsafe_allow_html=True)
     st.caption(
-        "Baixe o arquivo, abra no navegador e imprima com Ctrl+P (A4, retrato, "
-        "sem redimensionar). O arquivo é autocontido — os QR codes estão dentro "
-        "dele, não dependem de internet na hora de imprimir."
+        "Baixe o arquivo, abra no navegador e imprima com Ctrl+P: **A4**, "
+        "**retrato**, escala **100%** e **Margens: Padrão**. Desmarque "
+        "**“Cabeçalhos e rodapés”** — senão o navegador imprime a data e o "
+        "caminho do arquivo (`file:///...`) na borda da folha. O arquivo é "
+        "autocontido: os QR codes estão dentro dele, não dependem de internet "
+        "na hora de imprimir."
     )
 
     if rack_sel not in ("Todos os racks", "Sem posição no mapa"):
