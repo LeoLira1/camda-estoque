@@ -52,23 +52,49 @@ antemão em vez de redescobri-las:
 
 6. **Esperas no teste E2E.** O primeiro carregamento do dashboard com caches
    frios demora (>9s): faça polling pelos elementos (ex.:
-   `div.st-key-dash_nav button`, que deve ter 19 pills) em vez de
-   `wait_for_timeout` fixo. Critério de sucesso: 19 pills presentes E zero
+   `div.st-key-dash_nav button`) em vez de `wait_for_timeout` fixo. Critério
+   de sucesso: uma pill por entrada de `_DASH_TABS` (**hoje são 20**, não 19 —
+   confira a lista em vez de fixar o número) E zero
    `[data-testid="stException"]`. Cuidado com falso "PASS" quando a página
    nem chegou a carregar (0 pills ⇒ 0 exceções).
+
+7. **Seletores de widget no Playwright (streamlit 1.59).** `st.pills` e
+   `st.radio` renderizam DIFERENTE, e trocar um pelo outro dá 0 elementos
+   sem erro nenhum:
+   - `st.pills` → `button[role="radio"]`, sem `<input>`.
+   - `st.radio` → `label[data-testid="stRadioOption"]` com um
+     `input[type=radio]` escondido dentro; a opção **não** tem
+     `role="radio"`. O `<label>` do rótulo do widget também conta em
+     `label`, então contar `label` dá n+1.
+
+   Duas outras pegadinhas: `div.st-key-<key>` aparece primeiro contendo só
+   um `[data-testid="stSkeleton"]` — espere pelo widget de dentro, não pelo
+   container, senão você inspeciona o esqueleto. E a `.camda-topbar` (além
+   do overlay do item 4) intercepta cliques: use `click(force=True)`.
+
+8. **`pdfplumber` não importa neste sandbox.** O `cryptography` do sistema
+   levanta `pyo3_runtime.PanicException` no import, então qualquer teste que
+   abra PDF com ele morre. Não é problema do app (lá o parser MATR480 roda no
+   Streamlit Cloud). Para contar páginas de um PDF no teste, leia a estrutura:
+   `/Type /Page` e `/Count` nos bytes do arquivo.
 
 ## Estrutura do dashboard
 
 - A navegação principal usa `st.pills` (key=`dash_nav`) com renderização
   condicional: só o bloco `if _dash_tab == _TAB_X:` da aba ativa executa.
-  Não converta de volta para `st.tabs` — ele renderiza as 19 abas em todo
-  rerun e foi a causa da lentidão original.
+  Não converta de volta para `st.tabs` — ele renderiza todas as abas de
+  `_DASH_TABS` em todo rerun e foi a causa da lentidão original.
 - Labels das abas ficam estáticas (sem contadores) para não invalidar o
   widget entre reruns.
 - O expander "📤 Upload de Planilha" é um bloco `with` no nível do módulo:
   código de aba colocado depois dele por engano renderiza DENTRO do
   expander. Novas abas devem ficar dentro de `if has_mestre:`, antes da
   seção de Upload.
+- A aba 🏷️ Etiquetas (`etiquetas_tab.py`) não gera PDF: monta um HTML
+  autocontido que o usuário imprime com Ctrl+P (o A4 vem do `@page` do CSS).
+  Os tamanhos de etiqueta ficam no dict `_PRESETS` — um tamanho novo é uma
+  entrada nova ali, sem mexer em renderização. QR pelo `segno`, codificando
+  só o código do produto.
 - O campo de busca do header (key=`search_mestre`) é sobreposto ao topbar
   via CSS com paddings que reservam as zonas laterais (marca à esquerda,
   resumo operacional à direita) — breakpoints em 980px e 720px. Se mudar o
