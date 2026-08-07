@@ -40,6 +40,13 @@ Decisões que valem a pena registrar aqui:
    componente renderiza num iframe: Ctrl+P imprimiria a página do Streamlit
    inteira (menu, sidebar). O usuário baixa o arquivo, abre no navegador e
    imprime exatamente o que viu.
+
+6. **Tamanho da etiqueta é um preset, não campos numéricos soltos.** Ver
+   `_PRESETS`: cada entrada descreve uma folha inteira, e o renderizador de
+   grade deriva as medidas da célula da aritmética da folha. Uma folha
+   gerada tem sempre UM tamanho só — o preset é escolhido antes de gerar e
+   vale para o documento inteiro, então não existe mistura de tamanhos na
+   mesma página.
 """
 
 import hashlib
@@ -69,6 +76,71 @@ CRIT_MANUAL = "Digitar o lote à mão"
 CRIT_SEM = "Sem lote (só produto + QR)"
 
 _MAX_ETIQUETAS = 400  # trava de segurança: acima disso é engano de filtro
+
+# ── Presets de tamanho ────────────────────────────────────────────────────────
+# Adicionar um tamanho novo = acrescentar UMA entrada aqui, com `modo="grade"`.
+# Nada da renderização precisa mudar: `_medidas_grade` deriva a célula da
+# aritmética da folha ((folha − 2×margem − gaps) / n) e `_css_grade` emite o CSS
+# a partir dela — não há medida escrita à mão em nenhum dos dois. Ex.: um preset
+# de 5×5 cm com 12 por folha é colunas=3, linhas=4, qr_mm=50.
+#
+# Campos:
+#   modo           "folha" → uma etiqueta por página, com lote (renderizador
+#                            original, `_bloco_etiqueta`)
+#                  "grade" → N por página, só QR + nome (`_folhas_grade`)
+#   com_lote       se o seletor de critério de lote se aplica a este preset
+#   copias         se o campo "cópias por produto" aparece
+#   max_etiquetas  trava de segurança (engano de filtro)
+#   arquivo        prefixo do nome do arquivo baixado
+#   descricao      texto da UI
+# Só o modo "grade" usa os campos de medida:
+#   folha_mm       (largura, altura) da página em mm — (210, 297) é A4 retrato
+#   colunas/linhas, margem_mm, gap_mm, nome_pt
+#   qr_mm          lado do QR IMPRESSO, **incluindo** a zona de silêncio de 4
+#                  módulos que a norma exige (é o que se mede na folha com a
+#                  régua). Numa etiqueta de 30 mm o símbolo em si fica com
+#                  ~21,7 mm — módulos de ~1,0 mm, de sobra para leitura de
+#                  perto. Não vale reduzir o `border=4` para engordar o
+#                  símbolo: a margem branca é o que faz o leitor achar o
+#                  código. Se `qr_mm` não couber na célula, é reduzido para a
+#                  largura da célula em vez de estourar a folha.
+_PRESET_GRANDE = "Etiqueta grande (1 por folha)"
+_PRESET_PEQUENA = "Etiqueta pequena (30 por folha)"
+
+_PRESETS = {
+    _PRESET_GRANDE: {
+        "modo": "folha",
+        "com_lote": True,
+        "copias": False,
+        "max_etiquetas": _MAX_ETIQUETAS,
+        "arquivo": "etiquetas",
+        "descricao": (
+            "Uma folha A4 por etiqueta, com nome, código, validade e o lote em "
+            "número grande. QR de ~6,5 cm, para ler de longe no corredor."
+        ),
+    },
+    _PRESET_PEQUENA: {
+        "modo": "grade",
+        "com_lote": False,
+        "copias": True,
+        # 30 por folha: 400 etiquetas seriam só 14 folhas, o que tornaria a
+        # trava de 400 inútil como proteção contra engano de filtro. O que
+        # custa caro aqui é folha impressa, então o teto é ~40 folhas.
+        "max_etiquetas": 1200,
+        "arquivo": "etiquetas_pequenas",
+        "folha_mm": (210, 297),
+        "colunas": 5,
+        "linhas": 6,
+        "margem_mm": 10,
+        "gap_mm": 6,
+        "qr_mm": 30,
+        "nome_pt": 7,
+        "descricao": (
+            "Grade de 5 × 6 = 30 etiquetas por folha A4 retrato, cada uma com "
+            "QR de 30 mm e o nome do produto embaixo. Sem lote e sem validade."
+        ),
+    },
+}
 
 # A coluna PRODUTO da planilha SIG traz o CÓDIGO junto do nome
 # ("254185 - HERBICIDA BORAL 500 SC 20L"), e o upload grava a string inteira
@@ -291,8 +363,8 @@ _QR_SIMBOLO_EM = 6.5
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _bloco_qr(codigo: str) -> str:
-    """Bloco `<div class="etq-qr">` com o SVG do QR do código (texto puro).
+def _svg_qr(codigo: str) -> tuple:
+    """`(svg_inline, largura, altura, modulos_do_simbolo)` — medidas em módulos.
 
     error='q' (25% de tolerância a dano) e border=4 (margem branca exigida
     pela norma) não são estética: são o que decide se lê com poeira, vinco e
@@ -301,14 +373,13 @@ def _bloco_qr(codigo: str) -> str:
     couber no mesmo tamanho; 'q' é o piso.
 
     O `viewBox` é acrescentado à mão: o segno emite só width/height, e sem
-    viewBox o CSS que estica o QR para 7 cm apenas amplia a *viewport* — o
-    desenho continua no tamanho original e a folha sai com um pedaço do
-    canto do código em vez do símbolo inteiro.
+    viewBox o CSS que estica o QR apenas amplia a *viewport* — o desenho
+    continua no tamanho original e a folha sai com um pedaço do canto do
+    código em vez do símbolo inteiro.
 
-    A largura sai calculada em `em` a partir do número de módulos, para o
-    SÍMBOLO ficar sempre em `_QR_SIMBOLO_EM` independentemente da versão do
-    QR (um código mais longo usa mais módulos e um SVG proporcionalmente
-    maior). Em `em` a prévia da tela reduz junto com o resto do texto.
+    As medidas voltam em módulos (não em mm/em) porque cada preset escala o
+    mesmo SVG de um jeito diferente: a etiqueta grande dimensiona o SÍMBOLO em
+    `em`, a grade dimensiona o SVG INTEIRO em mm. Quem escala é o chamador.
     """
     qr = segno.make(codigo, error="q", micro=False)
     modulos_simbolo = qr.symbol_size(scale=1, border=0)[0]
@@ -319,6 +390,19 @@ def _bloco_qr(codigo: str) -> str:
         'preserveAspectRatio="xMidYMid meet" shape-rendering="crispEdges" ',
         1,
     )
+    return svg, largura, altura, modulos_simbolo
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _bloco_qr(codigo: str) -> str:
+    """Bloco `<div class="etq-qr">` do QR — etiqueta GRANDE (1 por folha).
+
+    A largura sai calculada em `em` a partir do número de módulos, para o
+    SÍMBOLO ficar sempre em `_QR_SIMBOLO_EM` independentemente da versão do
+    QR (um código mais longo usa mais módulos e um SVG proporcionalmente
+    maior). Em `em` a prévia da tela reduz junto com o resto do texto.
+    """
+    svg, largura, _altura, modulos_simbolo = _svg_qr(codigo)
     largura_em = _QR_SIMBOLO_EM * largura / modulos_simbolo
     return f'<div class="etq-qr" style="width:{largura_em:.3f}em">{svg}</div>'
 
@@ -440,13 +524,197 @@ def _bloco_etiqueta(item: dict, lote) -> str:
     return '<section class="etiqueta">' + "".join(partes) + "</section>"
 
 
-def _montar_documento(blocos: list, titulo: str) -> str:
+# ── Etiqueta em grade (N por folha) ───────────────────────────────────────────
+
+def _medidas_grade(cfg: dict) -> dict:
+    """Medidas da célula, derivadas da folha. Nenhum número escrito à mão.
+
+    Com o preset pequeno: (210 − 2×10 − 4×6)/5 = 33,2 mm de largura e
+    (297 − 2×10 − 5×6)/6 = 41,167 mm de altura por célula.
+
+    `qr_mm` é limitado à largura da célula: um preset futuro com QR maior do
+    que a célula sairia com a grade estourando a margem da folha e etiquetas
+    cortadas na impressão, em vez de um erro visível.
+    """
+    largura, altura = cfg["folha_mm"]
+    colunas, linhas = cfg["colunas"], cfg["linhas"]
+    margem, gap = cfg["margem_mm"], cfg["gap_mm"]
+    celula_l = (largura - 2 * margem - gap * (colunas - 1)) / colunas
+    celula_a = (altura - 2 * margem - gap * (linhas - 1)) / linhas
+    return {
+        "celula_l": celula_l,
+        "celula_a": celula_a,
+        "util_l": largura - 2 * margem,
+        "qr_mm": min(cfg["qr_mm"], celula_l),
+    }
+
+
+def _css_grade(cfg: dict, *, documento: bool) -> str:
+    """CSS da grade a partir do preset.
+
+    `documento=False` devolve só as regras da grade e da célula, para a prévia
+    dentro do Streamlit — as regras de `@page`/`body` não podem entrar na
+    página do app, senão reformatam o dashboard inteiro. `documento=True`
+    acrescenta essas regras, para o arquivo baixado.
+
+    O nome é truncado com reticências pelo próprio navegador
+    (`text-overflow: ellipsis`) em vez de por contagem de caracteres: quem
+    sabe quantos caracteres cabem em 33,2 mm é o motor de texto que vai
+    imprimir, com a fonte e o kerning reais.
+    """
+    med = _medidas_grade(cfg)
+    largura, altura = cfg["folha_mm"]
+
+    regras = f"""
+.etq-folha {{
+  display: grid;
+  grid-template-columns: repeat({cfg['colunas']}, {med['celula_l']:.3f}mm);
+  grid-auto-rows: {med['celula_a']:.3f}mm;
+  gap: {cfg['gap_mm']}mm;
+  justify-content: start;
+  align-content: start;
+  width: {med['util_l']:.3f}mm;
+  /* Repetido aqui (o `body` do documento já traz) para a prévia dentro do
+     Streamlit não herdar a fonte e a cor do tema escuro do dashboard. */
+  font-family: Helvetica, Arial, "Liberation Sans", sans-serif;
+  color: #000;
+}}
+.etq-mini {{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-align: center;
+}}
+.etq-mini-qr {{ width: {med['qr_mm']:.3f}mm; line-height: 0; }}
+.etq-mini-qr svg {{ width: 100%; height: auto; display: block; }}
+.etq-mini-nome {{
+  font-size: {cfg['nome_pt']}pt;
+  font-weight: 600;
+  line-height: 1.1;
+  margin-top: 0.8mm;
+  /* Ocupa a célula inteira (mais largo que o QR, para caber mais nome), menos
+     0,8 mm de cada lado: sem esse respiro o texto encosta na linha de corte e
+     a tesoura come as letras da ponta. `box-sizing` explícito porque o
+     padding tem que entrar PARA DENTRO dos 33,2 mm — a prévia no Streamlit
+     não herda o `* {{ box-sizing: border-box }}` do documento. */
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 0.8mm;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}}
+"""
+    if not documento:
+        return regras
+
+    return f"""
+@page {{ size: {largura}mm {altura}mm; margin: {cfg['margem_mm']}mm; }}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0;
+  background: #fff;
+  color: #000;
+  font-family: Helvetica, Arial, "Liberation Sans", sans-serif;
+}}
+.etq-folha {{ page-break-after: always; break-after: page; }}
+.etq-folha:last-child {{ page-break-after: auto; break-after: auto; }}
+{regras}
+@media screen {{
+  body {{ background: #e5e7eb; padding: 8mm; }}
+  .etq-folha {{
+    background: #fff;
+    box-shadow: 0 2px 10px rgba(0,0,0,.2);
+    margin: 0 auto 8mm;
+    padding: {cfg['margem_mm']}mm;
+    width: {largura}mm;
+  }}
+}}
+"""
+
+
+def _bloco_etiqueta_mini(item: dict) -> str:
+    """UMA célula da grade: QR + nome. Sem lote, sem validade, sem rodapé.
+
+    O QR carrega o mesmo conteúdo da etiqueta grande — só o código do produto,
+    texto puro. Como esse conteúdo não varia por lote, uma etiqueta por
+    produto é tudo o que existe para gerar aqui.
+    """
+    nome = item["nome"] or item["codigo_qr"]
+    return (
+        '<div class="etq-mini">'
+        f'<div class="etq-mini-qr">{_svg_qr(item["codigo_qr"])[0]}</div>'
+        f'<div class="etq-mini-nome" title="{_esc.escape(nome)}">'
+        f"{_esc.escape(nome)}</div>"
+        "</div>"
+    )
+
+
+def _folhas_grade(itens: list, cfg: dict) -> list:
+    """Fatia os itens em folhas de `colunas × linhas`. A última fica parcial.
+
+    Uma folha = um `<div class="etq-folha">` com quebra de página depois, e não
+    uma grade só que o navegador quebra sozinho: com grade contínua o Chrome
+    corta linhas no meio da altura da página.
+    """
+    por_folha = cfg["colunas"] * cfg["linhas"]
+    return [
+        '<div class="etq-folha">'
+        + "".join(_bloco_etiqueta_mini(i) for i in itens[inicio:inicio + por_folha])
+        + "</div>"
+        for inicio in range(0, len(itens), por_folha)
+    ]
+
+
+# Aviso de impressão, visível na TELA e ausente na folha.
+#
+# O navegador imprime data, título e a URL `file:///home/.../etiquetas_x.html`
+# nas bordas quando "Cabeçalhos e rodapés" está marcado, e não existe CSS que
+# desligue isso — a decisão é do diálogo de impressão. Medido no Chromium com
+# a opção ligada: o cabeçalho termina a 8,6 mm do topo e o rodapé começa a
+# 8,2 mm da borda de baixo, então com as margens deste CSS (10 mm na grade,
+# 12 mm na etiqueta grande) ele NÃO alcança o QR nem invade a zona de
+# silêncio. Só que a folga no topo da grade é de 1,4 mm, e some se a pessoa
+# trocar "Margens" para "Nenhuma" no diálogo — aí a grade inteira sai
+# deslocada, não só o cabeçalho. Por isso o aviso fica no arquivo, onde quem
+# imprime está olhando, e não só na aba do Streamlit.
+_AVISO_IMPRESSAO = """<div class="etq-aviso">
+  <b>Para imprimir:</b> Ctrl+P → <b>A4</b>, <b>retrato</b>, escala
+  <b>100%</b> (não use "Ajustar à página") e <b>Margens: Padrão</b>.
+  Desmarque <b>“Cabeçalhos e rodapés”</b> para a data e o endereço do arquivo
+  não saírem impressos na borda da folha.
+  <span>Esta faixa não é impressa.</span>
+</div>"""
+
+_CSS_AVISO = """
+.etq-aviso {
+  font-family: Helvetica, Arial, sans-serif;
+  font-size: 11pt;
+  line-height: 1.45;
+  color: #111;
+  background: #fff8c4;
+  border: 1px solid #d9c257;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin: 0 auto 8mm;
+  max-width: 186mm;
+}
+.etq-aviso span { display: block; font-size: 9pt; color: #6b6b4a; margin-top: 4px; }
+@media print { .etq-aviso { display: none !important; } }
+"""
+
+
+def _montar_documento(blocos: list, titulo: str, css: str = _CSS_ETIQUETA) -> str:
     """Documento HTML completo e autocontido (SVGs embutidos, zero rede)."""
     return (
         "<!DOCTYPE html>\n"
         '<html lang="pt-BR">\n<head>\n<meta charset="utf-8">\n'
         f"<title>{_esc.escape(titulo)}</title>\n"
-        f"<style>{_CSS_ETIQUETA}</style>\n</head>\n<body>\n"
+        f"<style>{css}{_CSS_AVISO}</style>\n</head>\n<body>\n"
+        + _AVISO_IMPRESSAO
+        + "\n"
         + "\n".join(blocos)
         + "\n</body>\n</html>\n"
     )
@@ -548,6 +816,16 @@ _CSS_TAB = """<style>
 .etq-preview .etq-qr svg{width:100%;height:auto;display:block;}
 .etq-preview .etq-rodape{font-size:0.34em;margin-top:0.7em;color:#444;
                          font-family:'Courier New',monospace;word-break:break-word;}
+/* Prévia da grade: a folha branca. As medidas da grade e da célula vêm de
+   `_css_grade(documento=False)`, injetado junto da prévia — aqui só o papel.
+   As células ficam em mm, então a folha tem a largura real e a prévia rola na
+   horizontal em tela estreita em vez de comprimir as etiquetas.
+   `box-sizing:content-box` é o que faz o padding somar POR FORA da largura:
+   com border-box (o padrão do Streamlit) o miolo cairia para 190−16 mm e as
+   colunas, que somam 190 mm exatos, vazariam para fora da folha. */
+.etq-preview .etq-folha{background:#fff;border-radius:6px;padding:8mm;
+                        margin:0 auto;box-shadow:0 2px 10px rgba(0,0,0,.2);
+                        box-sizing:content-box;}
 </style>"""
 
 
@@ -652,38 +930,82 @@ def build_etiquetas_tab(get_db):
         )
         return
 
+    # ── Tamanho da etiqueta ──────────────────────────────────────────────────
+    # O preset vale para o documento inteiro: uma folha gerada tem sempre um
+    # tamanho só, nunca uma mistura.
+    preset_nome = st.radio(
+        "Tamanho da etiqueta",
+        list(_PRESETS.keys()),
+        key="etq_preset",
+        horizontal=True,
+    )
+    cfg = _PRESETS[preset_nome]
+    st.caption(cfg["descricao"])
+
     # ── Critério de lote ─────────────────────────────────────────────────────
+    # Desabilitado (em vez de escondido) nos presets sem lote: o widget continua
+    # montado, então a escolha do usuário sobrevive à ida e volta entre presets,
+    # e a UI mostra por que ele não se aplica em vez de a opção desaparecer.
     criterio = st.radio(
         "Qual lote imprimir na etiqueta?",
         [CRIT_FEFO, CRIT_TODOS, CRIT_MANUAL, CRIT_SEM],
         key="etq_criterio",
         horizontal=True,
+        disabled=not cfg["com_lote"],
     )
-    _explicacao = {
-        CRIT_FEFO: (
-            "Cada produto sai em <b>uma folha</b>, com o lote de vencimento mais "
-            "próximo — é o que deve ser retirado primeiro."
-        ),
-        CRIT_TODOS: (
-            "Cada produto sai em <b>uma folha por lote cadastrado</b>. Produtos com "
-            "muitos lotes geram muitas folhas."
-        ),
-        CRIT_MANUAL: (
-            "Você digita o lote e a validade de cada produto na tabela abaixo — "
-            "vem pré-preenchida com o lote FEFO quando existe cadastro. "
-            "<b>Nada é gravado no banco</b>: o que você digita vale só para "
-            "estas folhas."
-        ),
-        CRIT_SEM: (
-            "Apenas nome, código e QR. Sem validade e sem lote — a etiqueta não "
-            "precisa ser trocada quando o lote virar."
-        ),
-    }[criterio]
-    st.markdown(
-        f'<div class="etq-crit">📌 Critério: {_explicacao} '
-        "Produtos <b>sem lote cadastrado</b> saem sem as linhas de validade e lote.</div>",
-        unsafe_allow_html=True,
-    )
+    if cfg["com_lote"]:
+        _explicacao = {
+            CRIT_FEFO: (
+                "Cada produto sai em <b>uma folha</b>, com o lote de vencimento mais "
+                "próximo — é o que deve ser retirado primeiro."
+            ),
+            CRIT_TODOS: (
+                "Cada produto sai em <b>uma folha por lote cadastrado</b>. Produtos com "
+                "muitos lotes geram muitas folhas."
+            ),
+            CRIT_MANUAL: (
+                "Você digita o lote e a validade de cada produto na tabela abaixo — "
+                "vem pré-preenchida com o lote FEFO quando existe cadastro. "
+                "<b>Nada é gravado no banco</b>: o que você digita vale só para "
+                "estas folhas."
+            ),
+            CRIT_SEM: (
+                "Apenas nome, código e QR. Sem validade e sem lote — a etiqueta não "
+                "precisa ser trocada quando o lote virar."
+            ),
+        }[criterio]
+        st.markdown(
+            f'<div class="etq-crit">📌 Critério: {_explicacao} '
+            "Produtos <b>sem lote cadastrado</b> saem sem as linhas de validade e lote.</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        # Não é só a UI: o pipeline abaixo roda como CRIT_SEM, então
+        # `_etiquetas_do_item` devolve uma etiqueta por produto e o editor de
+        # lote manual não é montado.
+        criterio = CRIT_SEM
+        st.markdown(
+            '<div class="etq-crit">🔒 O critério de lote acima <b>só se aplica '
+            "à etiqueta grande</b> — por isso está desabilitado. A etiqueta "
+            "pequena sai sempre <b>sem lote</b>: uma por produto, só QR + nome. "
+            "Motivo: o QR carrega apenas o código do produto, que é o mesmo em "
+            "todos os lotes — gerar por lote produziria etiquetas idênticas "
+            "duplicadas.</div>",
+            unsafe_allow_html=True,
+        )
+
+    # ── Cópias por produto ───────────────────────────────────────────────────
+    copias = 1
+    if cfg["copias"]:
+        _col_copias, _ = st.columns([1, 3])
+        with _col_copias:
+            copias = int(st.number_input(
+                "Cópias por produto",
+                min_value=1, max_value=50, value=1, step=1,
+                key="etq_copias",
+                help="Repete cada etiqueta na grade, uma ao lado da outra — "
+                     "para colar o mesmo produto em mais de uma posição.",
+            ))
 
     # ── Filtros ──────────────────────────────────────────────────────────────
     racks_disp = sorted({r for i in itens for r in i["racks"]},
@@ -742,6 +1064,15 @@ def build_etiquetas_tab(get_db):
     pares = []
     for item in selecionados:
         pares.extend(_etiquetas_do_item(item, lotes, criterio, manuais))
+    if copias > 1:
+        # Cópias adjacentes, não a lista repetida no fim: na folha as etiquetas
+        # iguais saem lado a lado, que é como se corta e se leva para o rack.
+        pares = [par for par in pares for _ in range(copias)]
+
+    # No modo "folha" cada etiqueta É uma folha; no modo "grade" cabem
+    # colunas × linhas por folha e a última fica parcialmente preenchida.
+    por_folha = cfg["colunas"] * cfg["linhas"] if cfg["modo"] == "grade" else 1
+    n_folhas = -(-len(pares) // por_folha)  # ceil sem importar math
 
     hoje = date.today()
     n_sem_lote = sum(1 for _, l in pares if not l)
@@ -750,18 +1081,33 @@ def build_etiquetas_tab(get_db):
         if l and l.get("vencimento") and l["vencimento"] < hoje
     )
 
-    st.markdown(f"""
-    <div class="etq-kpi-row">
-      <div class="etq-kpi"><div class="etq-kpi-v">{len(selecionados)}</div>
-        <div class="etq-kpi-l">Produtos</div></div>
-      <div class="etq-kpi"><div class="etq-kpi-v blue">{len(pares)}</div>
-        <div class="etq-kpi-l">Folhas A4</div></div>
-      <div class="etq-kpi"><div class="etq-kpi-v amber">{n_sem_lote}</div>
-        <div class="etq-kpi-l">Sem lote</div></div>
-      <div class="etq-kpi"><div class="etq-kpi-v amber">{n_vencidos}</div>
-        <div class="etq-kpi-l">Lote vencido</div></div>
-    </div>
-    """, unsafe_allow_html=True)
+    # Sem lote nenhum, os KPIs de lote seriam sempre 0 e "Sem lote" marcaria o
+    # total — ruído. Entram no lugar deles a contagem de etiquetas (que com
+    # cópias > 1 não é o número de produtos) e a densidade da folha.
+    if cfg["com_lote"]:
+        _kpis = [
+            (len(selecionados), "Produtos", ""),
+            (n_folhas, "Folhas A4", "blue"),
+            (n_sem_lote, "Sem lote", "amber"),
+            (n_vencidos, "Lote vencido", "amber"),
+        ]
+    else:
+        _kpis = [
+            (len(selecionados), "Produtos", ""),
+            (len(pares), "Etiquetas", ""),
+            (n_folhas, "Folhas A4", "blue"),
+            (f"{por_folha}/folha", "Densidade", "blue"),
+        ]
+    st.markdown(
+        '<div class="etq-kpi-row">'
+        + "".join(
+            f'<div class="etq-kpi"><div class="etq-kpi-v {classe}">{valor}</div>'
+            f'<div class="etq-kpi-l">{rotulo}</div></div>'
+            for valor, rotulo, classe in _kpis
+        )
+        + "</div>",
+        unsafe_allow_html=True,
+    )
 
     if n_vencidos:
         st.warning(
@@ -807,33 +1153,58 @@ def build_etiquetas_tab(get_db):
             + ("…" if len(sem_codigo) > 5 else "")
         )
 
-    if len(pares) > _MAX_ETIQUETAS:
+    if len(pares) > cfg["max_etiquetas"]:
         st.error(
-            f"❌ {len(pares)} folhas é mais do que o gerador entrega de uma vez "
-            f"(limite {_MAX_ETIQUETAS}). Filtre por rack ou categoria — o uso "
+            f"❌ {len(pares)} etiquetas ({n_folhas} folhas) é mais do que o "
+            f"gerador entrega de uma vez (limite {cfg['max_etiquetas']} "
+            "etiquetas neste tamanho). Filtre por rack ou categoria — o uso "
             "normal é reimprimir um rack de cada vez."
         )
         return
 
-    # ── Prévia da primeira etiqueta ──────────────────────────────────────────
+    # ── Prévia da primeira folha ─────────────────────────────────────────────
     st.markdown('<div class="etq-section">👁️ Prévia da primeira folha</div>',
                 unsafe_allow_html=True)
-    item_prev, lote_prev = pares[0]
-    st.markdown(
-        f'<div class="etq-preview">{_bloco_etiqueta(item_prev, lote_prev)}</div>',
-        unsafe_allow_html=True,
-    )
-    st.caption(
-        f'QR contém o texto puro `{item_prev["codigo_qr"]}` — sem URL, sem '
-        "encurtador. O app resolve o código no banco por conta própria."
-    )
+    item_prev = pares[0][0]
+    if cfg["modo"] == "grade":
+        # A prévia é a folha de verdade: mesma marcação e mesmas medidas em mm
+        # do arquivo baixado, só sem as regras de `@page`/`body`.
+        _med = _medidas_grade(cfg)
+        st.markdown(
+            f"<style>{_css_grade(cfg, documento=False)}</style>"
+            '<div class="etq-preview">'
+            f'{_folhas_grade([i for i, _ in pares[:por_folha]], cfg)[0]}'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            f'QR contém o texto puro `{item_prev["codigo_qr"]}` — sem URL, sem '
+            "encurtador. Célula de "
+            f"{_med['celula_l']:.1f} × {_med['celula_a']:.1f} mm, QR de "
+            f"{_med['qr_mm']:.0f} mm incluindo a margem branca da norma "
+            "(símbolo de ~"
+            f"{_med['qr_mm'] * _svg_qr(item_prev['codigo_qr'])[3] / _svg_qr(item_prev['codigo_qr'])[1]:.0f}"
+            " mm). Nome truncado com reticências quando não cabe na linha."
+        )
+    else:
+        st.markdown(
+            f'<div class="etq-preview">{_bloco_etiqueta(*pares[0])}</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption(
+            f'QR contém o texto puro `{item_prev["codigo_qr"]}` — sem URL, sem '
+            "encurtador. O app resolve o código no banco por conta própria."
+        )
 
     # ── Download ─────────────────────────────────────────────────────────────
     st.markdown('<div class="etq-section">⬇️ Gerar folhas</div>', unsafe_allow_html=True)
     st.caption(
-        "Baixe o arquivo, abra no navegador e imprima com Ctrl+P (A4, retrato, "
-        "sem redimensionar). O arquivo é autocontido — os QR codes estão dentro "
-        "dele, não dependem de internet na hora de imprimir."
+        "Baixe o arquivo, abra no navegador e imprima com Ctrl+P: **A4**, "
+        "**retrato**, escala **100%** e **Margens: Padrão**. Desmarque "
+        "**“Cabeçalhos e rodapés”** — senão o navegador imprime a data e o "
+        "caminho do arquivo (`file:///...`) na borda da folha. O arquivo é "
+        "autocontido: os QR codes estão dentro dele, não dependem de internet "
+        "na hora de imprimir."
     )
 
     if rack_sel not in ("Todos os racks", "Sem posição no mapa"):
@@ -846,13 +1217,26 @@ def build_etiquetas_tab(get_db):
         sufixo = "geral"
         titulo = "Etiquetas de rack — CAMDA"
 
-    documento = _montar_documento(
-        [_bloco_etiqueta(i, l) for i, l in pares], titulo
-    )
+    if cfg["modo"] == "grade":
+        documento = _montar_documento(
+            _folhas_grade([i for i, _ in pares], cfg),
+            f"{titulo} ({por_folha} por folha)",
+            _css_grade(cfg, documento=True),
+        )
+        rotulo_botao = (
+            f"🏷️ Baixar {n_folhas} folha(s) A4 · {len(pares)} etiquetas "
+            "(HTML para impressão)"
+        )
+    else:
+        documento = _montar_documento(
+            [_bloco_etiqueta(i, l) for i, l in pares], titulo
+        )
+        rotulo_botao = f"🏷️ Baixar {len(pares)} folha(s) A4 (HTML para impressão)"
+
     st.download_button(
-        f"🏷️ Baixar {len(pares)} folha(s) A4 (HTML para impressão)",
+        rotulo_botao,
         data=documento.encode("utf-8"),
-        file_name=f"etiquetas_{sufixo}.html",
+        file_name=f"{cfg['arquivo']}_{sufixo}.html",
         mime="text/html",
         key="etq_download",
         type="primary",
