@@ -2473,7 +2473,10 @@ def _incluir_saidas_na_contagem(grupos: list, conn) -> None:
         row = conn.execute(
             "SELECT categoria FROM estoque_mestre WHERE codigo = ?", (codigo,)
         ).fetchone()
-        categoria = row[0] if row else "OUTROS"
+        # Saída total tira o produto do mestre, então o SELECT acima não acha
+        # nada justamente nos casos mais interessantes: cai na classificação
+        # pelo nome em vez de jogar tudo em OUTROS.
+        categoria = row[0] if row else classify_product(g["produto"] or "")
         existe = conn.execute(
             "SELECT id FROM contagem_itens WHERE codigo = ?", (codigo,)
         ).fetchone()
@@ -5877,7 +5880,12 @@ def upload_mestre(records: list, do_sync: bool = True) -> tuple:
         """, [now, "MESTRE", "", len(records), len(records), 0, n_div])
         upload_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
-        detectar_e_registrar_variacoes(records, conn, now, upload_id)
+        # No MESTRE a ausência é sempre significativa: o DELETE abaixo troca o
+        # estoque inteiro pelo da planilha, então quem não veio saiu de fato.
+        # Sem registrar a saída, o produto sumia em silêncio — nenhuma linha em
+        # variacao_estoque e, portanto, nenhum alerta de possível transferência.
+        ausentes = detectar_ausentes_na_planilha(records, conn)
+        detectar_e_registrar_variacoes(records, conn, now, upload_id, ausentes=ausentes)
 
         conn.execute("DELETE FROM estoque_mestre")
 
@@ -5912,7 +5920,13 @@ def upload_mestre(records: list, do_sync: bool = True) -> tuple:
         conn.commit()
         if do_sync:
             sync_db()  # Sync UMA VEZ no final
-        return (True, f"✅ Mestre: {len(records)} produtos ({n_div} divergências)")
+        msg = f"✅ Mestre: {len(records)} produtos ({n_div} divergências)"
+        if ausentes:
+            msg += (
+                f" · 🔄 {len(ausentes)} saíram do estoque (ausentes na planilha) — "
+                "veja o alerta de possível transferência e a 📋 Contagem"
+            )
+        return (True, msg)
     except Exception as e:
         return (False, f"❌ Erro: {e}")
 
@@ -6047,9 +6061,57 @@ def _num_eq(a, b) -> bool:
         return False
 
 
-def upload_parcial_estoque(records: list, do_sync: bool = True) -> tuple:
+def detectar_ausentes_na_planilha(records: list, conn) -> list:
+    """Produtos com saldo no estoque_mestre que NÃO aparecem na planilha.
+
+    O relatório de estoque do BI vem filtrado por "QUANTIDADE EM ESTOQUE > 0":
+    o produto que zerou não chega com quantidade 0, ele simplesmente some da
+    lista. A ausência é o único sinal de que o produto saiu do estoque — daí
+    esta função, usada tanto no preview do upload quanto na escrita.
+
+    Compara por _codigo_key (mesma normalização do resto do app) para não
+    marcar como ausente um produto que veio com o código em outro formato
+    ("275794.0" vs "275794") e acabar duplicando a linha no mestre.
+
+    Retorna [{codigo, produto, categoria, qtd_sistema}, ...], maior saldo
+    primeiro.
+    """
+    presentes = {_codigo_key(r["codigo"]) for r in records}
+    try:
+        rows = conn.execute(
+            "SELECT codigo, produto, categoria, qtd_sistema FROM estoque_mestre "
+            "WHERE qtd_sistema > 0"
+        ).fetchall()
+    except Exception:
+        return []
+    ausentes = [
+        {
+            "codigo": codigo,
+            "produto": produto,
+            "categoria": categoria or "",
+            "qtd_sistema": int(qtd or 0),
+        }
+        for codigo, produto, categoria, qtd in rows
+        if _codigo_key(codigo) not in presentes and not _is_produto_ignorado(produto)
+    ]
+    ausentes.sort(key=lambda a: (-a["qtd_sistema"], str(a["produto"])))
+    return ausentes
+
+
+def upload_parcial_estoque(records: list, do_sync: bool = True,
+                           zerar_ausentes: bool = False) -> tuple:
     """Mini mestre — atualiza apenas quantidades dos produtos da planilha.
-    Não mexe em vendas, reposição, nem remove produtos ausentes."""
+    Não mexe em vendas nem reposição.
+
+    zerar_ausentes=False (padrão): produto que não veio na planilha fica
+    intocado — o modo é parcial, a planilha pode ser um recorte.
+
+    zerar_ausentes=True: a planilha é o retrato COMPLETO do estoque, então
+    ausência = zerou. Cada ausente vira uma saída em variacao_estoque (o que
+    dispara o alerta de possível transferência e a entrada na contagem) e sai
+    do estoque_mestre. Quem liga isso é a confirmação explícita do usuário no
+    upload, porque num recorte de verdade isso apagaria todo o resto.
+    """
     try:
         _t0 = time.perf_counter()
         conn = get_db()
@@ -6069,6 +6131,8 @@ def upload_parcial_estoque(records: list, do_sync: bool = True) -> tuple:
         existing = {row[0]: row for row in conn.execute(
             "SELECT codigo, qtd_sistema, qtd_fisica, diferenca, nota, status FROM estoque_mestre"
         ).fetchall()}
+
+        ausentes = detectar_ausentes_na_planilha(records, conn) if zerar_ausentes else []
 
         novos_data, update_data, update_nota_data, touch_only = [], [], [], []
         for r in records:
@@ -6123,7 +6187,17 @@ def upload_parcial_estoque(records: list, do_sync: bool = True) -> tuple:
         detectar_e_registrar_variacoes(
             records, conn, now, upload_id, include_novos=True,
             estado_atual={c: row[1] for c, row in existing.items()},
+            ausentes=ausentes,
         )
+
+        # Os ausentes já viraram saída em variacao_estoque acima; aqui eles
+        # saem do estoque. Mesmo tratamento dos zerados em upload_parcial().
+        if ausentes:
+            for chunk in _chunks([a["codigo"] for a in ausentes], 400):
+                ph = ",".join("?" * len(chunk))
+                conn.execute(
+                    f"DELETE FROM estoque_mestre WHERE codigo IN ({ph})", chunk
+                )
 
         batch_ok = _supports_update_from(conn)
 
@@ -6203,9 +6277,10 @@ def upload_parcial_estoque(records: list, do_sync: bool = True) -> tuple:
         if do_sync:
             sync_db()
         logging.info(
-            "parcial_estoque: %d linhas | %d alterados, %d com nota, %d novos, %d sem mudança | escrita=%.2fs sync=%.2fs",
+            "parcial_estoque: %d linhas | %d alterados, %d com nota, %d novos, %d sem mudança, "
+            "%d ausentes zerados | escrita=%.2fs sync=%.2fs",
             len(records), len(update_data), len(update_nota_data), len(novos_data),
-            len(touch_only), _t1 - _t0, time.perf_counter() - _t1,
+            len(touch_only), len(ausentes), _t1 - _t0, time.perf_counter() - _t1,
         )
 
         parts = [f"✅ Parcial Estoque: {len(records)} produtos"]
@@ -6215,6 +6290,11 @@ def upload_parcial_estoque(records: list, do_sync: bool = True) -> tuple:
             parts.append(f"{len(novos_data)} novos")
         if n_div:
             parts.append(f"{n_div} divergências")
+        if ausentes:
+            parts.append(
+                f"🔄 {len(ausentes)} saíram do estoque (ausentes na planilha) — "
+                "veja o alerta de possível transferência e a 📋 Contagem"
+            )
         return (True, " · ".join(parts))
     except Exception as e:
         return (False, f"❌ Erro: {e}")
@@ -6471,7 +6551,19 @@ def _detectar_reposicao_batch(records: list, conn, now: str) -> int:
 
 
 def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int,
-                                   include_novos: bool = False, estado_atual: dict = None):
+                                   include_novos: bool = False, estado_atual: dict = None,
+                                   ausentes: list = None):
+    """Registra em variacao_estoque o que mudou entre o estoque atual e o
+    upload.
+
+    `ausentes` cobre o ponto cego do loop sobre `records`: produto que SUMIU da
+    planilha. No relatório do BI o filtro é "QUANTIDADE EM ESTOQUE > 0", então
+    quem zerou não vem com quantidade 0 — some da lista. Sem uma saída
+    (delta < 0) gravada aqui, checar_saidas_sem_venda() não tem o que cruzar e
+    o alerta de possível transferência nunca dispara. Cada ausente vira uma
+    saída de qtd_anterior → 0. Quem chama decide quando a ausência é
+    significativa (MESTRE sempre; parcial só quando o usuário confirma).
+    """
     if estado_atual is None:
         estado_atual = {
             row[0]: row[1]
@@ -6492,6 +6584,14 @@ def detectar_e_registrar_variacoes(records: list, conn, now: str, upload_id: int
                 cod, r["produto"], 0, qtd_nova,
                 qtd_nova, now, upload_id, "pendente"
             ))
+    for a in (ausentes or []):
+        qtd_ant = int(a.get("qtd_sistema") or 0)
+        if qtd_ant <= 0:
+            continue
+        variacoes.append((
+            a["codigo"], a["produto"], qtd_ant, 0,
+            -qtd_ant, now, upload_id, "pendente"
+        ))
     if variacoes:
         _insert_many(conn, "variacao_estoque", [
             "codigo", "produto", "qtd_anterior", "qtd_atual",
@@ -14455,9 +14555,19 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         ok, result, zerados = False, f"Erro ao ler arquivo: {e}", []
                 else:
                     ok, result, zerados = read_excel_to_records(uploaded)
+                # Produtos que sumiram da planilha: calculado junto com o parse
+                # (fica em cache pelo file_id) para não varrer o mestre a cada
+                # rerun do expander.
+                _ausentes = []
+                if ok and is_parcial_estoque:
+                    try:
+                        _ausentes = detectar_ausentes_na_planilha(result, get_db())
+                    except Exception:
+                        _ausentes = []
                 st.session_state["_parsed_ok"] = ok
                 st.session_state["_parsed_result"] = result
                 st.session_state["_parsed_zerados"] = zerados
+                st.session_state["_parsed_ausentes"] = _ausentes
                 st.session_state.processed_file = file_id
 
             ok = st.session_state.get("_parsed_ok", False)
@@ -14479,6 +14589,35 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         hide_index=True, use_container_width=True, height=250,
                     )
 
+                # ── Produtos do estoque que não vieram na planilha ────────────
+                # O relatório do BI filtra "QUANTIDADE EM ESTOQUE > 0": quem
+                # zerou some da lista em vez de vir com 0. Como uma planilha
+                # genuinamente parcial (uma categoria só, por ex.) é
+                # indistinguível de um retrato completo, a remoção é sempre uma
+                # confirmação explícita — nunca automática.
+                _ausentes = st.session_state.get("_parsed_ausentes", [])
+                _zerar_ausentes = False
+                if is_parcial_estoque and _ausentes:
+                    st.warning(
+                        f"🔄 **{len(_ausentes)} produto(s) estão no estoque mas não aparecem nesta "
+                        "planilha.** Se esta planilha é o retrato completo do estoque, eles zeraram "
+                        "(venda, transferência ou baixa). Confirme abaixo para dar baixa neles."
+                    )
+                    with st.expander(f"👁️ Ver os {len(_ausentes)} produtos ausentes", expanded=False):
+                        st.dataframe(
+                            pd.DataFrame(_ausentes)[["codigo", "produto", "categoria", "qtd_sistema"]],
+                            hide_index=True, use_container_width=True, height=250,
+                        )
+                    _zerar_ausentes = st.checkbox(
+                        f"Dar baixa nos {len(_ausentes)} produtos ausentes "
+                        "(registra a saída, gera o alerta de possível transferência, "
+                        "entram na 📋 Contagem e saem do estoque)",
+                        key="chk_zerar_ausentes",
+                        help="Marque só se esta planilha cobre o estoque inteiro. "
+                             "Se ela é um recorte (uma categoria, um local), deixe "
+                             "desmarcado — senão tudo que ficou de fora sai do estoque.",
+                    )
+
                 if st.button("🚀 Processar", type="primary"):
                     with st.spinner("Processando..."):
                         # do_sync=False: o sync com o Turso acontece UMA vez só,
@@ -14486,7 +14625,9 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         if is_mestre_upload:
                             ok_up, msg = upload_mestre(records, do_sync=False)
                         elif is_parcial_estoque:
-                            ok_up, msg = upload_parcial_estoque(records, do_sync=False)
+                            ok_up, msg = upload_parcial_estoque(
+                                records, do_sync=False, zerar_ausentes=_zerar_ausentes
+                            )
                         else:
                             ok_up, msg = upload_parcial(records, zerados, do_sync=False)
 
@@ -14519,6 +14660,10 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         st.session_state["_upload_success_msg"] = " ".join(_flash_parts)
                         st.session_state.pop("alertas_cache", None)
                         st.session_state.processed_file = None
+                        # A confirmação vale só para a planilha que acabou de
+                        # subir: a próxima começa desmarcada.
+                        st.session_state.pop("chk_zerar_ausentes", None)
+                        st.session_state.pop("_parsed_ausentes", None)
                         get_current_stock.clear()
                         get_stock_count.clear()
                         get_reposicao_pendente.clear()
