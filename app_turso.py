@@ -1837,6 +1837,20 @@ def _get_connection():
             status TEXT DEFAULT 'pendente'
         )
     """)
+    # Classificação veterinária dos medicamentos (classe terapêutica, espécie
+    # alvo e segmento). Alimenta a dimensão CLASSE da aba 📉 Cobertura.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS classificacao_vet (
+            codigo TEXT PRIMARY KEY,
+            classe TEXT NOT NULL,
+            especie TEXT DEFAULT '',
+            segmento TEXT DEFAULT '',
+            origem TEXT DEFAULT 'manual',
+            confianca TEXT DEFAULT '',
+            obs TEXT DEFAULT '',
+            atualizado_em TEXT
+        )
+    """)
     conn.commit()
 
     # ── Índices para reduzir full-table scans ──
@@ -1854,6 +1868,7 @@ def _get_connection():
         "CREATE INDEX IF NOT EXISTS idx_mapa_pos_rua    ON mapa_posicoes(rua, face)",
         "CREATE INDEX IF NOT EXISTS idx_ret_ter_data    ON retiradas_terceiros(data_movimento)",
         "CREATE INDEX IF NOT EXISTS idx_ret_ter_coop    ON retiradas_terceiros(cooperado)",
+        "CREATE INDEX IF NOT EXISTS idx_cvet_classe     ON classificacao_vet(classe)",
     ]
     for _idx_sql in _indices:
         try:
@@ -5074,6 +5089,141 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
 
 
+def _render_resumo_classes_vet(df_vet: pd.DataFrame):
+    """Resumo por classe veterinária — piores primeiro (mais itens em RUPTURA/ATENÇÃO)."""
+    if df_vet.empty:
+        return
+
+    linhas_resumo = []
+    for classe, g in df_vet.groupby("classe", sort=False):
+        n_crit = int((g["faixa"] == _FAIXA_CRITICA).sum())
+        n_baixo = int((g["faixa"] == _FAIXA_BAIXA).sum())
+        # dropna antes da mediana: classe só com MORTO (cobertura NaN) senão
+        # dispara RuntimeWarning "Mean of empty slice" do numpy
+        _cob_validas = g["cobertura_meses"].dropna()
+        mediana = _cob_validas.median() if not _cob_validas.empty else float("nan")
+        linhas_resumo.append({
+            "classe": classe, "itens": len(g), "crit": n_crit, "baixo": n_baixo,
+            "problemas": n_crit + n_baixo, "mediana": mediana,
+        })
+    # Piores primeiro: mais itens problemáticos, depois menor cobertura mediana
+    linhas_resumo.sort(
+        key=lambda x: (-x["problemas"], x["mediana"] if pd.notna(x["mediana"]) else 1e9, -x["itens"])
+    )
+
+    corpo = ""
+    for x in linhas_resumo:
+        med = "—" if pd.isna(x["mediana"]) else f'{x["mediana"]:.1f}'.rstrip("0").rstrip(".")
+        cor_classe = "#6B7280" if x["classe"] == _CLASSE_VET_SEM else "#F9FAFB"
+        crit_html = (f'<span style="color:{_FAIXAS_COBERTURA[_FAIXA_CRITICA]["cor"]};font-weight:700">'
+                     f'{x["crit"]}</span>') if x["crit"] else '<span style="color:#374151">0</span>'
+        baixo_html = (f'<span style="color:{_FAIXAS_COBERTURA[_FAIXA_BAIXA]["cor"]};font-weight:700">'
+                      f'{x["baixo"]}</span>') if x["baixo"] else '<span style="color:#374151">0</span>'
+        corpo += (
+            f'<tr>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid #1F2937;color:{cor_classe};font-size:12px">'
+            f'{x["classe"]}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid #1F2937;text-align:right;'
+            f'color:#94a3b8;font-family:\'JetBrains Mono\',monospace;font-size:12px">{x["itens"]}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid #1F2937;text-align:right;'
+            f'font-family:\'JetBrains Mono\',monospace;font-size:12px">{crit_html}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid #1F2937;text-align:right;'
+            f'font-family:\'JetBrains Mono\',monospace;font-size:12px">{baixo_html}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid #1F2937;text-align:right;'
+            f'color:#94a3b8;font-family:\'JetBrains Mono\',monospace;font-size:12px">{med}</td>'
+            f'</tr>'
+        )
+
+    cab = ''.join(
+        f'<th style="padding:6px 8px;text-align:{al};font-size:10px;color:#6B7280;'
+        f'text-transform:uppercase;letter-spacing:1px;font-weight:700;'
+        f'border-bottom:1px solid #1F2937">{t}</th>'
+        for t, al in [("Classe", "left"), ("Itens", "right"),
+                      (f'{_FAIXAS_COBERTURA[_FAIXA_CRITICA]["icone"]} Crítico', "right"),
+                      (f'{_FAIXAS_COBERTURA[_FAIXA_BAIXA]["icone"]} Baixo', "right"),
+                      ("Cob. mediana", "right")]
+    )
+    st.markdown(
+        f'<div style="background:#111827;border:1px solid #1F2937;border-radius:16px;'
+        f'padding:16px 18px;margin-top:8px">'
+        f'<div style="font-size:14px;font-weight:700;color:#F9FAFB;margin-bottom:10px">'
+        f'🐄 Resumo por classe veterinária '
+        f'<span style="font-size:11px;color:#6B7280;font-weight:400">'
+        f'· {len(linhas_resumo)} classe(s) · piores primeiro</span></div>'
+        f'<table style="width:100%;border-collapse:collapse"><thead><tr>{cab}</tr></thead>'
+        f'<tbody>{corpo}</tbody></table></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_classificar_vet_expander(df_cob: pd.DataFrame):
+    """Expander de manutenção: classifica os medicamentos ainda sem classe."""
+    df_vet = df_cob[df_cob["categoria"].isin(_CATEGORIAS_VET_COBERTURA)]
+    if df_vet.empty:
+        return
+    df_sem = df_vet[df_vet["classe"] == _CLASSE_VET_SEM].sort_values(
+        ["vendas_90d", "qtd_disponivel"], ascending=[False, False]
+    )
+
+    st.markdown("---")
+    titulo = (f"🐄 Classificar veterinária — {len(df_sem)} item(ns) sem classe"
+              if len(df_sem) else "🐄 Classificar veterinária — tudo classificado ✅")
+    with st.expander(titulo, expanded=False):
+        if df_sem.empty:
+            st.caption("Todos os medicamentos com giro já têm classe definida.")
+            return
+
+        senha = st.text_input("🔑 Senha para edição", type="password",
+                              key="cob_vet_senha", placeholder="Digite a senha…")
+        if senha and not _senha_confere(senha, EDIT_PASSWORD):
+            st.error("Senha incorreta.")
+            return
+        if not _senha_confere(senha, EDIT_PASSWORD):
+            if not EDIT_PASSWORD:
+                st.error("⚠️ Senha de edição não configurada. Defina **CAMDA_EDIT_PASSWORD** nos Secrets do app.")
+            else:
+                st.caption("Informe a senha de edição para classificar os itens.")
+            return
+
+        st.caption(
+            "Selecione um ou mais produtos e grave a mesma classe/espécie/segmento "
+            "para todos. Itens sem venda nos últimos 90 dias aparecem no fim da lista."
+        )
+        _rot = {f'{r["codigo"]} — {r["produto"]}': str(r["codigo"])
+                for _, r in df_sem.iterrows()}
+        escolhidos = st.multiselect("Produtos", list(_rot), key="cob_vet_itens",
+                                    max_selections=50)
+
+        _classes_existentes = sorted(
+            c for c in df_vet["classe"].unique() if c != _CLASSE_VET_SEM
+        )
+        _opts_classe = list(dict.fromkeys(_classes_existentes + _CLASSES_VET_SUGERIDAS))
+        _OUTRA = "➕ Outra (digitar)"
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            classe_pick = st.selectbox("Classe", _opts_classe + [_OUTRA], key="cob_vet_classe_in")
+        with c2:
+            especie = st.selectbox("Espécie", [""] + _ESPECIES_VET, key="cob_vet_especie_in")
+        with c3:
+            segmento = st.selectbox("Segmento", [""] + _SEGMENTOS_VET, key="cob_vet_segmento_in")
+
+        classe = classe_pick
+        if classe_pick == _OUTRA:
+            classe = st.text_input("Nova classe", key="cob_vet_classe_nova",
+                                   placeholder="Ex.: Antisséptico")
+        obs = st.text_input("Observação (opcional)", key="cob_vet_obs")
+
+        if st.button("💾 Gravar classificação", key="cob_vet_salvar", type="primary"):
+            codigos = [_rot[e] for e in escolhidos]
+            ok, msg = salvar_classificacao_vet(codigos, classe, especie, segmento, obs)
+            if ok:
+                get_cobertura_estoque.clear()
+                st.success(msg)
+                st.rerun()
+            else:
+                st.error(msg)
+
+
 def build_cobertura_tab(df_cob: pd.DataFrame):
     """Aba 📉 Cobertura — análise dinâmica de cobertura de estoque por velocidade de venda."""
     if df_cob.empty:
@@ -5188,9 +5338,24 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
                               placeholder="🔎 Buscar por nome ou código…",
                               label_visibility="collapsed")
 
+    # ── Dimensão veterinária: só quando a categoria escolhida é de medicamentos ──
+    is_vet = cat_sel in _CATEGORIAS_VET_COBERTURA
+    classe_sel = segmento_sel = None
+    if is_vet:
+        _base_vet = df_cob[df_cob["categoria"] == cat_sel]
+        _classes = sorted(c for c in _base_vet["classe"].unique() if c != _CLASSE_VET_SEM)
+        if (_base_vet["classe"] == _CLASSE_VET_SEM).any():
+            _classes.append(_CLASSE_VET_SEM)  # sempre por último
+        _segmentos = sorted(s for s in _base_vet["segmento"].unique() if s)
+        col_cls, col_seg = st.columns(2)
+        with col_cls:
+            classe_sel = st.selectbox("Classe veterinária", ["Todas as classes"] + _classes,
+                                      key="cob_vet_classe", label_visibility="collapsed")
+        with col_seg:
+            segmento_sel = st.selectbox("Segmento", ["Todos os segmentos"] + _segmentos,
+                                        key="cob_vet_segmento", label_visibility="collapsed")
+
     df_view = df_cob
-    if faixa_sel:
-        df_view = df_view[df_view["faixa"] == faixa_sel]
     if cat_sel != "Todas as categorias":
         df_view = df_view[df_view["categoria"] == cat_sel]
     if busca.strip():
@@ -5198,9 +5363,22 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
             df_view["produto"].str.contains(busca.strip(), case=False, na=False, regex=False)
             | df_view["codigo"].astype(str).str.contains(busca.strip(), case=False, na=False, regex=False)
         ]
+    if is_vet and segmento_sel != "Todos os segmentos":
+        df_view = df_view[df_view["segmento"] == segmento_sel]
+
+    # Resumo por classe: antes dos filtros de classe/faixa, senão a contagem de
+    # CRÍTICO/BAIXO viraria só o espelho do filtro escolhido.
+    if is_vet:
+        _render_resumo_classes_vet(df_view)
+
+    if is_vet and classe_sel != "Todas as classes":
+        df_view = df_view[df_view["classe"] == classe_sel]
+    if faixa_sel:
+        df_view = df_view[df_view["faixa"] == faixa_sel]
 
     if df_view.empty:
         st.caption("Nenhum produto nesta combinação de filtros.")
+        _render_classificar_vet_expander(df_cob)
         return
 
     # ── Ordenação por faixa: RUPTURA = mais urgente primeiro (cobertura asc);
@@ -5245,6 +5423,10 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
         _cod_html = (
             f'<span style="color:#6B7280;font-size:10px;margin-left:6px">[{_cod}]</span>'
         ) if _cod and not _cod.startswith("AUTO_") else ""
+        if is_vet:
+            _cor_cls = "#6B7280" if r["classe"] == _CLASSE_VET_SEM else "#a78bfa"
+            _cod_html += (f'<span style="color:{_cor_cls};font-size:10px;margin-left:6px">'
+                          f'· {r["classe"]}</span>')
         # Sem indentação: Markdown trata 4+ espaços como bloco de código
         linhas += (
             f'<div style="margin-bottom:10px">'
@@ -5272,6 +5454,8 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
     )
     if len(df_view) > LIMITE:
         st.caption(f"Mostrando os {LIMITE} primeiros de {len(df_view)} — refine com os filtros acima.")
+
+    _render_classificar_vet_expander(df_cob)
 
 
 def reset_db():
@@ -8759,6 +8943,60 @@ _FAIXAS_COBERTURA = {
     "MORTO":    {"cor": "#64748b", "icone": "💀", "desc": "0 vendas 180d"},
 }
 
+# ── Dimensão CLASSE VETERINÁRIA (tabela classificacao_vet) ────────────────────
+# A dimensão só aparece quando a categoria selecionada na aba 📉 Cobertura é
+# veterinária. O BI grava o grupo com grafias diferentes — todas equivalem a
+# MEDICAMENTOS. Para cobrir grupos veterinários mais finos (VERMIFUGOS,
+# VACINA AFTOSA…), basta acrescentá-los aqui.
+_CATEGORIAS_VET_COBERTURA = frozenset({
+    "MEDICAMENTOS", "MEDICAMENTOS VETERINÁRIOS", "MEDICAMENTOS VETERINARIOS",
+})
+_CLASSE_VET_SEM = "SEM CLASSIFICAÇÃO"
+# Faixas que contam como problema no resumo por classe (CRÍTICO / BAIXO)
+_FAIXA_CRITICA = "RUPTURA"
+_FAIXA_BAIXA = "ATENÇÃO"
+# Sugestões dos selects do expander de classificação — texto livre continua
+# permitido, então a lista é só um atalho para o padrão da casa.
+_CLASSES_VET_SUGERIDAS = [
+    "Vermífugo", "Antibiótico", "Anti-inflamatório", "Antiparasitário externo",
+    "Carrapaticida/Mosquicida", "Vacina", "Soro", "Hormônio/Reprodução",
+    "Vitamina/Suplemento", "Anestésico/Analgésico", "Antitóxico",
+    "Homeopático", "Pomada/Unguento", "Identificação animal", "Material",
+]
+_ESPECIES_VET = [
+    "Bovinos", "Equinos", "Suínos", "Aves", "Ovinos/Caprinos",
+    "Cães e Gatos", "Multiespécie", "Material",
+]
+_SEGMENTOS_VET = ["Corte", "Leite", "Corte e leite"]
+
+
+def salvar_classificacao_vet(codigos: list, classe: str, especie: str = "",
+                             segmento: str = "", obs: str = "",
+                             origem: str = "manual", confianca: str = "") -> tuple:
+    """Grava (ou substitui) a classificação veterinária dos códigos informados."""
+    classe = (classe or "").strip()
+    if not classe:
+        return (False, "Informe a classe.")
+    codigos = [str(c).strip().upper() for c in codigos if str(c).strip()]
+    if not codigos:
+        return (False, "Selecione ao menos um produto.")
+    agora = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn = get_db()
+        for cod in codigos:
+            conn.execute(
+                "INSERT OR REPLACE INTO classificacao_vet "
+                "(codigo, classe, especie, segmento, origem, confianca, obs, atualizado_em) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (cod, classe, (especie or "").strip(), (segmento or "").strip(),
+                 origem, confianca, (obs or "").strip(), agora),
+            )
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        return (False, f"Erro ao gravar classificação: {e}")
+    return (True, f"{len(codigos)} produto(s) classificado(s) como **{classe}**.")
+
 # Nomes em validade_lotes vêm com prefixo de código do BI ("100235440 - FUNGICIDA
 # FOX XPRO 20L"); estoque_mestre guarda só o nome. Remover o prefixo antes do
 # match por _pnorm cobre 265/267 produtos da tabela de validade.
@@ -8788,7 +9026,8 @@ def get_cobertura_estoque() -> pd.DataFrame:
     dupla contagem.
     """
     cols = ["codigo", "produto", "categoria", "qtd_disponivel", "vendas_90d",
-            "vendas_180d", "velocidade_mensal", "cobertura_meses", "faixa", "esfriando"]
+            "vendas_180d", "velocidade_mensal", "cobertura_meses", "faixa", "esfriando",
+            "classe", "especie", "segmento"]
     hoje = datetime.now(tz=_BRT).date()
     d90 = (hoje - timedelta(days=90)).isoformat()
     d180 = (hoje - timedelta(days=180)).isoformat()
@@ -8806,15 +9045,23 @@ def get_cobertura_estoque() -> pd.DataFrame:
                   FROM divergencias
                  WHERE status = 'falta'
                  GROUP BY UPPER(TRIM(codigo))
+            ),
+            classif_vet AS (
+                SELECT UPPER(TRIM(codigo)) AS cod, classe, especie, segmento
+                  FROM classificacao_vet
             )
             SELECT e.codigo, e.produto, e.categoria,
                    e.qtd_sistema, e.qtd_fisica,
                    COALESCE(v.v90, 0)  AS vendas_90d,
                    COALESCE(v.v180, 0) AS vendas_180d,
-                   COALESCE(f.delta_falta, 0) AS delta_falta
+                   COALESCE(f.delta_falta, 0) AS delta_falta,
+                   COALESCE(c.classe, '')   AS classe,
+                   COALESCE(c.especie, '')  AS especie,
+                   COALESCE(c.segmento, '') AS segmento
               FROM estoque_mestre e
               LEFT JOIN vendas_agg    v ON v.cod = UPPER(TRIM(e.codigo))
               LEFT JOIN faltas_abertas f ON f.cod = UPPER(TRIM(e.codigo))
+              LEFT JOIN classif_vet   c ON c.cod = UPPER(TRIM(e.codigo))
         """, (d90, d180)).fetchall()
     except Exception as e:
         st.warning(f"⚠️ Erro ao calcular cobertura: {e}")
@@ -8823,7 +9070,12 @@ def get_cobertura_estoque() -> pd.DataFrame:
         return pd.DataFrame(columns=cols)
 
     df = pd.DataFrame(rows, columns=["codigo", "produto", "categoria", "qtd_sistema",
-                                     "qtd_fisica", "vendas_90d", "vendas_180d", "delta_falta"])
+                                     "qtd_fisica", "vendas_90d", "vendas_180d", "delta_falta",
+                                     "classe", "especie", "segmento"])
+    # Produto sem linha em classificacao_vet cai no balde SEM CLASSIFICAÇÃO
+    for _c in ("classe", "especie", "segmento"):
+        df[_c] = df[_c].fillna("").astype(str).str.strip()
+    df.loc[df["classe"] == "", "classe"] = _CLASSE_VET_SEM
     if _PRODUTOS_IGNORADOS:
         df = df[~df["produto"].str.strip().str.upper().isin(_PRODUTOS_IGNORADOS)]
 
