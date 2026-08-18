@@ -100,6 +100,15 @@ antemão em vez de redescobri-las:
   Os tamanhos de etiqueta ficam no dict `_PRESETS` — um tamanho novo é uma
   entrada nova ali, sem mexer em renderização. QR pelo `segno`, codificando
   só o código do produto.
+- A aba 🔄 Inv. Cíclico tem DUAS fontes para a contagem: `estoque_mestre`
+  (`status_ciclo`/`contado_ciclo_em`, a conferência *válida*) e o histórico
+  `inventario_cicli` (a contagem *física*, que nunca é apagada). Todo upload de
+  planilha que muda `qtd_sistema` de um item conferido zera as colunas de
+  `estoque_mestre` — o item volta a "pendente". Por isso a data que aparece no
+  card pendente e no modal vem do histórico (`_get_ultimas_contagens_cicli`),
+  não de `estoque_mestre`: é ela que preserva a janela de auditoria (há quantos
+  dias ninguém olha aquele produto na prateleira). Não troque essa origem pela
+  coluna de `estoque_mestre` "para simplificar" — some de novo a cada venda.
 - O campo de busca do header (key=`search_mestre`) é sobreposto ao topbar
   via CSS com paddings que reservam as zonas laterais (marca à esquerda,
   resumo operacional à direita) — breakpoints em 980px e 720px. Se mudar o

@@ -467,6 +467,92 @@ def parse_dt(s):
     return dt
 
 
+# ── Memória da última contagem física ────────────────────────────────────────
+# Quando um produto vende, o upload da planilha detecta a mudança de qtd_sistema
+# e zera status_ciclo/contado_ciclo_em em estoque_mestre: o item volta para
+# "pendente" e a data da conferência SUMIA da tela. O histórico em
+# inventario_cicli não é apagado nessa invalidação — é dele que sai a data da
+# última contagem física, para que a janela de auditoria do produto (desde
+# quando ninguém olha para ele na prateleira) nunca se perca.
+
+_CICLO_ALERTA_DIAS = 30   # a partir daqui a contagem é considerada vencida
+_CICLO_CRITICO_DIAS = 60  # a partir daqui, alerta vermelho
+
+
+def _get_ultimas_contagens_cicli(get_db) -> dict:
+    """{codigo_norm: dict} com a contagem física mais recente de cada produto.
+
+    Independe de a contagem ainda estar válida em estoque_mestre: sobrevive à
+    invalidação por movimentação (venda/entrada). Campos: contado_em, data,
+    qtd_contada, qtd_sistema (a do sistema no dia da contagem) e divergencia.
+    """
+    try:
+        conn = get_db()
+        rows = conn.execute("""
+            SELECT produto_id, data_contagem, contado_em,
+                   qtd_contada, qtd_sistema, divergencia
+            FROM inventario_cicli
+            WHERE qtd_contada IS NOT NULL
+            ORDER BY data_contagem DESC, contado_em DESC
+        """).fetchall()
+    except Exception:
+        return {}
+    out: dict = {}
+    for produto_id, data_contagem, contado_em, qtd_contada, qtd_sistema, divergencia in rows:
+        cod = _norm_cod(produto_id)
+        if not cod or cod in out:
+            continue
+        out[cod] = {
+            "contado_em": str(contado_em or "").strip() or str(data_contagem or ""),
+            "data": str(data_contagem or ""),
+            "qtd_contada": qtd_contada,
+            "qtd_sistema": qtd_sistema,
+            "divergencia": divergencia,
+        }
+    return out
+
+
+def _dias_desde(ts):
+    """Dias corridos entre a data de `ts` e hoje (BRT). None se não parsear."""
+    dt = parse_dt(ts)
+    if dt is None:
+        return None
+    hoje = datetime.now(tz=_BRT).replace(tzinfo=None).date()
+    return max(0, (hoje - dt.date()).days)
+
+
+def _dias_ultima_contagem(ultimas: dict, codigo):
+    """Dias desde a última contagem física do produto; None se nunca contado."""
+    info = (ultimas or {}).get(_norm_cod(codigo))
+    if not info:
+        return None
+    return _dias_desde(info.get("contado_em"))
+
+
+def _rotulo_antiguidade(dias) -> str:
+    if dias is None:
+        return "nunca contado"
+    if dias == 0:
+        return "hoje"
+    if dias == 1:
+        return "ontem"
+    return f"há {dias} dias"
+
+
+def _fmt_dia_br(ts) -> str:
+    """'2026-08-05 14:32:07' → '05/08/2026'."""
+    dt = parse_dt(ts)
+    return dt.strftime("%d/%m/%Y") if dt is not None else str(ts or "")
+
+
+def _mapa_antiguidade(ultimas: dict) -> dict:
+    """{codigo_norm: (contado_em, dias)} — payload enxuto para o treemap."""
+    out = {}
+    for cod, info in (ultimas or {}).items():
+        out[cod] = (info.get("contado_em", ""), _dias_desde(info.get("contado_em")))
+    return out
+
+
 def contagem_ciclo_prevalece(row, entries=None, divergencias_cicli=None) -> bool:
     """O produto tem contagem cíclica? Se tem, ela é a verdade.
 
@@ -683,7 +769,8 @@ def _get_progresso_ciclo(get_db) -> dict:
 # ── Modal de conferência ──────────────────────────────────────────────────────
 
 @st.dialog("Conferência de Estoque", width="small")
-def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None):
+def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
+                        ultimas=None):
     """Modal para confirmar quantidade OK ou registrar divergência."""
     sel_codigo = str(produto_row["codigo"])
     qtd_sistema = int(produto_row["qtd_sistema"])
@@ -740,10 +827,49 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None):
         if _nota:
             st.caption(f"📝 Nota do produto: {_nota}")
 
+    # ── Última contagem física ───────────────────────────────────────────────
+    # A conferência válida vem de estoque_mestre; quando ela foi invalidada por
+    # movimentação, o histórico de inventario_cicli ainda diz QUANDO o produto
+    # foi visto na prateleira pela última vez — é essa janela que interessa
+    # para saber em que intervalo uma unidade pode ter sumido.
     _contado_em = produto_row.get("contado_ciclo_em")
     _qtd_cont = produto_row.get("qtd_contada_ciclo")
-    if pd.notna(_contado_em) and str(_contado_em).strip() and pd.notna(_qtd_cont):
-        st.caption(f"🕐 Última conferência: {int(float(_qtd_cont))} un em {_fmt_dt_br(_contado_em)}")
+    _conf_valida = (pd.notna(_contado_em) and str(_contado_em).strip()
+                    and pd.notna(_qtd_cont))
+    _ult = (ultimas or {}).get(_norm_cod(sel_codigo))
+    if _conf_valida:
+        _dias_v = _dias_desde(_contado_em)
+        st.caption(
+            f"🕐 Última conferência: {int(float(_qtd_cont))} un em "
+            f"{_fmt_dt_br(_contado_em)} ({_rotulo_antiguidade(_dias_v)})"
+        )
+    elif _ult:
+        _dias_v = _dias_desde(_ult.get("contado_em"))
+        _cor_v = ("#ff4757" if (_dias_v or 0) > _CICLO_CRITICO_DIAS
+                  else "#ffa502" if (_dias_v or 0) > _CICLO_ALERTA_DIAS
+                  else "#94a3b8")
+        try:
+            _sis_antes = float(_ult.get("qtd_sistema") or 0)
+        except (TypeError, ValueError):
+            _sis_antes = 0.0
+        _delta_sis = qtd_sistema - _sis_antes
+        _mov = ""
+        if _delta_sis:
+            _mov = (f" · sistema {_fmt_qtd(_sis_antes)} → {qtd_sistema} "
+                    f"({_delta_sis:+.0f}) desde então")
+        st.markdown(
+            f'<div style="background:rgba(255,165,2,0.10);border-left:3px solid {_cor_v};'
+            f'border-radius:6px;padding:6px 10px;margin:4px 0;'
+            f"font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#e8eaf0;\">"
+            f'🕐 Última contagem física: <b>{_fmt_qtd(_ult.get("qtd_contada"))} un</b> em '
+            f'{_fmt_dia_br(_ult.get("contado_em"))} '
+            f'<span style="color:{_cor_v};font-weight:700;">({_rotulo_antiguidade(_dias_v)})</span>'
+            f'<br><span style="color:#94a3b8;">conferência invalidada por movimentação{_mov}</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.caption("🕐 Nunca conferido no inventário cíclico")
 
     st.divider()
 
@@ -803,6 +929,9 @@ def build_inventario_ciclico_tab(
 
     df = get_current_stock()
     divergencias_cicli = _get_divergencias_cicli(get_db)
+    # Data da última contagem física de cada produto — sobrevive à invalidação
+    # que a venda provoca (ver _get_ultimas_contagens_cicli).
+    ultimas_cicli = _get_ultimas_contagens_cicli(get_db)
 
     # ── Processa clique no treemap (via JS → input → callback) ───────────────
     # O callback _on_busca_treemap roda ANTES do corpo do script e seta esta chave.
@@ -831,7 +960,8 @@ def build_inventario_ciclico_tab(
         if _sc:
             _sr = df[df["codigo"].astype(str) == str(_sc)]
             if not _sr.empty:
-                _dialog_conferencia(_sr.iloc[0], get_db, sync_db, get_divergencias)
+                _dialog_conferencia(_sr.iloc[0], get_db, sync_db, get_divergencias,
+                                    ultimas_cicli)
 
     # Popup dos cards e diferença efetiva: cooperados das divergências abertas
     # + comentário do app sincronizado
@@ -860,6 +990,7 @@ def build_inventario_ciclico_tab(
     # contadores baterem com as cores (falta em item "ok" conta como divergência)
     if df.empty:
         progresso = {"total": 0, "ok": 0, "divergencia": 0, "pendente": 0}
+        antiguidade = {"nunca": 0, "critico": 0, "vencido": 0, "recente": 0}
     else:
         _contados_df = df[df["status_ciclo"].isin(["ok", "divergencia"])]
         _n_div = 0
@@ -874,6 +1005,20 @@ def build_inventario_ciclico_tab(
             "divergencia": _n_div,
             "pendente": len(df) - len(_contados_df),
         }
+        # Antiguidade da última contagem física dos PENDENTES: mostra há quanto
+        # tempo cada item sem conferência válida não é visto na prateleira.
+        _pend_df = df[~df["status_ciclo"].isin(["ok", "divergencia"])]
+        antiguidade = {"nunca": 0, "critico": 0, "vencido": 0, "recente": 0}
+        for _cod_p in _pend_df["codigo"]:
+            _d = _dias_ultima_contagem(ultimas_cicli, _cod_p)
+            if _d is None:
+                antiguidade["nunca"] += 1
+            elif _d > _CICLO_CRITICO_DIAS:
+                antiguidade["critico"] += 1
+            elif _d > _CICLO_ALERTA_DIAS:
+                antiguidade["vencido"] += 1
+            else:
+                antiguidade["recente"] += 1
 
     conferidos = progresso["ok"] + progresso["divergencia"]
     pct = (conferidos / max(progresso["total"], 1)) * 100
@@ -885,7 +1030,26 @@ def build_inventario_ciclico_tab(
         <div class="stat-card"><div class="stat-value">{progresso['ok']}</div><div class="stat-label">OK</div></div>
         <div class="stat-card"><div class="stat-value red">{progresso['divergencia']}</div><div class="stat-label">Divergência</div></div>
         <div class="stat-card"><div class="stat-value blue">{pct:.1f}%</div><div class="stat-label">Cobertura</div></div>
+        <div class="stat-card"><div class="stat-value purple">{antiguidade['nunca']}</div><div class="stat-label">Nunca contados</div></div>
     </div>""", unsafe_allow_html=True)
+
+    # Linha de antiguidade: dos pendentes, há quanto tempo foi a última contagem
+    # física. É o que o status "pendente" sozinho esconde — um item pode estar
+    # pendente porque vendeu ontem (contado há 2 dias) ou porque ninguém olha
+    # para ele há meio ano.
+    if antiguidade["nunca"] or antiguidade["critico"] or antiguidade["vencido"]:
+        st.markdown(
+            f"""<div style='display:flex;gap:14px;flex-wrap:wrap;font-size:0.7rem;
+                        margin:2px 0 8px 0;color:#94a3b8;
+                        font-family:JetBrains Mono,monospace;'>
+        <span>🕐 Pendentes por última contagem física:</span>
+        <span style='color:#a55eea;'>nunca {antiguidade['nunca']}</span>
+        <span style='color:#ff4757;'>+{_CICLO_CRITICO_DIAS}d {antiguidade['critico']}</span>
+        <span style='color:#ffa502;'>{_CICLO_ALERTA_DIAS + 1}–{_CICLO_CRITICO_DIAS}d {antiguidade['vencido']}</span>
+        <span>≤{_CICLO_ALERTA_DIAS}d {antiguidade['recente']}</span>
+    </div>""",
+            unsafe_allow_html=True,
+        )
 
     st.markdown("""
     <div style='display:flex;gap:16px;font-size:0.7rem;margin:6px 0 10px 0;
@@ -908,6 +1072,7 @@ def build_inventario_ciclico_tab(
             [
                 "Todos", "Pendentes", "Contados", "Divergências",
                 "Divergências positivas (sobra)", "Divergências negativas (falta)",
+                f"Contagem vencida (+{_CICLO_ALERTA_DIAS}d)", "Nunca contados",
             ],
             key="inv_ciclico_filtro_status",
         )
@@ -939,7 +1104,16 @@ def build_inventario_ciclico_tab(
 
     # Aplica filtro de status também no treemap
     df_treemap = df.copy()
-    if filtro_status == "Pendentes":
+    if filtro_status == "Nunca contados":
+        df_treemap = df_treemap[df_treemap["codigo"].map(
+            lambda c: _norm_cod(c) not in ultimas_cicli)]
+    elif filtro_status.startswith("Contagem vencida"):
+        # Vale para pendentes E para conferidos: uma contagem de 3 meses atrás
+        # continua "verde" no card, mas já não diz nada sobre a prateleira hoje.
+        df_treemap = df_treemap[df_treemap["codigo"].map(
+            lambda c: (_dias_ultima_contagem(ultimas_cicli, c) or 10 ** 6)
+            > _CICLO_ALERTA_DIAS)]
+    elif filtro_status == "Pendentes":
         df_treemap = df_treemap[~df_treemap["status_ciclo"].isin(["ok", "divergencia"])]
     elif filtro_status == "Contados":
         df_treemap = df_treemap[df_treemap["status_ciclo"] == "ok"]
@@ -963,6 +1137,7 @@ def build_inventario_ciclico_tab(
         observacoes_map=obs_map,
         color_mode="ciclico",
         sort_fn=_sort_ciclo,
+        ultima_contagem_map=_mapa_antiguidade(ultimas_cicli),
     )
     st.markdown(html_mapa, unsafe_allow_html=True)
 
