@@ -7666,7 +7666,7 @@ def render_mapa_visual(conn):
     st.plotly_chart(fig_hm, use_container_width=True)
 
 
-def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia", sort_fn=None, ctx: str = "", observacoes_map: dict = None) -> str:
+def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia", sort_fn=None, ctx: str = "", observacoes_map: dict = None, ultima_contagem_map: dict = None) -> str:
     if df.empty:
         return '<div style="color:#64748b;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
@@ -7684,6 +7684,10 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
     avarias_map_norm = {_codigo_key(k): v for k, v in avarias_map.items()}
     divergencias_map_norm = {_codigo_key(k): v for k, v in divergencias_map.items()}
     observacoes_map_norm = {_codigo_key(k): v for k, v in (observacoes_map or {}).items()}
+    # {codigo: (timestamp_da_ultima_contagem_fisica, dias_desde_ela)} — usado no
+    # modo cíclico para nunca perder de vista quando o item foi contado, mesmo
+    # depois de a venda invalidar a conferência.
+    ultima_contagem_norm = {_codigo_key(k): v for k, v in (ultima_contagem_map or {}).items()}
 
     from datetime import date as _vdate, datetime as _vdatetime
 
@@ -7905,7 +7909,12 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Classe de piscado por validade + label de data (somente para alertas)
             blink_cls, venc_label_html = _venc_info(r["produto"])
 
-            # Label da data de contagem cíclica (só no modo cíclico, em itens conferidos)
+            # Label da data de contagem cíclica (só no modo cíclico).
+            # Item conferido mostra a data da conferência válida; item pendente
+            # mostra a data da ÚLTIMA contagem física (do histórico), porque a
+            # venda apaga a conferência mas não apaga o fato de o produto ter
+            # sido contado — sem isso não dá para saber em que intervalo uma
+            # unidade pode ter sumido.
             ciclo_date_html = ""
             if color_mode == "ciclico":
                 _status_c = str(r.get("status_ciclo", "") or "")
@@ -7917,6 +7926,30 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                             f'<div style="margin-top:6px;font-size:10px;font-weight:600;'
                             f'font-family:\'JetBrains Mono\',monospace;letter-spacing:0.3px;'
                             f'color:rgba(255,255,255,0.92);">📅 {_data_fmt}</div>'
+                        )
+                else:
+                    _ult = ultima_contagem_norm.get(cod_str)
+                    _ult_ts, _ult_dias = (_ult if _ult else ("", None))
+                    _ult_ts = str(_ult_ts or "").strip()
+                    if _ult_ts and _ult_ts.lower() != "none" and len(_ult_ts) >= 10:
+                        if _ult_dias is None:
+                            _idade_txt, _idade_cor = "", "rgba(255,255,255,0.45)"
+                        elif _ult_dias > 60:
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#ff6b6b"
+                        elif _ult_dias > 30:
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#ffa502"
+                        else:
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "rgba(255,255,255,0.45)"
+                        ciclo_date_html = (
+                            f'<div style="margin-top:6px;font-size:10px;font-weight:600;'
+                            f'font-family:\'JetBrains Mono\',monospace;letter-spacing:0.3px;'
+                            f'color:{_idade_cor};">📅 {_ult_ts[8:10]}/{_ult_ts[5:7]}{_idade_txt}</div>'
+                        )
+                    else:
+                        ciclo_date_html = (
+                            '<div style="margin-top:6px;font-size:10px;font-weight:600;'
+                            'font-family:\'JetBrains Mono\',monospace;letter-spacing:0.3px;'
+                            'color:#a55eea;">📅 nunca contado</div>'
                         )
 
             # Cooperado(s) com divergência para exibir no popup CSS do card
