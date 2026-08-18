@@ -512,6 +512,47 @@ def _get_ultimas_contagens_cicli(get_db) -> dict:
     return out
 
 
+def _merge_contagem_mestre(ultimas: dict, df) -> dict:
+    """Funde o histórico de `inventario_cicli` com a conferência válida que está
+    em `estoque_mestre`, mantendo a mais recente das duas.
+
+    O histórico só existe para contagens feitas depois que a tabela passou a ser
+    alimentada; um produto conferido antes disso tem data apenas em
+    `estoque_mestre.contado_ciclo_em`. Sem esta fusão ele aparecia como "nunca
+    contado" mesmo com o card verde e a data na tela.
+    """
+    out = dict(ultimas or {})
+    if df is None or getattr(df, "empty", True):
+        return out
+    if "contado_ciclo_em" not in df.columns:
+        return out
+    for cod_raw, ts_raw, qc, qs in zip(
+        df["codigo"], df["contado_ciclo_em"],
+        df["qtd_contada_ciclo"], df["qtd_sistema_na_contagem"],
+    ):
+        ts = str(ts_raw or "").strip()
+        if not ts or ts.lower() in ("none", "nan", "nat"):
+            continue
+        cod = _norm_cod(cod_raw)
+        if not cod:
+            continue
+        atual = out.get(cod)
+        if atual is not None:
+            _novo, _velho = parse_dt(ts), parse_dt(atual.get("contado_em"))
+            # Empate ou histórico mais novo: o histórico prevalece (traz também
+            # o qtd_sistema da época, que estoque_mestre perde na invalidação).
+            if _velho is not None and (_novo is None or _novo <= _velho):
+                continue
+        out[cod] = {
+            "contado_em": ts,
+            "data": ts[:10],
+            "qtd_contada": qc if pd.notna(qc) else None,
+            "qtd_sistema": qs if pd.notna(qs) else None,
+            "divergencia": None,
+        }
+    return out
+
+
 def _dias_desde(ts):
     """Dias corridos entre a data de `ts` e hoje (BRT). None se não parsear."""
     dt = parse_dt(ts)
@@ -931,7 +972,8 @@ def build_inventario_ciclico_tab(
     divergencias_cicli = _get_divergencias_cicli(get_db)
     # Data da última contagem física de cada produto — sobrevive à invalidação
     # que a venda provoca (ver _get_ultimas_contagens_cicli).
-    ultimas_cicli = _get_ultimas_contagens_cicli(get_db)
+    ultimas_cicli = _merge_contagem_mestre(
+        _get_ultimas_contagens_cicli(get_db), df)
 
     # ── Processa clique no treemap (via JS → input → callback) ───────────────
     # O callback _on_busca_treemap roda ANTES do corpo do script e seta esta chave.
