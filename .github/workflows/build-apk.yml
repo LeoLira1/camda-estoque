@@ -33,13 +33,6 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Create .env file
-        working-directory: camda-app
-        run: |
-          echo 'TURSO_DATABASE_URL=${{ secrets.TURSO_DATABASE_URL }}' >> .env
-          echo 'TURSO_AUTH_TOKEN=${{ secrets.TURSO_AUTH_TOKEN }}' >> .env
-          echo 'CAMDA_PASSWORD=${{ secrets.CAMDA_PASSWORD }}' >> .env
-
       - name: Install dependencies
         working-directory: camda-app
         run: flutter pub get
