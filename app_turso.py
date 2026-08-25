@@ -100,6 +100,20 @@ def _senha_confere(digitada: str, esperada: str) -> bool:
     )
 
 
+# ── Escape de texto vindo do usuário/banco em blocos HTML ─────────────────────
+# O sanitizador de markdown do Streamlit remove on*/<script>/javascript:, mas
+# NÃO bloqueia <iframe srcdoc="...">, que executa JS arbitrário na origem do
+# app (roubo de cookie/token XSRF). Todo campo de texto livre que o usuário
+# digita (observação, motivo, nome de produto, cooperado) e que é interpolado
+# em f-string com unsafe_allow_html PRECISA passar por aqui. Sem isto, é XSS
+# armazenado. Só use texto cru em HTML quando ele for gerado pelo próprio código.
+def _hx(v) -> str:
+    """HTML-escape defensivo para interpolar texto do usuário em st.markdown."""
+    if v is None:
+        return ""
+    return _esc_html.escape(str(v), quote=True)
+
+
 # ── Weather Widget ───────────────────────────────────────────────────────────
 def _weather_desc_from_code(code):
     if code == 0:              return "☀️", "Céu limpo"
@@ -7497,7 +7511,7 @@ def render_mapa_visual(conn):
                     st.markdown(
                         f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;'
                         f'background:{p["cor_hex"] or "#4ade80"};margin-right:6px;vertical-align:middle;"></span>'
-                        f'<b>{p["nome"]}</b> <span style="color:#64748b;font-size:0.8rem;">({p["unidade_pad"]})</span>',
+                        f'<b>{_hx(p["nome"])}</b> <span style="color:#64748b;font-size:0.8rem;">({_hx(p["unidade_pad"])})</span>',
                         unsafe_allow_html=True,
                     )
                 with pcol_del:
@@ -11619,7 +11633,7 @@ new Chart(document.getElementById('coop-chart'),{
                         _count_group = len(df_div_agg[df_div_agg["cooperado"].fillna("").astype(str).str.strip() == (cooperado if cooperado else "")])
                         st.markdown(
                             f'<div style="margin:14px 0 6px;padding:6px 12px;background:{_grp_color["h_bg"]};border-left:4px solid {_grp_color["h_bd"]};border-radius:4px;">'
-                            f'<span style="color:{_grp_color["h_tx"]};font-weight:700;font-size:0.82rem;">👤 {_obs_group}</span>'
+                            f'<span style="color:{_grp_color["h_tx"]};font-weight:700;font-size:0.82rem;">👤 {_hx(_obs_group)}</span>'
                             f'<span style="color:#64748b;font-size:0.72rem;margin-left:8px;">{_count_group} item(s)</span>'
                             f'</div>',
                             unsafe_allow_html=True,
@@ -11632,13 +11646,13 @@ new Chart(document.getElementById('coop-chart'),{
                     st.markdown(
                         f'<div style="background:{_grp_color["c_bg"]};border:1px solid {_grp_color["h_bd"]}33;border-left:3px solid {_grp_color["h_bd"]}88;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{item["produto"]}{_merged_badge}</span>'
+                        f'<span style="color:#e0e6ed;font-weight:700;font-size:0.85rem;">{_hx(item["produto"])}{_merged_badge}</span>'
                         f'<span style="color:{status_cor};font-size:0.7rem;font-weight:700;">{status_label} {abs(delta)}</span></div>'
                         f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
-                        f'<span style="color:#64748b;font-size:0.78rem;">Cod: <b style="color:#94a3b8;">{item["codigo"]}</b></span>'
-                        f'<span style="color:#64748b;font-size:0.65rem;">{item["categoria"]}</span>'
+                        f'<span style="color:#64748b;font-size:0.78rem;">Cod: <b style="color:#94a3b8;">{_hx(item["codigo"])}</b></span>'
+                        f'<span style="color:#64748b;font-size:0.65rem;">{_hx(item["categoria"])}</span>'
                         f'<span style="color:#64748b;font-size:0.65rem;">Sistema: <b style="color:#94a3b8;">{qtd_s}</b> · Físico: <b style="color:#94a3b8;">{qtd_f}</b></span>'
-                        + (f'<span style="color:#64748b;font-size:0.75rem;">Cooperado: <i style="color:{_grp_color["h_tx"]};">{cooperado}</i></span>' if cooperado else '')
+                        + (f'<span style="color:#64748b;font-size:0.75rem;">Cooperado: <i style="color:{_grp_color["h_tx"]};">{_hx(cooperado)}</i></span>' if cooperado else '')
                         + f'</div></div>',
                         unsafe_allow_html=True,
                     )
@@ -12142,7 +12156,7 @@ new Chart(document.getElementById('coop-chart'),{
                     badge_txt = f"🚨 {dias} dias — VENCIDO!"
 
                 st.markdown(f'<div class="{card_class}">', unsafe_allow_html=True)
-                obs_html = f'<div class="pend-obs">📝 {obs}</div>' if obs else ""
+                obs_html = f'<div class="pend-obs">📝 {_hx(obs)}</div>' if obs else ""
                 st.markdown(
                     f'<span class="badge-dias {badge_class}">{badge_txt}</span>'
                     f'<div class="pend-data">Registrado em: {data_reg}</div>'
@@ -12356,7 +12370,7 @@ new Chart(document.getElementById('coop-chart'),{
                             f'<span class="av-badge {badge_cls}">{badge_txt}</span>'
                             f'<span class="av-tempo">{tempo_av}</span>'
                             f'</div>'
-                            f'<p class="av-produto-nome">{av["produto"]}</p>'
+                            f'<p class="av-produto-nome">{_hx(av["produto"])}</p>'
                             f'</div>',
                             unsafe_allow_html=True
                         )
@@ -13147,8 +13161,8 @@ new Chart(document.getElementById('coop-chart'),{
                             f'<span class="ct-nome">{prod}</span>'
                             f'<span class="ct-cod" style="color:#94a3b8;font-size:0.78em;margin-left:8px;font-weight:400;">#{_cod}</span>'
                             f'<span class="ct-qty">{qty} un</span>'
-                            + (f'<div class="ct-motivo" style="color:#a855f7;">{_motivo_pend}</div>' if _motivo_pend else '')
-                            + (f'<div class="ct-motivo">{_obs_existente}</div>' if _obs_existente else '')
+                            + (f'<div class="ct-motivo" style="color:#a855f7;">{_hx(_motivo_pend)}</div>' if _motivo_pend else '')
+                            + (f'<div class="ct-motivo">{_hx(_obs_existente)}</div>' if _obs_existente else '')
                         )
                         st.markdown(f'<div class="ct-card pendente">{info_html}</div>', unsafe_allow_html=True)
 
@@ -14729,11 +14743,11 @@ new Chart(document.getElementById('coop-chart'),{
             for _, _rl in _df_lanc.iterrows():
                 _nome_l = short_name(_rl["produto"])
                 _data_l = str(_rl["registrado_em"])[:16].replace("T", " ")
-                _motivo_l = f' — {_rl["motivo"]}' if _rl.get("motivo", "").strip() else ""
+                _motivo_l = f' — {_hx(_rl["motivo"])}' if _rl.get("motivo", "").strip() else ""
                 _html_lanc.append(
                     f'<div class="ent-row">'
                     f'<span class="ent-cod">{_rl["codigo"]}</span>'
-                    f'<span class="ent-prod">{_nome_l}{_motivo_l}</span>'
+                    f'<span class="ent-prod">{_hx(_nome_l)}{_motivo_l}</span>'
                     f'<span class="ent-badge ent-manual">{_rl["tipo"]}</span>'
                     f'<span class="ent-delta">+{int(_rl["quantidade"])}</span>'
                     f'<span class="ent-date">{_data_l}</span>'
