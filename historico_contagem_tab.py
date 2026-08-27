@@ -1,4 +1,5 @@
 """Aba de Histórico de Contagem — lista por dia das contagens realizadas."""
+import html as _html
 from datetime import datetime, timedelta, timezone, date
 
 import streamlit as st
@@ -21,6 +22,56 @@ _NOMES_INVALIDOS_COOP = {
 }
 
 _BRT = timezone(timedelta(hours=-3))
+
+# Teto de bytes por bloco de HTML enviado ao navegador. Ver _render_rows().
+_MAX_CHUNK_BYTES = 6000
+
+
+def _hx(v) -> str:
+    """HTML-escape para interpolar texto do banco em st.markdown.
+
+    Mesmo papel do _hx() do app_turso.py: nome de produto e categoria vêm da
+    planilha e são interpolados em f-string com unsafe_allow_html.
+    """
+    if v is None:
+        return ""
+    return _html.escape(str(v), quote=True)
+
+
+def _render_rows(rows: list[str], key: str) -> None:
+    """Emite as linhas em vários st.markdown pequenos, nunca num só.
+
+    Um único st.markdown com a lista inteira passa dos 10 000 bytes de
+    `global.minCachedMessageSize` (33 linhas dão ~17 KB) e o Streamlit marca
+    aquele ForwardMsg como *cacheable*: da segunda vez que o mesmo conteúdo é
+    renderizado na sessão, o servidor manda só o `ref_hash` e o navegador tem
+    de resolver pelo cache dele. Se o navegador já descartou aquele hash
+    (aba restaurada, celular sob pressão de memória, segunda aba), o elemento
+    chega VAZIO — e a lista some enquanto os KPIs e os títulos, pequenos
+    demais para serem cacheados, continuam aparecendo. Foi exatamente esse o
+    sintoma reportado: "33 contados" e nenhum produto na tela.
+
+    Quebrando abaixo do limite, nenhum bloco vira cacheable e a lista sempre
+    chega inteira.
+    """
+    if not rows:
+        return
+    chunks: list[str] = []
+    atual: list[str] = []
+    tam = 0
+    for r in rows:
+        n = len(r.encode("utf-8"))
+        if atual and tam + n > _MAX_CHUNK_BYTES:
+            chunks.append("".join(atual))
+            atual, tam = [], 0
+        atual.append(r)
+        tam += n
+    if atual:
+        chunks.append("".join(atual))
+    with st.container(key=key):
+        for ch in chunks:
+            st.markdown(ch, unsafe_allow_html=True)
+
 
 _CSS = """<style>
 .hc-title{font-size:1.05rem;font-weight:700;color:#e0e6ed;margin-bottom:12px;}
@@ -50,6 +101,15 @@ _CSS = """<style>
 .hc-empty{text-align:center;padding:40px 20px;color:#475569;font-size:0.85rem;}
 .hc-section{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
              color:#64748b;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #1e293b;}
+/* A lista sai em vários st.markdown (ver _render_rows). Sem isto o Streamlit
+   insere 1rem de gap entre os blocos e a emenda aparece; zerando só o gap as
+   linhas se sobrepõem 13px, porque o markdown do Streamlit já vem com margem
+   inferior negativa. Zera os dois: a emenda fica igual ao respiro de 3px que
+   cada .hc-row já tem. */
+div[class*="st-key-hc-lista"]{gap:0 !important;}
+div[class*="st-key-hc-lista"] .stElementContainer,
+div[class*="st-key-hc-lista"] .stMarkdown,
+div[class*="st-key-hc-lista"] [data-testid="stMarkdownContainer"]{margin:0 !important;}
 /* Destaque nos dias com contagem no calendário */
 .hc-cal-legend{display:flex;gap:16px;font-size:0.7rem;color:#64748b;
                margin:4px 0 10px;font-family:'JetBrains Mono',monospace;}
@@ -179,6 +239,29 @@ def _fmt_hora(contado_em: str) -> str:
     return contado_em[:5] if len(contado_em) >= 5 else contado_em
 
 
+def _fmt_qtd(v) -> str:
+    """Quantidade sem casas decimais. Tolera TEXT vindo do banco.
+
+    SQLite é dinamicamente tipado: `qtd_estoque` é INTEGER na declaração mas
+    pode ter sido gravado como string por um upload. `f"{v:.0f}"` direto
+    levantaria ValueError e derrubaria a aba inteira.
+    """
+    if v is None or v == "":
+        return "—"
+    try:
+        return f"{float(v):.0f}"
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def _fmt_delta(v) -> str:
+    """Delta com sinal. Mesma tolerância de tipo do _fmt_qtd."""
+    try:
+        return f"{float(v):+.0f}"
+    except (TypeError, ValueError):
+        return str(v if v is not None else "—")
+
+
 def _fmt_data_br(data_iso: str) -> str:
     try:
         d = date.fromisoformat(data_iso)
@@ -286,12 +369,12 @@ def build_historico_contagem_tab(get_db):
     items_div = [i for i in items if i["divergencia"] is not None and abs(float(i["divergencia"])) >= 0.01]
     items_ok  = [i for i in items if i not in items_div]
 
-    def _render_section(section_items, label):
+    def _render_section(section_items, label, key):
         if not section_items:
             return
         if label:
             st.markdown(f'<div class="hc-section">{label}</div>', unsafe_allow_html=True)
-        rows_html = ""
+        rows = []
         for item in section_items:
             div = item["divergencia"]
             is_ok = div is not None and abs(float(div)) < 0.01
@@ -299,10 +382,9 @@ def build_historico_contagem_tab(get_db):
             badge_cls = "ok" if is_ok else "div"
             badge_txt = "OK" if is_ok else "Divergência"
 
-            qtd_s = f"{item['qtd_sistema']:.0f}" if item["qtd_sistema"] is not None else "—"
-            qtd_c = f"{item['qtd_contada']:.0f}" if item["qtd_contada"] is not None else "—"
+            qtd_s = _fmt_qtd(item["qtd_sistema"])
+            qtd_c = _fmt_qtd(item["qtd_contada"])
             hora  = _fmt_hora(item["contado_em"])
-            cat   = item["categoria"]
 
             if div is None:
                 delta_html = '<span class="hc-delta">—</span>'
@@ -313,23 +395,24 @@ def build_historico_contagem_tab(get_db):
                 delta_cls = "neg" if dv < 0 else "pos"
                 delta_html = f'<span class="hc-delta {delta_cls}">{dv:+.0f}</span>'
 
-            rows_html += f"""
-            <div class="hc-row {row_cls}">
-                <span class="hc-badge {badge_cls}">{badge_txt}</span>
-                <span class="hc-prod">{item['produto'] or item['codigo']}</span>
-                <span class="hc-cod">{item['codigo']}</span>
-                <span style="font-size:0.65rem;color:#475569;flex:0 0 auto;">{cat}</span>
-                <span class="hc-qtd" title="Sistema / Contado">Sis:{qtd_s} · Cnt:{qtd_c}</span>
-                {delta_html}
-                <span class="hc-hora">{hora}</span>
-            </div>"""
-        st.markdown(rows_html, unsafe_allow_html=True)
+            rows.append(
+                f'<div class="hc-row {row_cls}">'
+                f'<span class="hc-badge {badge_cls}">{badge_txt}</span>'
+                f'<span class="hc-prod">{_hx(item["produto"] or item["codigo"])}</span>'
+                f'<span class="hc-cod">{_hx(item["codigo"])}</span>'
+                f'<span style="font-size:0.65rem;color:#475569;flex:0 0 auto;">{_hx(item["categoria"])}</span>'
+                f'<span class="hc-qtd" title="Sistema / Contado">Sis:{qtd_s} · Cnt:{qtd_c}</span>'
+                f'{delta_html}'
+                f'<span class="hc-hora">{_hx(hora)}</span>'
+                f'</div>'
+            )
+        _render_rows(rows, key)
 
     if filtro_status == "Todos":
-        _render_section(items_div, f"⚠️ Divergências ({len(items_div)})")
-        _render_section(items_ok,  f"✅ Conferidos OK ({len(items_ok)})")
+        _render_section(items_div, f"⚠️ Divergências ({len(items_div)})", "hc-lista-div")
+        _render_section(items_ok,  f"✅ Conferidos OK ({len(items_ok)})", "hc-lista-ok")
     else:
-        _render_section(items, label="")
+        _render_section(items, label="", key="hc-lista-filtrada")
 
     # ── Divergências em aberto: Sobrando / Faltando (sem cooperado) ──────────
     divs_abertas = _get_divergencias_abertas_sem_cooperado(conn)
@@ -339,26 +422,25 @@ def build_historico_contagem_tab(get_db):
             unsafe_allow_html=True,
         )
         st.caption("Itens com divergência sem cooperado vinculado. Somem desta lista ao serem contados como certos.")
-        rows_html = ""
+        rows = []
         for item in divs_abertas:
-            delta = item["delta"]
             is_sobra = item["status"] == "sobra"
             badge_txt = "Sobrando" if is_sobra else "Faltando"
-            badge_cls = "pos" if is_sobra else "neg"
-            delta_cls  = "pos" if is_sobra else "neg"
-            delta_html = f'<span class="hc-delta {delta_cls}">{delta:+d}</span>'
+            delta_cls = "pos" if is_sobra else "neg"
+            delta_html = f'<span class="hc-delta {delta_cls}">{_fmt_delta(item["delta"])}</span>'
             try:
                 dt = datetime.strptime(item["criado_em"][:16], "%Y-%m-%d %H:%M")
                 data_fmt = dt.strftime("%d/%m %H:%M")
             except Exception:
                 data_fmt = (item["criado_em"] or "")[:10]
-            rows_html += f"""
-            <div class="hc-row div">
-                <span class="hc-badge div">{badge_txt}</span>
-                <span class="hc-prod">{item['produto'] or item['codigo']}</span>
-                <span class="hc-cod">{item['codigo']}</span>
-                <span style="font-size:0.65rem;color:#475569;flex:0 0 auto;">{item['categoria']}</span>
-                {delta_html}
-                <span class="hc-hora">{data_fmt}</span>
-            </div>"""
-        st.markdown(rows_html, unsafe_allow_html=True)
+            rows.append(
+                f'<div class="hc-row div">'
+                f'<span class="hc-badge div">{badge_txt}</span>'
+                f'<span class="hc-prod">{_hx(item["produto"] or item["codigo"])}</span>'
+                f'<span class="hc-cod">{_hx(item["codigo"])}</span>'
+                f'<span style="font-size:0.65rem;color:#475569;flex:0 0 auto;">{_hx(item["categoria"])}</span>'
+                f'{delta_html}'
+                f'<span class="hc-hora">{_hx(data_fmt)}</span>'
+                f'</div>'
+            )
+        _render_rows(rows, "hc-lista-abertas")

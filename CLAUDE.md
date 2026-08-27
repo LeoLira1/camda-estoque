@@ -109,6 +109,18 @@ antemão em vez de redescobri-las:
   não de `estoque_mestre`: é ela que preserva a janela de auditoria (há quantos
   dias ninguém olha aquele produto na prateleira). Não troque essa origem pela
   coluna de `estoque_mestre` "para simplificar" — some de novo a cada venda.
+- **Nunca mande uma lista inteira num único `st.markdown`.** Acima de 10 000
+  bytes (`global.minCachedMessageSize`) o Streamlit marca o ForwardMsg como
+  *cacheable*: na segunda vez que aquele conteúdo aparece na sessão o servidor
+  envia só o `ref_hash` e o navegador tem de resolver pelo cache dele. Se o
+  navegador já descartou o hash (aba restaurada, celular sob pressão de
+  memória, segunda aba), o elemento chega VAZIO — sem erro, sem exceção. Foi
+  assim que a lista da aba 📋 Hist. Contagem sumiu enquanto os KPIs ("33
+  contados") e os títulos, pequenos demais para cachear, continuavam na tela.
+  O `_render_rows()` do `historico_contagem_tab.py` é o padrão a copiar:
+  quebra as linhas em blocos de ~6 KB dentro de um `st.container(key=...)`
+  cujo CSS zera o `gap` E as margens do markdown (só zerar o gap faz as linhas
+  se sobreporem 13px). Vale para qualquer lista longa em HTML cru.
 - O campo de busca do header (key=`search_mestre`) é sobreposto ao topbar
   via CSS com paddings que reservam as zonas laterais (marca à esquerda,
   resumo operacional à direita) — breakpoints em 980px e 720px. Se mudar o
