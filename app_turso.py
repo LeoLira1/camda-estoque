@@ -8114,6 +8114,7 @@ def save_vendas_historico(records: list, grupo_map: dict, zerados: list = None, 
         # Invalida caches que dependem de vendas_historico
         get_vendas_historico.clear()
         get_ultima_venda_por_produto.clear()
+        get_vendas_dias_por_produto.clear()
         get_vendas_por_dia.clear()
         get_top_produtos_historico.clear()
         get_periodo_vendas.clear()
@@ -8678,6 +8679,34 @@ def get_ultima_venda_por_produto() -> pd.DataFrame:
         """).fetchall()
         if rows:
             return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "ultima_data", "qtd_ultimo_dia", "qtd_total"])
+    except Exception:
+        pass
+    return pd.DataFrame()
+
+
+@st.cache_data(ttl=1800)
+def get_vendas_dias_por_produto(codigo: str) -> pd.DataFrame:
+    """Todos os dias em que UM produto foi vendido, do mais recente ao mais antigo.
+
+    Complementa get_ultima_venda_por_produto(), que agrupa por código e por
+    isso devolve só a última data de cada produto. Aqui não há GROUP BY codigo
+    nem janela de dias: é o histórico inteiro daquele código, um registro por
+    dia. Quantidade crua, sem a conversão de m² das LONAS, para bater com a
+    coluna "Qtd no Dia" da tabela da aba.
+    """
+    if not codigo:
+        return pd.DataFrame()
+    try:
+        rows = get_db().execute("""
+            SELECT date(v.data_upload) AS dia,
+                   SUM(v.qtd_vendida)  AS qtd
+              FROM vendas_historico v
+             WHERE v.codigo = ?
+             GROUP BY date(v.data_upload)
+             ORDER BY dia DESC
+        """, (str(codigo),)).fetchall()
+        if rows:
+            return pd.DataFrame(rows, columns=["dia", "qtd"])
     except Exception:
         pass
     return pd.DataFrame()
@@ -12005,7 +12034,10 @@ new Chart(document.getElementById('coop-chart'),{
             _uv_c1, _uv_c2, _uv_c3 = st.columns(3)
             _uv_c1.metric("Última data de venda", _uv_ultima_fmt)
             _uv_c2.metric("Produtos com venda registrada", len(_df_uv))
-            _uv_c3.metric("Dias distintos no histórico", len(_uv_datas))
+            # len(_uv_datas) conta datas de ÚLTIMA venda, não dias do histórico:
+            # com todo mundo vendido no mesmo dia dava "1" mesmo havendo meses
+            # de histórico. get_periodo_vendas() conta os data_upload distintos.
+            _uv_c3.metric("Dias distintos no histórico", get_periodo_vendas())
 
             st.markdown("---")
 
@@ -12072,6 +12104,92 @@ new Chart(document.getElementById('coop-chart'),{
             )
 
             st.caption(f"Exibindo {len(_df_uv_disp)} de {len(_df_uv)} produto(s).")
+
+            # ── Detalhamento por dia de UM produto ───────────────────────
+            # A tabela acima tem uma linha por produto (só a última venda).
+            # Aqui abre o histórico completo do produto escolhido, um dia
+            # por linha — inclusive dias fora dos 180 dias das outras abas.
+            st.markdown("---")
+            st.markdown("#### 📆 Detalhamento por dia")
+
+            if _df_uv_show.empty:
+                st.info("Nenhum produto no filtro acima. Ajuste a busca para escolher um produto.")
+            else:
+                _uv_mapa = {
+                    f"{_r.codigo} — {_r.produto}": _r.codigo
+                    for _r in _df_uv_show.itertuples(index=False)
+                }
+                _uv_label = st.selectbox(
+                    "Produto",
+                    list(_uv_mapa.keys()),
+                    key="uv_prod_dia",
+                    help="Lista limitada pela busca e pelo filtro de data acima.",
+                )
+                _uv_cod_sel = _uv_mapa.get(_uv_label, "")
+                _df_uv_dias = get_vendas_dias_por_produto(_uv_cod_sel)
+
+                if _df_uv_dias.empty:
+                    st.info("Sem dias de venda registrados para este produto.")
+                else:
+                    _uv_qtds = pd.to_numeric(_df_uv_dias["qtd"], errors="coerce").fillna(0)
+                    _uv_n_dias = len(_df_uv_dias)
+                    _uv_total = int(_uv_qtds.sum())
+                    _uv_media = _uv_qtds.mean()
+                    _uv_primeiro = str(_df_uv_dias["dia"].iloc[-1])
+                    _uv_ultimo = str(_df_uv_dias["dia"].iloc[0])
+
+                    def _uv_fmt_dia(d):
+                        try:
+                            return datetime.strptime(str(d), "%Y-%m-%d").strftime("%d/%m/%Y")
+                        except Exception:
+                            return str(d)
+
+                    _uv_d1, _uv_d2, _uv_d3 = st.columns(3)
+                    _uv_d1.metric("Dias com venda", _uv_n_dias)
+                    _uv_d2.metric("Total vendido", f"{_uv_total:,}".replace(",", "."))
+                    _uv_d3.metric("Média por dia", f"{_uv_media:.1f} un.")
+
+                    # Gráfico em ordem cronológica (a consulta vem do mais
+                    # recente para o mais antigo, que é a ordem da tabela).
+                    _df_uv_cron = _df_uv_dias.iloc[::-1]
+                    _fig_uv = go.Figure()
+                    _fig_uv.add_trace(go.Scatter(
+                        x=[_uv_fmt_dia(d) for d in _df_uv_cron["dia"]],
+                        y=pd.to_numeric(_df_uv_cron["qtd"], errors="coerce").fillna(0),
+                        mode="lines+markers",
+                        line=dict(color="#3b82f6", width=2),
+                        marker=dict(size=6, color="#3b82f6"),
+                        fill="tozeroy",
+                        fillcolor="rgba(59,130,246,0.10)",
+                        hovertemplate="<b>%{x}</b><br>%{y} un.<extra></extra>",
+                    ))
+                    _fig_uv.update_layout(
+                        **_PLOTLY_LAYOUT,
+                        height=260,
+                        xaxis=dict(gridcolor="#1e293b", tickangle=-45, tickfont=dict(size=9)),
+                        yaxis=dict(gridcolor="#1e293b", title="Unidades"),
+                        showlegend=False,
+                    )
+                    st.plotly_chart(_fig_uv, use_container_width=True,
+                                    config={"displayModeBar": False, "editable": False, "scrollZoom": False})
+
+                    _df_uv_dias_disp = _df_uv_dias.copy()
+                    _df_uv_dias_disp["dia"] = _df_uv_dias_disp["dia"].apply(_uv_fmt_dia)
+                    _df_uv_dias_disp.rename(columns={"dia": "Data", "qtd": "Qtd Vendida"}, inplace=True)
+                    st.dataframe(
+                        _df_uv_dias_disp,
+                        hide_index=True,
+                        use_container_width=True,
+                        height=min(400, 56 + _uv_n_dias * 35),
+                        column_config={
+                            "Data": st.column_config.TextColumn("Data", width="small"),
+                            "Qtd Vendida": st.column_config.NumberColumn("Qtd Vendida", format="%d"),
+                        },
+                    )
+                    st.caption(
+                        f"{_uv_n_dias} dia(s) com venda entre {_uv_fmt_dia(_uv_primeiro)} "
+                        f"e {_uv_fmt_dia(_uv_ultimo)} — histórico completo, sem janela de dias."
+                    )
 
     if _dash_tab == _TAB_PENDENCIAS:
         # ── CSS da aba ──
