@@ -1,2 +1,14 @@
 [client]
 toolbarMode = "minimal"
+
+# Paleta "Cerrado Instrumental" — espelha os tokens --c-* do CSS global
+# (app_turso.py). Widgets nativos (dataframe, inputs, sliders) herdam daqui.
+[theme]
+base = "dark"
+primaryColor = "#d9a441"
+backgroundColor = "#141311"
+secondaryBackgroundColor = "#1c1a17"
+textColor = "#ece6dc"
+borderColor = "#2e2a24"
+font = "IBM Plex Sans, sans-serif"
+codeFont = "IBM Plex Mono, monospace"
