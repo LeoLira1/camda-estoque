@@ -40,7 +40,7 @@ def render_rack_3d(
             "produto":    v.get("produto", ""),
             "quantidade": v.get("quantidade"),
             "unidade":    v.get("unidade", ""),
-            "cor_hex":    v.get("cor_hex") or v.get("cor") or "#4ade80",
+            "cor_hex":    v.get("cor_hex") or v.get("cor") or "#6fd39c",
         }
 
     html_str = _build_html(paletes_norm, rack_id, face, hl_list, height)
@@ -65,13 +65,13 @@ def _build_html(
     css = f"""
 <style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ background: #0f172a; overflow: hidden; }}
+body {{ background: #171614; overflow: hidden; }}
 #rc {{
   width: 100%;
   height: {height}px;
   position: relative;
   overflow: hidden;
-  background: #0f172a;
+  background: #171614;
 }}
 canvas {{
   display: block;
@@ -81,8 +81,8 @@ canvas {{
 #tt {{
   position: absolute;
   display: none;
-  background: rgba(15,23,42,0.94);
-  border: 1px solid #1d4ed8;
+  background: rgba(23,22,20,0.94);
+  border: 1px solid #4a7a94;
   border-radius: 6px;
   padding: 7px 11px;
   pointer-events: none;
@@ -96,10 +96,10 @@ canvas {{
   position: absolute;
   top: 8px;
   left: 8px;
-  color: #475569;
+  color: #6b6358;
   font-family: monospace;
   font-size: 0.62rem;
-  background: rgba(15,23,42,0.75);
+  background: rgba(23,22,20,0.75);
   padding: 4px 9px;
   border-radius: 4px;
   pointer-events: none;
@@ -110,10 +110,10 @@ canvas {{
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-  color: #334155;
+  color: #3a352d;
   font-family: monospace;
   font-size: 0.7rem;
-  background: rgba(15,23,42,0.7);
+  background: rgba(23,22,20,0.7);
   padding: 3px 10px;
   border-radius: 4px;
   pointer-events: none;
@@ -310,7 +310,7 @@ _THREE_JS_CODE = r"""
         scene.add(pm);
 
         /* Caixa do produto */
-        var hexStr  = (palete.cor_hex || '#4ade80').replace('#', '');
+        var hexStr  = (palete.cor_hex || '#6fd39c').replace('#', '');
         var hexCol  = parseInt(hexStr, 16);
         var emColor = isHL ? 0xfbbf24 : 0x000000;
         var emInt   = isHL ? 0.65      : 0.0;
@@ -457,13 +457,13 @@ _THREE_JS_CODE = r"""
         ? String(ud.quantidade) + ' ' + (ud.unidade || '') : '';
       if (ud.isEmpty) {
         tooltip.innerHTML =
-          '<span style="color:#60a5fa;font-size:0.75rem;font-weight:700">' + ud.pos_key + '</span>' +
-          '<br><span style="color:#475569;font-size:0.7rem">Vazio</span>';
+          '<span style="color:#8db5ca;font-size:0.75rem;font-weight:700">' + ud.pos_key + '</span>' +
+          '<br><span style="color:#6b6358;font-size:0.7rem">Vazio</span>';
       } else {
         tooltip.innerHTML =
-          '<span style="color:#60a5fa;font-size:0.78rem;font-weight:700">' + ud.pos_key + '</span>' +
-          '<br><span style="color:#e2e8f0;font-size:0.8rem">' + ud.produto + '</span>' +
-          (qty.trim() ? '<br><span style="color:#94a3b8;font-size:0.72rem">' + qty.trim() + '</span>' : '');
+          '<span style="color:#8db5ca;font-size:0.78rem;font-weight:700">' + ud.pos_key + '</span>' +
+          '<br><span style="color:#e6dfd3;font-size:0.8rem">' + ud.produto + '</span>' +
+          (qty.trim() ? '<br><span style="color:#b3aa9c;font-size:0.72rem">' + qty.trim() + '</span>' : '');
       }
       var r = canvas.getBoundingClientRect();
       var tx = e.clientX - r.left + 14;

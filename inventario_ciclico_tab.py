@@ -39,36 +39,36 @@ _CICLO_LAST = frozenset({
 _CSS_CARDS = """<style>
 [data-testid="stColumn"]:has([id^="cic-pend-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-pend-"]) [data-testid="stButton"] button {
-    background:rgba(255,165,2,0.20)!important;
-    border:none!important; border-left:3px solid #ffa502!important;
+    background:rgba(224,160,48,0.20)!important;
+    border:none!important; border-left:3px solid #e0a030!important;
     border-radius:10px!important; padding:10px 8px!important;
     text-align:left!important; min-height:68px!important;
-    width:100%!important; color:#e8eaf0!important;
-    font-family:'JetBrains Mono',monospace!important;
+    width:100%!important; color:#ece6dc!important;
+    font-family:'IBM Plex Mono',monospace!important;
     font-size:0.75rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
     transition:opacity .12s,transform .1s!important;
 }
 [data-testid="stColumn"]:has([id^="cic-ok-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-ok-"]) [data-testid="stButton"] button {
-    background:rgba(0,214,143,0.72)!important;
-    border:2px solid #00d68f!important;
+    background:rgba(63,191,127,0.72)!important;
+    border:2px solid #3fbf7f!important;
     border-radius:10px!important; padding:10px 8px!important;
     text-align:left!important; min-height:68px!important;
     width:100%!important; color:#ffffff!important;
-    font-family:'JetBrains Mono',monospace!important;
+    font-family:'IBM Plex Mono',monospace!important;
     font-size:0.75rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
     transition:opacity .12s,transform .1s!important;
 }
 [data-testid="stColumn"]:has([id^="cic-div-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-div-"]) [data-testid="stButton"] button {
-    background:rgba(255,71,87,0.72)!important;
-    border:2px solid #ff4757!important;
+    background:rgba(229,83,61,0.72)!important;
+    border:2px solid #e5533d!important;
     border-radius:10px!important; padding:10px 8px!important;
     text-align:left!important; min-height:68px!important;
     width:100%!important; color:#ffffff!important;
-    font-family:'JetBrains Mono',monospace!important;
+    font-family:'IBM Plex Mono',monospace!important;
     font-size:0.75rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
     transition:opacity .12s,transform .1s!important;
@@ -705,7 +705,7 @@ def _relatorio_divergencias_html(df_div: pd.DataFrame, divergencias_cicli: dict)
   h2 {{ font-size: 13px; margin: 18px 0 6px 0; padding-bottom: 3px;
         border-bottom: 2px solid #111; }}
   h2.sobra {{ border-color: #1a7f37; }}
-  h2.falta {{ border-color: #b91c1c; }}
+  h2.falta {{ border-color: #b3402d; }}
   table {{ width: 100%; border-collapse: collapse; }}
   th, td {{ border: 1px solid #999; padding: 4px 6px; text-align: left;
             vertical-align: top; }}
@@ -833,16 +833,16 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
             for _, _dv in _df_div.iterrows():
                 _delta = int(_dv["delta"]) if pd.notna(_dv.get("delta")) else 0
                 _falta = _delta < 0
-                _seta, _cor = ("▼", "#ff4757") if _falta else ("▲", "#ffa502")
+                _seta, _cor = ("▼", "#e5533d") if _falta else ("▲", "#e0a030")
                 _tipo = "falta" if _falta else "sobra"
                 _coop = str(_dv.get("cooperado") or "").strip() or "sem cooperado"
                 st.markdown(
-                    f'<div style="background:rgba(255,71,87,0.10);border-left:3px solid {_cor};'
+                    f'<div style="background:rgba(229,83,61,0.10);border-left:3px solid {_cor};'
                     f'border-radius:6px;padding:6px 10px;margin:4px 0;'
-                    f"font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#e8eaf0;\">"
+                    f"font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#ece6dc;\">"
                     f'<span style="color:{_cor};font-weight:700;">{_seta} {abs(_delta)} un ({_tipo})</span>'
                     f' · 👤 {_html.escape(_coop)}'
-                    f' · <span style="color:#94a3b8;">{_fmt_dt_br(_dv.get("criado_em"))}</span>'
+                    f' · <span style="color:#b3aa9c;">{_fmt_dt_br(_dv.get("criado_em"))}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -850,11 +850,11 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
     _obs = _get_ultima_observacao_cicli(get_db, sel_codigo)
     if _obs and str(_obs[0] or "").strip():
         st.markdown(
-            f'<div style="background:rgba(59,130,246,0.10);border-left:3px solid #3b82f6;'
+            f'<div style="background:rgba(111,159,184,0.10);border-left:3px solid #6f9fb8;'
             f'border-radius:6px;padding:6px 10px;margin:4px 0;'
-            f"font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#e8eaf0;\">"
+            f"font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#ece6dc;\">"
             f'💬 "{_html.escape(str(_obs[0]).strip())}"'
-            f' · <span style="color:#94a3b8;">{_fmt_dt_br(_obs[1])}</span>'
+            f' · <span style="color:#b3aa9c;">{_fmt_dt_br(_obs[1])}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -886,9 +886,9 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
         )
     elif _ult:
         _dias_v = _dias_desde(_ult.get("contado_em"))
-        _cor_v = ("#ff4757" if (_dias_v or 0) > _CICLO_CRITICO_DIAS
-                  else "#ffa502" if (_dias_v or 0) > _CICLO_ALERTA_DIAS
-                  else "#94a3b8")
+        _cor_v = ("#e5533d" if (_dias_v or 0) > _CICLO_CRITICO_DIAS
+                  else "#e0a030" if (_dias_v or 0) > _CICLO_ALERTA_DIAS
+                  else "#b3aa9c")
         try:
             _sis_antes = float(_ult.get("qtd_sistema") or 0)
         except (TypeError, ValueError):
@@ -899,13 +899,13 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
             _mov = (f" · sistema {_fmt_qtd(_sis_antes)} → {qtd_sistema} "
                     f"({_delta_sis:+.0f}) desde então")
         st.markdown(
-            f'<div style="background:rgba(255,165,2,0.10);border-left:3px solid {_cor_v};'
+            f'<div style="background:rgba(224,160,48,0.10);border-left:3px solid {_cor_v};'
             f'border-radius:6px;padding:6px 10px;margin:4px 0;'
-            f"font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#e8eaf0;\">"
+            f"font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#ece6dc;\">"
             f'🕐 Última contagem física: <b>{_fmt_qtd(_ult.get("qtd_contada"))} un</b> em '
             f'{_fmt_dia_br(_ult.get("contado_em"))} '
             f'<span style="color:{_cor_v};font-weight:700;">({_rotulo_antiguidade(_dias_v)})</span>'
-            f'<br><span style="color:#94a3b8;">conferência invalidada por movimentação{_mov}</span>'
+            f'<br><span style="color:#b3aa9c;">conferência invalidada por movimentação{_mov}</span>'
             f'</div>',
             unsafe_allow_html=True,
         )
@@ -928,11 +928,11 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
     diferenca = int(qtd_real) - qtd_sistema
     if diferenca == 0:
         st.markdown(
-            "<span style='color:#00d68f;font-size:0.85rem'>✓ Sem diferença</span>",
+            "<span style='color:#3fbf7f;font-size:0.85rem'>✓ Sem diferença</span>",
             unsafe_allow_html=True,
         )
     else:
-        cor = "#ff4757" if diferenca < 0 else "#ffa502"
+        cor = "#e5533d" if diferenca < 0 else "#e0a030"
         st.markdown(
             f"<span style='color:{cor};font-size:0.85rem'>Diferença: {diferenca:+d} unidades</span>",
             unsafe_allow_html=True,
@@ -1082,12 +1082,12 @@ def build_inventario_ciclico_tab(
     if antiguidade["nunca"] or antiguidade["critico"] or antiguidade["vencido"]:
         st.markdown(
             f"""<div style='display:flex;gap:14px;flex-wrap:wrap;font-size:0.7rem;
-                        margin:2px 0 8px 0;color:#94a3b8;
-                        font-family:JetBrains Mono,monospace;'>
+                        margin:2px 0 8px 0;color:#b3aa9c;
+                        font-family:IBM Plex Mono,monospace;'>
         <span>🕐 Pendentes por última contagem física:</span>
-        <span style='color:#a55eea;'>nunca {antiguidade['nunca']}</span>
-        <span style='color:#ff4757;'>+{_CICLO_CRITICO_DIAS}d {antiguidade['critico']}</span>
-        <span style='color:#ffa502;'>{_CICLO_ALERTA_DIAS + 1}–{_CICLO_CRITICO_DIAS}d {antiguidade['vencido']}</span>
+        <span style='color:#a98bc9;'>nunca {antiguidade['nunca']}</span>
+        <span style='color:#e5533d;'>+{_CICLO_CRITICO_DIAS}d {antiguidade['critico']}</span>
+        <span style='color:#e0a030;'>{_CICLO_ALERTA_DIAS + 1}–{_CICLO_CRITICO_DIAS}d {antiguidade['vencido']}</span>
         <span>≤{_CICLO_ALERTA_DIAS}d {antiguidade['recente']}</span>
     </div>""",
             unsafe_allow_html=True,
@@ -1095,7 +1095,7 @@ def build_inventario_ciclico_tab(
 
     st.markdown("""
     <div style='display:flex;gap:16px;font-size:0.7rem;margin:6px 0 10px 0;
-                color:#64748b;font-family:JetBrains Mono,monospace;'>
+                color:#8f8679;font-family:IBM Plex Mono,monospace;'>
         <span>🟡 Aguardando</span><span>🟢 Conferido OK</span><span>🔴 Falta</span><span>🔵 Sobra</span>
     </div>""", unsafe_allow_html=True)
 
