@@ -14463,18 +14463,25 @@ new Chart(document.getElementById('coop-chart'),{
                         1 for _p in _produtos_p if (_parceiro, _p) in _sep_itens
                     )
                     _ja_separado = bool(_produtos_p) and _n_sep_p == len(_produtos_p)
+                    # Parcial ganha cabeçalho próprio (fundo amarelo-claro + selo)
+                    # para saltar aos olhos entre os separados e os pendentes.
+                    _parcial = bool(_n_sep_p) and not _ja_separado
                     _cor_borda = (
                         "#2E7D32" if _ja_separado
-                        else ("#E08A00" if _n_sep_p else "#E08A00")
+                        else ("#F2B705" if _n_sep_p else "#E08A00")
                     )
+                    _bg_header = "#FFF4C2" if _parcial else "var(--c-surface-2)"
                     if _ja_separado:
                         _status_txt = (
                             '<span style="color:var(--c-ok);font-weight:700;">✅ Separado</span>'
                         )
                     elif _n_sep_p:
                         _status_txt = (
-                            f'<span style="color:var(--c-warn-ink);font-weight:700;">'
-                            f'🟡 Parcial — {_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
+                            f'<span style="display:inline-block;background:#F2B705;color:#111111;'
+                            f'font-weight:800;font-size:0.68rem;letter-spacing:.06em;'
+                            f'padding:2px 9px;border-radius:999px;margin-right:6px;">PARCIAL</span>'
+                            f'<span style="color:#7A5A00;font-weight:700;">'
+                            f'{_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
                         )
                     else:
                         _status_txt = (
@@ -14486,7 +14493,7 @@ new Chart(document.getElementById('coop-chart'),{
                     with _col_header:
                         st.markdown(
                             f'<div style="margin:18px 0 6px;padding:8px 14px;'
-                            f'background:var(--c-line);border-left:4px solid {_cor_borda};border-radius:4px;">'
+                            f'background:{_bg_header};border-left:4px solid {_cor_borda};border-radius:12px;">'
                             f'<span style="color:var(--c-info);font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
                             f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
                             f'{len(_resumo)} produto(s) · '
@@ -14581,18 +14588,25 @@ new Chart(document.getElementById('coop-chart'),{
                         1 for _p in _produtos_p if (_parceiro, _p) in _sep_itens
                     )
                     _ja_separado = bool(_produtos_p) and _n_sep_p == len(_produtos_p)
+                    # Parcial ganha cabeçalho próprio (fundo amarelo-claro + selo)
+                    # para saltar aos olhos entre os separados e os pendentes.
+                    _parcial = bool(_n_sep_p) and not _ja_separado
                     _cor_borda = (
                         "#2E7D32" if _ja_separado
-                        else ("#E08A00" if _n_sep_p else "#E08A00")
+                        else ("#F2B705" if _n_sep_p else "#E08A00")
                     )
+                    _bg_header = "#FFF4C2" if _parcial else "var(--c-surface-2)"
                     if _ja_separado:
                         _status_txt = (
                             '<span style="color:var(--c-ok);font-weight:700;">✅ Separado</span>'
                         )
                     elif _n_sep_p:
                         _status_txt = (
-                            f'<span style="color:var(--c-warn-ink);font-weight:700;">'
-                            f'🟡 Parcial — {_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
+                            f'<span style="display:inline-block;background:#F2B705;color:#111111;'
+                            f'font-weight:800;font-size:0.68rem;letter-spacing:.06em;'
+                            f'padding:2px 9px;border-radius:999px;margin-right:6px;">PARCIAL</span>'
+                            f'<span style="color:#7A5A00;font-weight:700;">'
+                            f'{_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
                         )
                     else:
                         _status_txt = (
@@ -14603,7 +14617,7 @@ new Chart(document.getElementById('coop-chart'),{
                     with _col_header_d:
                         st.markdown(
                             f'<div style="margin:14px 0 4px;padding:8px 14px;'
-                            f'background:var(--c-line);border-left:4px solid {_cor_borda};border-radius:4px;">'
+                            f'background:{_bg_header};border-left:4px solid {_cor_borda};border-radius:12px;">'
                             f'<span style="color:var(--c-info);font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
                             f'<span style="color:var(--c-muted);font-size:0.72rem;margin-left:10px;">'
                             f'{_n_itens} item(s) · '
