@@ -88,7 +88,7 @@ _CSS = """<style>
 .hc-row.ok{border-left:3px solid var(--c-ok);}
 .hc-row.div{border-left:3px solid var(--c-crit);}
 .hc-prod{font-weight:600;font-size:0.83rem;color:var(--c-text);flex:1;min-width:160px;}
-.hc-cod{font-family:'IBM Plex Mono',monospace;font-size:0.70rem;color:var(--c-info);min-width:75px;}
+.hc-cod{font-family:'IBM Plex Mono',monospace;font-size:0.70rem;color:var(--c-muted);min-width:75px;}
 .hc-qtd{font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:var(--c-text-2);min-width:80px;text-align:right;}
 .hc-delta{font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;min-width:60px;text-align:right;}
 .hc-delta.ok{color:var(--c-ok);}

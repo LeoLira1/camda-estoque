@@ -850,7 +850,7 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
     _obs = _get_ultima_observacao_cicli(get_db, sel_codigo)
     if _obs and str(_obs[0] or "").strip():
         st.markdown(
-            f'<div style="background:rgba(123,155,255,0.10);border-left:3px solid var(--c-info);'
+            f'<div style="background:var(--c-surface-2);border-left:3px solid var(--c-line-2);'
             f'border-radius:6px;padding:6px 10px;margin:4px 0;'
             f"font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:var(--c-text);\">"
             f'💬 "{_html.escape(str(_obs[0]).strip())}"'

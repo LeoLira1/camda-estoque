@@ -843,7 +843,7 @@ st.markdown("""
     }
     .sync-badge {
         font-family: var(--f-mono); font-size: 0.55rem;
-        color: var(--c-info); text-align: center; margin-bottom: 0.5rem;
+        color: var(--c-label); text-align: center; margin-bottom: 0.5rem;
     }
     /* ── Grade de métricas: 2 colunas no celular, 3+ em telas maiores ──── */
     .stat-row {
@@ -7622,7 +7622,7 @@ def render_mapa_visual(conn):
                                   format_func=lambda k: f"{k} — {paletes[k]['produto']}")
             info_del = paletes[pk_del]
             st.markdown(
-                f'<div style="background:var(--c-line);border:1px solid #D32F2F44;border-radius:8px;padding:10px 14px;">'
+                f'<div style="background:var(--c-line);border:1px solid #FF5A5A44;border-radius:8px;padding:10px 14px;">'
                 f'<b style="color:var(--c-crit);">{pk_del}</b> · {info_del["produto"]} · '
                 f'{info_del["quantidade"]} {info_del["unidade"]}</div>',
                 unsafe_allow_html=True,
@@ -11200,7 +11200,16 @@ if has_mestre:
         """, unsafe_allow_html=True)
 
         # ── Falta & Sobra ────────────────────────────────────────────────────
-        with st.expander(f"⚠️ Falta & Sobra  —  {len(_df_falta_i)} faltando · {len(_df_sobra_i)} sobrando", expanded=True):
+        # Bolinha de status (CSS ::before) no lugar do emoji: metade falta, metade sobra
+        st.markdown("""<style>
+.st-key-info_falta_sobra summary [data-testid="stMarkdownContainer"] p::before{
+    content:"";display:inline-block;width:10px;height:10px;border-radius:50%;
+    margin-right:8px;vertical-align:middle;
+    background:linear-gradient(90deg,var(--c-crit) 50%,var(--c-warn) 50%);}
+.fs-tit{display:flex;align-items:center;gap:8px;font-weight:700;color:var(--c-text);margin:4px 0 8px;}
+.fs-dot{width:10px;height:10px;border-radius:50%;flex:0 0 10px;}
+</style>""", unsafe_allow_html=True)
+        with st.expander(f"Falta & Sobra  —  {len(_df_falta_i)} faltando · {len(_df_sobra_i)} sobrando", expanded=True, key="info_falta_sobra"):
             if _df_falta_i.empty and _df_sobra_i.empty:
                 st.caption("✅ Nenhuma divergência registrada.")
             else:
@@ -11224,11 +11233,11 @@ if has_mestre:
                         _tot = int(_bloco["delta"].abs().sum())
                         st.markdown(
                             f'<div style="margin:8px 0 4px 0;padding:4px 10px;border-radius:6px;'
-                            f'background:var(--c-info-soft);border-left:3px solid {_accent};'
+                            f'background:var(--c-surface-2);border-left:3px solid {_accent};'
                             f'display:flex;justify-content:space-between;align-items:center;">'
-                            f'<span style="color:var(--c-info);font-weight:700;font-size:0.78rem;'
+                            f'<span style="color:{_accent};font-weight:700;font-size:0.78rem;'
                             f'text-transform:uppercase;letter-spacing:0.3px;">{_coop_nome}</span>'
-                            f'<span style="color:var(--c-text-2);font-size:0.7rem;">'
+                            f'<span style="color:var(--c-label);font-size:0.7rem;">'
                             f'{len(_bloco)} item(ns) · Σ {_tot}</span></div>',
                             unsafe_allow_html=True,
                         )
@@ -11243,10 +11252,10 @@ if has_mestre:
 
                 _col_f, _col_s = st.columns(2)
                 with _col_f:
-                    st.markdown("**🔴 Faltando**")
+                    st.markdown('<div class="fs-tit"><span class="fs-dot" style="background:var(--c-crit);"></span>Faltando</div>', unsafe_allow_html=True)
                     _render_grouped(_df_falta_i, "#FF5A5A", "50", "Sem cooperado")
                 with _col_s:
-                    st.markdown("**🟡 Sobrando**")
+                    st.markdown('<div class="fs-tit"><span class="fs-dot" style="background:var(--c-warn);"></span>Sobrando</div>', unsafe_allow_html=True)
                     _render_grouped(_df_sobra_i, "#FFB020", "50", "Sem cooperado")
 
         # ── Produtos Vencendo ────────────────────────────────────────────────
@@ -11530,11 +11539,11 @@ body{background:transparent;padding:0;}
 .pname{font-size:16px;font-weight:500;color:var(--c-text);margin-bottom:8px;}
 .pstats{display:flex;gap:6px;}
 .pstat{flex:1;background:rgba(255,255,255,0.05);border-radius:8px;padding:8px 6px;text-align:center;}
-.pstatv{font-size:22px;font-weight:600;color:var(--c-info);}
+.pstatv{font-size:22px;font-weight:600;color:var(--c-warn);}
 .pstatl{font-size:10px;color:var(--c-muted);margin-top:2px;}
 .pitems{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:7px;}
 .icard{background:rgba(255,255,255,0.04);border-radius:9px;padding:10px 12px;border-left:3px solid var(--c-crit);}
-.icard.sobra{border-left-color:var(--c-info);}
+.icard.sobra{border-left-color:var(--c-warn);}
 .icard-name{font-size:12px;font-weight:500;color:var(--c-text);line-height:1.35;margin-bottom:3px;}
 .icard-meta{font-size:10px;color:var(--c-muted);margin-bottom:6px;}
 .icard-bar{display:flex;align-items:center;gap:7px;}
@@ -11542,7 +11551,7 @@ body{background:transparent;padding:0;}
 .ibar-fill{height:100%;border-radius:3px;transition:width .6s ease;}
 .icard-nums{font-size:10px;color:var(--c-muted);white-space:nowrap;}
 .icard-diff{font-size:13px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(255,90,90,0.15);color:var(--c-crit);min-width:40px;text-align:center;}
-.icard-diff.pos{background:rgba(123,155,255,0.15);color:var(--c-info);}
+.icard-diff.pos{background:var(--c-warn-soft);color:var(--c-warn);}
 </style>
 </head>
 <body>
@@ -11554,7 +11563,7 @@ body{background:transparent;padding:0;}
     </div>
     <div class="legend">
       <span><span class="ldot" style="background:var(--c-crit);"></span>Faltas</span>
-      <span><span class="ldot" style="background:var(--c-info);"></span>Sobras</span>
+      <span><span class="ldot" style="background:var(--c-warn);"></span>Sobras</span>
     </div>
   </div>
   <div style="position:relative;width:100%;height:__CHART_H__px;">
@@ -11577,8 +11586,8 @@ body{background:transparent;padding:0;}
 const dados=__DADOS__;
 const SEM_COOP='SEM COOPERADO';
 const CLR_FALTA='#FF5A5A';
-const CLR_SOBRA='#7B9BFF';
-const CLR_EXCEP='#FFB020';
+const CLR_SOBRA='#FFB020';
+const CLR_EXCEP='#8E9096';
 const CLR_LABEL='rgba(255,255,255,0.75)';
 const coopMap={};
 dados.forEach((d,i)=>{
@@ -11651,7 +11660,7 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Sobras',
         data:valsS,
-        backgroundColor:'rgba(123,155,255,0.78)',
+        backgroundColor:'rgba(255,176,32,0.78)',
         hoverBackgroundColor:CLR_SOBRA,
         borderRadius:{topLeft:0,bottomLeft:0,topRight:4,bottomRight:4},
         borderSkipped:false,
@@ -12388,11 +12397,11 @@ new Chart(document.getElementById('coop-chart'),{
         .pend-card.alerta-vermelho{border-color:rgba(255,90,90,0.6);background:rgba(255,90,90,0.08);animation:pulse-red 2s infinite;}
         @keyframes pulse-red{0%{box-shadow:0 0 0 0 rgba(255,90,90,0.3)}70%{box-shadow:0 0 0 8px rgba(255,90,90,0)}100%{box-shadow:0 0 0 0 rgba(255,90,90,0)}}
         .badge-dias{display:inline-block;padding:4px 14px;border-radius:20px;font-size:0.8rem;font-weight:700;letter-spacing:.5px;margin-bottom:10px;}
-        .badge-verde{background:rgba(76,195,138,0.15);color:var(--c-ok);border:1px solid #2E7D3244;}
-        .badge-amarelo{background:rgba(255,176,32,0.15);color:var(--c-warn-ink);border:1px solid #E08A0044;}
-        .badge-vermelho{background:rgba(255,90,90,0.15);color:var(--c-crit);border:1px solid #D32F2F44;}
+        .badge-verde{background:rgba(76,195,138,0.15);color:var(--c-ok);border:1px solid rgba(76,195,138,0.27);}
+        .badge-amarelo{background:rgba(255,176,32,0.15);color:var(--c-warn-ink);border:1px solid #FFB02044;}
+        .badge-vermelho{background:rgba(255,90,90,0.15);color:var(--c-crit);border:1px solid rgba(255,90,90,0.27);}
         .pend-data{font-size:0.7rem;color:var(--c-muted);font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
-        .pend-obs{background:rgba(255,255,255,0.06);border-left:3px solid rgba(123,155,255,0.5);border-radius:0 8px 8px 0;padding:8px 12px;margin:10px 0 4px 0;font-size:0.85rem;color:var(--c-text-2);white-space:pre-wrap;}
+        .pend-obs{background:rgba(255,255,255,0.06);border-left:3px solid var(--c-line-2);border-radius:0 8px 8px 0;padding:8px 12px;margin:10px 0 4px 0;font-size:0.85rem;color:var(--c-text-2);white-space:pre-wrap;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -12500,9 +12509,9 @@ new Chart(document.getElementById('coop-chart'),{
                   font-family:'IBM Plex Mono',monospace;}
         .av-aberto{background:rgba(255,90,90,0.13);color:var(--c-crit);
                    border:1px solid rgba(255,90,90,0.28);}
-        .av-resolvido{background:var(--c-info-soft);color:var(--c-info);
-                      border:1px solid rgba(123,155,255,0.3);}
-        .av-tempo{font-size:10px;color:var(--c-info);
+        .av-resolvido{background:var(--c-ok-soft);color:var(--c-ok);
+                      border:1px solid rgba(76,195,138,0.3);}
+        .av-tempo{font-size:10px;color:var(--c-muted);
                   font-family:'IBM Plex Mono',monospace;margin-left:auto;}
         .av-produto-nome{color:var(--c-text-2);font-size:12px;font-weight:700;
                          text-transform:uppercase;letter-spacing:.4px;
@@ -12512,13 +12521,13 @@ new Chart(document.getElementById('coop-chart'),{
                       gap:6px;border-top:1px solid var(--c-line-2);
                       padding-top:10px;margin-top:4px;}
         .av-stat-item{display:flex;flex-direction:column;gap:2px;}
-        .av-stat-lbl{font-size:9px;color:var(--c-info);text-transform:uppercase;
+        .av-stat-lbl{font-size:9px;color:var(--c-label);text-transform:uppercase;
                      letter-spacing:.8px;font-family:'IBM Plex Mono',monospace;}
         .av-stat-val{font-size:13px;font-weight:700;color:var(--c-text-2);
                      font-family:'IBM Plex Mono',monospace;}
         .av-stat-val.perdido{color:var(--c-crit);}
         .av-stat-val.baldes{color:var(--c-info);}
-        .av-grid-open-label{font-size:11px;color:var(--c-info);
+        .av-grid-open-label{font-size:11px;color:var(--c-label);
                              font-family:'IBM Plex Mono',monospace;
                              margin-bottom:12px;display:flex;
                              align-items:center;gap:8px;}
@@ -12686,11 +12695,11 @@ new Chart(document.getElementById('coop-chart'),{
                             f'<div onclick="openAvLightbox(this)" '
                             f'style="display:flex;flex-direction:column;align-items:center;'
                             f'min-width:80px;max-width:80px;height:100px;border-radius:10px;'
-                            f'overflow:hidden;border:1px solid rgba(123,155,255,0.2);'
+                            f'overflow:hidden;border:1px solid var(--c-line-2);'
                             f'flex-shrink:0;background:rgba(0,0,0,0.25);cursor:zoom-in;">'
                             f'<img src="data:image/jpeg;base64,{f["foto_base64"]}" '
                             f'style="width:80px;height:80px;object-fit:cover;pointer-events:none;">'
-                            f'<div style="font-size:8px;color:rgba(123,155,255,0.5);padding:3px 0;'
+                            f'<div style="font-size:8px;color:var(--c-label);padding:3px 0;'
                             f'letter-spacing:0.5px;font-family:monospace;pointer-events:none;">'
                             f'Foto {i+1}</div>'
                             f'</div>'
@@ -13374,16 +13383,16 @@ new Chart(document.getElementById('coop-chart'),{
     def _aba_contagem():
         st.markdown("""
         <style>
-        .ct-card{background:rgba(123,155,255,0.06);border:1px solid rgba(123,155,255,0.18);border-radius:12px;padding:10px 14px;margin-bottom:6px;}
+        .ct-card{background:var(--c-surface-2);border:1px solid transparent;border-radius:12px;padding:10px 14px;margin-bottom:6px;}
         .ct-card.certa{background:rgba(76,195,138,0.06);border-color:rgba(76,195,138,0.25);}
         .ct-card.divergencia{background:rgba(255,90,90,0.06);border-color:rgba(255,90,90,0.25);}
         .ct-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;letter-spacing:.5px;}
-        .ct-certa{background:rgba(76,195,138,0.15);color:var(--c-ok);border:1px solid #2E7D3244;}
-        .ct-divergencia{background:rgba(255,90,90,0.15);color:var(--c-crit);border:1px solid #D32F2F44;}
-        .ct-pendente{background:rgba(255,255,255,0.15);color:var(--c-text-2);border:1px solid #8A8A8A44;}
+        .ct-certa{background:rgba(76,195,138,0.15);color:var(--c-ok);border:1px solid rgba(76,195,138,0.27);}
+        .ct-divergencia{background:rgba(255,90,90,0.15);color:var(--c-crit);border:1px solid rgba(255,90,90,0.27);}
+        .ct-pendente{background:rgba(255,255,255,0.15);color:var(--c-text-2);border:1px solid rgba(142,144,150,0.27);}
         .ct-cat-header{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--c-muted);margin:12px 0 4px;padding:0 2px;}
         .ct-nome{font-weight:600;font-size:0.88rem;color:var(--c-text);}
-        .ct-qty{font-family:'IBM Plex Mono',monospace;font-size:0.82rem;color:var(--c-info);margin-left:8px;}
+        .ct-qty{font-family:'IBM Plex Mono',monospace;font-size:0.82rem;color:var(--c-text-2);margin-left:8px;}
         .ct-motivo{font-size:0.7rem;color:var(--c-text-2);margin-top:3px;}
         </style>
         """, unsafe_allow_html=True)
@@ -13564,18 +13573,18 @@ new Chart(document.getElementById('coop-chart'),{
         .val-kpi-v.red{color:var(--c-crit);} .val-kpi-v.amber{color:var(--c-warn-ink);} .val-kpi-v.yellow{color:var(--c-warn-ink);}
         .val-kpi-l{font-size:0.58rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;}
         .val-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;}
-        .val-vencido{background:rgba(255,90,90,.15);color:var(--c-crit);border:1px solid #D32F2F55;}
-        .val-30{background:rgba(255,90,90,.12);color:var(--c-crit);border:1px solid #D32F2F55;}
-        .val-60{background:rgba(255,176,32,.12);color:var(--c-warn-ink);border:1px solid #E08A0055;}
-        .val-90{background:rgba(255,176,32,.10);color:var(--c-warn-ink);border:1px solid #E08A0055;}
-        .val-ok{background:rgba(76,195,138,.10);color:var(--c-ok);border:1px solid #2E7D3255;}
+        .val-vencido{background:rgba(255,90,90,.15);color:var(--c-crit);border:1px solid #FF5A5A55;}
+        .val-30{background:rgba(255,90,90,.12);color:var(--c-crit);border:1px solid #FF5A5A55;}
+        .val-60{background:rgba(255,176,32,.12);color:var(--c-warn-ink);border:1px solid #FFB02055;}
+        .val-90{background:rgba(255,176,32,.10);color:var(--c-warn-ink);border:1px solid #FFB02055;}
+        .val-ok{background:rgba(76,195,138,.10);color:var(--c-ok);border:1px solid #4CC38A55;}
         .val-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
                      color:var(--c-muted);margin:14px 0 4px;padding:0 2px;}
         .val-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);
                  border-radius:8px;padding:8px 10px;margin-bottom:4px;}
         .val-prod{font-weight:600;font-size:0.85rem;color:var(--c-text);}
         .val-meta{font-size:0.68rem;color:var(--c-muted);margin-top:2px;}
-        .val-lote{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-info);}
+        .val-lote{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-muted);}
         </style>
         """, unsafe_allow_html=True)
 
@@ -14120,7 +14129,7 @@ new Chart(document.getElementById('coop-chart'),{
                             st.markdown(
                                 f'<div style="margin:16px 0 6px;padding:8px 14px;'
                                 f'background:var(--c-line);border-left:4px solid var(--c-warn);border-radius:4px;">'
-                                f'<span style="color:var(--c-info);font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
+                                f'<span style="color:var(--c-text);font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
                                 f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
                                 f'{len(_df_cr)} produto(s) · Retirado no mês: '
                                 f'<b style="color:var(--c-warn-ink)">{_fmt_qtd(_tot_cr)}</b> un.'
@@ -14244,7 +14253,7 @@ new Chart(document.getElementById('coop-chart'),{
                             st.markdown(
                                 f'<div style="margin:16px 0 6px;padding:8px 14px;'
                                 f'background:var(--c-line);border-left:4px solid var(--c-warn);border-radius:4px;">'
-                                f'<span style="color:var(--c-info);font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
+                                f'<span style="color:var(--c-text);font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
                                 f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
                                 f'{len(_df_cr)} produto(s) · Retirado: '
                                 f'<b style="color:var(--c-warn-ink)">{_fmt_qtd(_tot_cr)}</b> un.'
@@ -14502,7 +14511,7 @@ new Chart(document.getElementById('coop-chart'),{
                         st.markdown(
                             f'<div style="margin:18px 0 6px;padding:8px 14px;'
                             f'background:{_bg_header};border-left:4px solid {_cor_borda};border-radius:12px;">'
-                            f'<span style="color:var(--c-info);font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
+                            f'<span style="color:var(--c-text);font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
                             f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
                             f'{len(_resumo)} produto(s) · '
                             f'Saldo total: <b style="color:var(--c-text)">{_tot_saldo:,.0f}</b> un. · '
@@ -14629,7 +14638,7 @@ new Chart(document.getElementById('coop-chart'),{
                         st.markdown(
                             f'<div style="margin:14px 0 4px;padding:8px 14px;'
                             f'background:{_bg_header};border-left:4px solid {_cor_borda};border-radius:12px;">'
-                            f'<span style="color:var(--c-info);font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
+                            f'<span style="color:var(--c-text);font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
                             f'<span style="color:var(--c-muted);font-size:0.72rem;margin-left:10px;">'
                             f'{_n_itens} item(s) · '
                             f'Saldo: <b style="color:var(--c-text)">{_tot_saldo:,.0f}</b> un. · '
@@ -14664,7 +14673,7 @@ new Chart(document.getElementById('coop-chart'),{
                         )
                         st.markdown(
                             f'<div style="background:var(--c-surface-2);border:1px solid var(--c-line);'
-                            f'border-left:3px solid {"#2E7D3288" if _item_sep_d else "#3D63D888"};'
+                            f'border-left:3px solid {"#4CC38A88" if _item_sep_d else "#FFB02088"};'
                             f'border-radius:6px;'
                             f'padding:8px 12px;margin-bottom:3px;font-size:0.8rem;">'
                             f'<div style="display:flex;justify-content:space-between;align-items:center;">'
@@ -14845,7 +14854,7 @@ new Chart(document.getElementById('coop-chart'),{
                  border-radius:8px;padding:7px 10px;margin-bottom:3px;
                  display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
         .ent-prod{font-weight:600;font-size:0.83rem;color:var(--c-text);flex:1;min-width:160px;}
-        .ent-cod{font-family:'IBM Plex Mono',monospace;font-size:0.70rem;color:var(--c-info);min-width:75px;}
+        .ent-cod{font-family:'IBM Plex Mono',monospace;font-size:0.70rem;color:var(--c-muted);min-width:75px;}
         .ent-delta{font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;
                    color:var(--c-ok);min-width:55px;text-align:right;}
         .ent-qty{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-text-2);min-width:100px;text-align:right;}
@@ -14853,7 +14862,7 @@ new Chart(document.getElementById('coop-chart'),{
         .ent-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;}
         .ent-pend{background:rgba(255,176,32,.12);color:var(--c-warn-ink);border:1px solid rgba(255,176,32,.3);}
         .ent-verif{background:rgba(76,195,138,.10);color:var(--c-ok);border:1px solid rgba(76,195,138,.25);}
-        .ent-manual{background:rgba(123,155,255,.10);color:var(--c-info);border:1px solid rgba(123,155,255,.25);}
+        .ent-manual{background:rgba(255,255,255,.06);color:var(--c-text-2);border:1px solid var(--c-line-2);}
         .ent-delta.ent-neg{color:var(--c-purple);}
         </style>
         """, unsafe_allow_html=True)

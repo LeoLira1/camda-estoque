@@ -776,8 +776,8 @@ def _etiquetas_do_item(item: dict, lotes: dict, criterio: str,
 _CSS_TAB = """<style>
 .etq-title{font-size:1.05rem;font-weight:700;color:var(--c-text);margin-bottom:4px;}
 .etq-sub{font-size:0.78rem;color:var(--c-muted);margin-bottom:12px;}
-.etq-crit{background:var(--c-info-soft);border:none;
-          border-radius:var(--r-row);padding:8px 12px;font-size:0.78rem;color:var(--c-info);
+.etq-crit{background:var(--c-surface-2);border:none;
+          border-radius:var(--r-row);padding:8px 12px;font-size:0.78rem;color:var(--c-text-2);
           margin:8px 0 12px;}
 .etq-kpi-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
 .etq-kpi{flex:1;min-width:90px;background:var(--c-surface);
@@ -792,7 +792,7 @@ _CSS_TAB = """<style>
 .etq-falta-row{background:var(--c-surface-2);border:none;
                border-radius:var(--r-row);padding:8px 12px;margin-bottom:4px;
                display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
-.etq-falta-cod{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-info);
+.etq-falta-cod{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-muted);
                min-width:80px;}
 .etq-falta-prod{font-size:0.82rem;color:var(--c-text);flex:1;min-width:160px;}
 .etq-falta-extra{font-family:'IBM Plex Mono',monospace;font-size:0.66rem;color:var(--c-muted);}
