@@ -10727,7 +10727,7 @@ div.st-key-search_mestre [data-testid="stTextInput"] input:focus {
 @media (max-width: 980px) {
     .ct-fil-name, .ct-sep { display: none; }
     div[data-testid="stVerticalBlock"] > div.st-key-search_mestre {
-        padding-right: 210px;   /* ops sem filial: só números */
+        padding-right: 260px;   /* ops sem filial: itens + pílula de divergências */
     }
 }
 @media (max-width: 720px) {
