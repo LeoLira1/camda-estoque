@@ -321,7 +321,7 @@ if not st.session_state.authenticated:
         width:100%;
     }
     .stFormSubmitButton>button p{color:var(--c-on-ink) !important;}
-    .stFormSubmitButton>button:hover{background:#2A2A2A !important;}
+    .stFormSubmitButton>button:hover{filter:brightness(0.92) !important;}
     @media(max-width:640px){.block-container{padding:0.8rem 0.5rem !important;}}
     @keyframes sunSpin {
         from { transform: rotate(0deg); }
@@ -338,8 +338,8 @@ if not st.session_state.authenticated:
         100% { transform: translateY(0px); }
     }
     @keyframes stormFlash {
-        0%,100% { filter: drop-shadow(0 6px 16px rgba(17,17,17,0.25)); }
-        50%     { filter: drop-shadow(0 0 24px rgba(224,138,0,0.9)); }
+        0%,100% { filter: drop-shadow(0 6px 16px rgba(0,0,0,0.25)); }
+        50%     { filter: drop-shadow(0 0 24px rgba(255,176,32,0.9)); }
     }
     @keyframes snowSpin {
         0%   { transform: rotate(0deg) translateY(0px); }
@@ -391,20 +391,24 @@ if not st.session_state.authenticated:
             bg_d   = "var(--c-accent)" if i == 0 else "var(--c-surface-2)"
             bd_d   = "border:none;"
             fw_d   = "700" if i == 0 else "400"
+            # Card "Hoje" em limão: texto sempre preto
+            tx_d   = "var(--c-on-accent)" if i == 0 else "var(--c-text)"
+            tx2_d  = "var(--c-on-accent)" if i == 0 else "var(--c-text-2)"
+            mu_d   = "var(--c-on-accent)" if i == 0 else "var(--c-muted)"
             dias_cards_html += (
                 f'<div style="flex:1;background:{bg_d};border-radius:14px;padding:9px 2px;'
                 f'text-align:center;{bd_d}">'
-                f'<div style="font-size:0.55rem;color:var(--c-text-2);'
+                f'<div style="font-size:0.55rem;color:{tx2_d};'
                 f'margin-bottom:4px;font-weight:{fw_d};text-transform:uppercase;letter-spacing:0.3px;">{nome_d}</div>'
                 f'<div style="font-size:1.1rem;margin:3px 0;'
-                f'filter:drop-shadow(0 2px 6px rgba(17,17,17,0.2));">{em_d}</div>'
-                f'<div style="font-size:0.78rem;font-weight:700;color:var(--c-text);margin-top:2px;">{tmax}°</div>'
-                f'<div style="font-size:0.58rem;color:var(--c-muted);">{tmin}°</div>'
+                f'filter:drop-shadow(0 2px 6px rgba(0,0,0,0.2));">{em_d}</div>'
+                f'<div style="font-size:0.78rem;font-weight:700;color:{tx_d};margin-top:2px;">{tmax}°</div>'
+                f'<div style="font-size:0.58rem;color:{mu_d};">{tmin}°</div>'
                 f'</div>'
             )
 
         def _wcode_animated_icon(code):
-            shadow = "filter:drop-shadow(0 6px 16px rgba(17,17,17,0.25));"
+            shadow = "filter:drop-shadow(0 6px 16px rgba(0,0,0,0.25));"
             code = int(code) if code is not None else -1
             if code == 0:
                 return (
@@ -466,9 +470,9 @@ if not st.session_state.authenticated:
     color:var(--c-text);font-family:var(--f-sans);
     position:relative;overflow:hidden;margin-bottom:12px;">
   <div style="position:absolute;top:-55px;right:-55px;width:210px;height:210px;
-              border-radius:50%;background:rgba(17,17,17,0.055);pointer-events:none;"></div>
+              border-radius:50%;background:rgba(255,255,255,0.025);pointer-events:none;"></div>
   <div style="position:absolute;bottom:-75px;left:-65px;width:260px;height:260px;
-              border-radius:50%;background:rgba(17,17,17,0.035);pointer-events:none;"></div>
+              border-radius:50%;background:rgba(255,255,255,0.015);pointer-events:none;"></div>
   <div style="font-size:0.75rem;color:var(--c-text-2);letter-spacing:0.5px;
               margin-bottom:20px;position:relative;">
     {_dia_nome} &nbsp;·&nbsp; {_data_fmt} &nbsp;·&nbsp; {_hora}
@@ -482,12 +486,12 @@ if not st.session_state.authenticated:
   </div>
   <div style="display:flex;background:var(--c-surface-2);border-radius:16px;
               padding:14px 6px;margin-bottom:12px;position:relative;">
-    <div style="flex:1;text-align:center;border-right:1px solid rgba(17,17,17,0.1);">
+    <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.1);">
       <div style="font-size:1.3rem;margin-bottom:3px;">💧</div>
       <div style="font-size:1.05rem;font-weight:700;">{humid}%</div>
       <div style="font-size:0.6rem;color:var(--c-muted);margin-top:2px;">Umidade</div>
     </div>
-    <div style="flex:1;text-align:center;border-right:1px solid rgba(17,17,17,0.1);">
+    <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.1);">
       <div style="font-size:1.3rem;margin-bottom:3px;">💨</div>
       <div style="font-size:1.05rem;font-weight:700;">{vento} km/h</div>
       <div style="font-size:0.6rem;color:var(--c-muted);margin-top:2px;">Vento</div>
@@ -517,7 +521,7 @@ if not st.session_state.authenticated:
   <div style="font-size:0.75rem;color:var(--c-muted);margin-bottom:20px;">
     {_dia_nome} &nbsp;·&nbsp; {_data_fmt} &nbsp;·&nbsp; {_hora}</div>
   <div style="font-size:3.5rem;margin:14px 0;
-              filter:drop-shadow(0 4px 12px rgba(17,17,17,0.2));">🌡️</div>
+              filter:drop-shadow(0 4px 12px rgba(0,0,0,0.2));">🌡️</div>
   <div style="font-size:0.9rem;color:var(--c-muted);">Clima indisponível</div>
   <div style="font-size:0.72rem;color:var(--c-muted);margin-top:6px;">📍 Quirinópolis, GO</div>
 </div>"""
@@ -585,7 +589,7 @@ if not st.session_state.authenticated:
 
         if not ACCESS_PASSWORD:
             st.markdown(
-                '<div style="background:rgba(224,138,0,0.15);border:1px solid rgba(224,138,0,0.35);'
+                '<div style="background:rgba(255,176,32,0.15);border:1px solid rgba(255,176,32,0.35);'
                 'border-radius:12px;padding:10px 16px;color:var(--c-warn-ink);text-align:center;'
                 'font-size:0.85rem;margin-top:6px;">⚠️ Senha de acesso não configurada. '
                 'Defina <b>CAMDA_ACCESS_PASSWORD</b> nos Secrets do app.</div>',
@@ -593,7 +597,7 @@ if not st.session_state.authenticated:
             )
         elif st.session_state.login_error:
             st.markdown(
-                '<div style="background:rgba(211,47,47,0.15);border:1px solid rgba(211,47,47,0.3);'
+                '<div style="background:rgba(255,90,90,0.15);border:1px solid rgba(255,90,90,0.3);'
                 'border-radius:12px;padding:8px 16px;color:var(--c-crit);text-align:center;'
                 'font-size:0.85rem;margin-top:6px;">❌ Senha incorreta</div>',
                 unsafe_allow_html=True
@@ -648,28 +652,28 @@ _stc_cal.html(f"""
   st_el.textContent =
     '#camda-cal-overlay{{position:fixed;inset:0;background:rgba(0,0,0,0.55);' +
     'z-index:99999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(3px);}}' +
-    '#camda-cal-card{{font-family:\\'IBM Plex Sans\\',\\'IBM Plex Sans\\',sans-serif;background:#f0ede8;' +
-    'border-radius:24px;padding:28px 28px 20px;color:#1a1a1a;user-select:none;' +
+    '#camda-cal-card{{font-family:\\'IBM Plex Sans\\',\\'IBM Plex Sans\\',sans-serif;background:#1C1D21;' +
+    'border-radius:24px;padding:28px 28px 20px;color:#F2F2F2;user-select:none;' +
     'width:300px;box-shadow:0 24px 64px rgba(0,0,0,0.35);position:relative;}}' +
     '#camda-cal-close{{position:absolute;top:14px;right:16px;background:none;border:none;' +
-    'font-size:1.1rem;color:#aaa;cursor:pointer;padding:4px 7px;border-radius:6px;' +
+    'font-size:1.1rem;color:#8E9096;cursor:pointer;padding:4px 7px;border-radius:6px;' +
     'transition:background .15s,color .15s;line-height:1;}}' +
-    '#camda-cal-close:hover{{background:rgba(0,0,0,0.08);color:#1a1a1a;}}' +
+    '#camda-cal-close:hover{{background:rgba(255,255,255,0.08);color:#F2F2F2;}}' +
     '#camda-cal-bigday{{font-size:5.5rem;font-weight:900;line-height:1;letter-spacing:-3px;}}' +
     '#camda-cal-monthname{{font-size:1rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;margin-top:4px;}}' +
-    '#camda-cal-yeardow{{display:flex;justify-content:space-between;font-size:.85rem;color:#999;margin-top:2px;}}' +
+    '#camda-cal-yeardow{{display:flex;justify-content:space-between;font-size:.85rem;color:#8E9096;margin-top:2px;}}' +
     '.camda-cal-nav{{display:flex;gap:6px;margin-top:14px;}}' +
-    '.camda-cal-navbtn{{background:none;border:none;font-size:1.1rem;color:#888;cursor:pointer;' +
+    '.camda-cal-navbtn{{background:none;border:none;font-size:1.1rem;color:#8E9096;cursor:pointer;' +
     'padding:2px 8px;border-radius:6px;transition:background .15s,color .15s;}}' +
-    '.camda-cal-navbtn:hover{{background:rgba(0,0,0,0.08);color:#1a1a1a;}}' +
+    '.camda-cal-navbtn:hover{{background:rgba(255,255,255,0.08);color:#F2F2F2;}}' +
     '#camda-cal-grid{{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;margin-top:14px;}}' +
-    '.c-hdr{{text-align:center;font-size:.6rem;font-weight:600;color:#bbb;padding-bottom:4px;letter-spacing:.04em;}}' +
+    '.c-hdr{{text-align:center;font-size:.6rem;font-weight:600;color:#8E9096;padding-bottom:4px;letter-spacing:.04em;}}' +
     '.c-cell{{display:flex;align-items:center;justify-content:center;aspect-ratio:1;}}' +
     '.c-day{{width:88%;aspect-ratio:1;border-radius:50%;display:flex;align-items:center;' +
     'justify-content:center;font-size:.7rem;font-weight:500;}}' +
-    '.c-past{{background:#1a1a1a;color:#fff;}}' +
-    '.c-today{{background:#e85d04;color:#fff;font-weight:700;}}' +
-    '.c-future{{background:transparent;border:1.5px solid #ddd;color:#ccc;}}';
+    '.c-past{{background:#3A3C43;color:#F2F2F2;}}' +
+    '.c-today{{background:#D7F000;color:#111111;font-weight:700;}}' +
+    '.c-future{{background:transparent;border:1.5px solid #3A3C43;color:#8E9096;}}';
   doc.head.appendChild(st_el);
 
   var overlay = doc.createElement('div');
@@ -742,9 +746,9 @@ _stc_cal.html(f"""
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
-    /* ── Tema claro minimalista: fonte única de verdade da paleta ─────────
-       Valores vêm de theme.PALETTE. Fundo cinza claro, cards #F8F8F8 sem
-       borda (raio 20px), linhas de lista brancas (raio 12px). O verde-limão
+    /* ── Tema escuro minimalista: fonte única de verdade da paleta ────────
+       Valores vêm de theme.PALETTE. Fundo #111214, cards #1C1D21 sem
+       borda (raio 20px), linhas de lista #24262B (raio 12px). O verde-limão
        (--c-accent) é só preenchimento, sempre com texto preto. */
     :root {
 """ + _THEME_ROOT_VARS + """
@@ -752,13 +756,14 @@ st.markdown("""
     html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
         background: var(--c-bg) !important; color: var(--c-text);
     }
+    :root { color-scheme: dark; }
     .stApp { font-family: var(--f-sans); }
     .stApp p, .stApp li, .stApp label, .stApp button, .stApp input, .stApp textarea,
     .stApp [data-testid="stMarkdownContainer"] { font-family: var(--f-sans); }
     .stApp [data-testid="stMarkdownContainer"],
     .stApp [data-testid="stMarkdownContainer"] p,
     .stApp [data-testid="stMarkdownContainer"] li { color: var(--c-text); }
-    /* Dentro de botões/abas o rótulo segue a cor do botão (pílula preta → branco) */
+    /* Dentro de botões/abas o rótulo segue a cor do botão (pílula limão → preto) */
     .stApp button [data-testid="stMarkdownContainer"],
     .stApp button [data-testid="stMarkdownContainer"] p,
     .stApp [role="tab"] [data-testid="stMarkdownContainer"] p { color: inherit !important; }
@@ -898,7 +903,7 @@ st.markdown("""
         font-weight: 700; margin-bottom: 8px;
     }
     .tm-av { font-size: 0.5rem; font-weight: 700; margin-top: 2px; }
-    /* ── Expander: card claro sem borda ────────────────────────────────── */
+    /* ── Expander: card escuro sem borda ───────────────────────────────── */
     [data-testid="stExpander"] {
         background: var(--c-surface) !important;
         border: none !important;
@@ -914,7 +919,7 @@ st.markdown("""
         border-radius: var(--r-card) !important;
     }
     [data-testid="stExpander"] summary:hover {
-        background: rgba(17,17,17,0.03) !important;
+        background: rgba(255,255,255,0.03) !important;
         color: var(--c-text) !important;
     }
     [data-testid="stExpander"] summary p,
@@ -932,7 +937,7 @@ st.markdown("""
     .stat-value-lg.blue { color: var(--c-info); }
     .stat-value-lg.green { color: var(--c-ok); }
     /* ── Widgets nativos: alertas, tabelas, campos, botões ────────────── */
-    /* st.info/success/warning/error: card claro + filete lateral na cor do
+    /* st.info/success/warning/error: card escuro + filete lateral na cor do
        status (1.59: o fundo colorido fica no stAlertContainer). */
     .stApp [data-testid="stAlertContainer"] {
         background: var(--c-surface-2) !important;
@@ -956,7 +961,7 @@ st.markdown("""
         font-size: 0.68rem !important; letter-spacing: .08em; font-weight: 600;
     }
     .stApp [data-testid="stMetricValue"] { color: var(--c-text) !important; font-weight: 700; }
-    /* Campos: brancos, cantos arredondados, sem contorno pesado */
+    /* Campos: escuros, cantos arredondados, sem contorno pesado */
     .stApp [data-baseweb="input"], .stApp [data-baseweb="select"] > div,
     .stApp [data-baseweb="textarea"], .stApp [data-testid="stTextInputRootElement"],
     .stApp [data-testid="stNumberInputContainer"], .stApp [data-testid="stDateInputField"] {
@@ -966,7 +971,7 @@ st.markdown("""
     }
     .stApp input, .stApp textarea { color: var(--c-text) !important; }
     .stApp input::placeholder, .stApp textarea::placeholder { color: var(--c-label) !important; }
-    /* Botões em pílula preta com texto branco */
+    /* Botões em pílula limão com texto preto (--c-ink = limão no tema escuro) */
     .stApp [data-testid="stBaseButton-secondary"],
     .stApp [data-testid="stBaseButton-secondaryFormSubmit"],
     .stApp [data-testid="stBaseButton-primary"],
@@ -989,7 +994,7 @@ st.markdown("""
     .stApp [data-testid="stBaseButton-secondary"]:hover,
     .stApp [data-testid="stBaseButton-secondaryFormSubmit"]:hover,
     .stApp [data-testid="stDownloadButton"] button:hover {
-        background: #2A2A2A !important; border-color: #2A2A2A !important;
+        filter: brightness(0.92);
     }
     /* Primário: pílula limão com texto preto (ação principal da tela) */
     .stApp [data-testid="stBaseButton-primary"],
@@ -1006,7 +1011,7 @@ st.markdown("""
     .stApp button:focus-visible { outline: 2px solid var(--c-text) !important; outline-offset: 2px; }
     .stApp input:focus, .stApp textarea:focus { caret-color: var(--c-text); }
     hr, .stApp [data-testid="stDivider"] { border-color: var(--c-line) !important; }
-    /* ── Pills genéricos (st.pills / segmented): pílula preta na ativa ── */
+    /* ── Pills genéricos (st.pills / segmented): pílula limão na ativa ── */
     .stApp [data-testid="stBaseButton-pills"],
     .stApp [data-testid="stBaseButton-segmented_control"] {
         background: transparent !important; border: 1px solid var(--c-line-2) !important;
@@ -1044,7 +1049,7 @@ st.markdown("""
         white-space: nowrap;
     }
     .stTabs [data-baseweb="tab"]:hover,
-    .stTabs [data-testid="stTab"]:hover { color: var(--c-text) !important; background: rgba(17,17,17,0.05) !important; }
+    .stTabs [data-testid="stTab"]:hover { color: var(--c-text) !important; background: rgba(255,255,255,0.05) !important; }
     .stTabs [data-baseweb="tab"][aria-selected="true"],
     .stTabs [data-testid="stTab"][aria-selected="true"] {
         color: var(--c-on-ink) !important;
@@ -1058,7 +1063,7 @@ st.markdown("""
     .stTabs [data-baseweb="tab-border"] { display: none !important; }
     .stTabs .react-aria-SelectionIndicator { display: none !important; }
     /* ── Navegação principal do dashboard (st.pills key=dash_nav) ────────
-       Pílulas: a ativa preta com texto branco, as outras sem fundo. As
+       Pílulas: a ativa limão com texto preto, as outras sem fundo. As
        pills quebram linha (todas visíveis de uma vez, sem setas). */
     div.st-key-dash_nav {
         margin: 4px 0 14px 0;
@@ -1085,7 +1090,7 @@ st.markdown("""
     div.st-key-dash_nav button p { font-size: inherit !important; color: inherit !important; }
     div.st-key-dash_nav button:hover {
         color: var(--c-text) !important;
-        background: rgba(17,17,17,0.06) !important;
+        background: rgba(255,255,255,0.06) !important;
     }
     div.st-key-dash_nav button[data-testid="stBaseButton-pillsActive"],
     div.st-key-dash_nav button[kind="pillsActive"],
@@ -1149,7 +1154,7 @@ st.markdown("""
     .tm-tile:hover {
         background: var(--c-surface-2) !important;
         transform: translateY(-2px) !important;
-        box-shadow: 0 8px 22px rgba(17,17,17,0.08) !important;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.08) !important;
         z-index: 1;
     }
     .tm-cod {
@@ -1160,7 +1165,7 @@ st.markdown("""
     }
     .tm-tile:hover .tm-cod { display: block; }
     /* ── Popup nome completo ao clicar/focar no tile (CSS puro, sem JS) ── */
-    .tm-tile:focus { z-index: 100; box-shadow: 0 0 0 2px var(--c-text), 0 8px 24px rgba(17,17,17,0.12) !important; }
+    .tm-tile:focus { z-index: 100; box-shadow: 0 0 0 2px var(--c-text), 0 8px 24px rgba(0,0,0,0.12) !important; }
     .tm-popup {
         display: none;
         position: absolute;
@@ -1175,7 +1180,7 @@ st.markdown("""
         white-space: normal;
         min-width: 180px; max-width: 260px;
         z-index: 9999;
-        box-shadow: 0 10px 30px rgba(17,17,17,0.16);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.16);
         pointer-events: none;
     }
     .tm-popup-code {
@@ -1206,12 +1211,12 @@ st.markdown("""
     .tm-tile:nth-child(20) { animation-delay: 0.60s; }
     /* ── Animações de validade nos tiles do Mapa Estoque ─────────────── */
     @keyframes blink-urgent {
-        0%, 100% { border-color: var(--c-crit); box-shadow: 0 0 0 0 rgba(211,47,47,0); }
-        50%       { border-color: var(--c-crit); box-shadow: 0 0 0 4px rgba(211,47,47,0.25); }
+        0%, 100% { border-color: var(--c-crit); box-shadow: 0 0 0 0 rgba(255,90,90,0); }
+        50%       { border-color: var(--c-crit); box-shadow: 0 0 0 4px rgba(255,90,90,0.25); }
     }
     @keyframes blink-expiring {
-        0%, 100% { border-color: var(--c-warn); box-shadow: 0 0 0 0 rgba(224,138,0,0); }
-        50%       { border-color: var(--c-warn); box-shadow: 0 0 0 4px rgba(224,138,0,0.25); }
+        0%, 100% { border-color: var(--c-warn); box-shadow: 0 0 0 0 rgba(255,176,32,0); }
+        50%       { border-color: var(--c-warn); box-shadow: 0 0 0 4px rgba(255,176,32,0.25); }
     }
     .tm-tile.card-urgent {
         animation: cardPop 0.4s ease both, blink-urgent 0.8s ease-in-out 0.5s infinite;
@@ -1245,7 +1250,7 @@ st.markdown("""
     }
     .stat-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 18px rgba(17,17,17,0.06);
+        box-shadow: 0 6px 18px rgba(0,0,0,0.06);
     }
     /* ── Hover nos itens Repor na Loja ────────────────────────────────── */
     .repor-item {
@@ -1280,7 +1285,7 @@ st.markdown("""
         background: var(--c-ink) !important;
         border: none !important;
         color: var(--c-on-ink) !important;
-        box-shadow: 0 4px 12px rgba(17,17,17,0.15) !important;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
         transition: all 0.2s ease !important;
         display: flex !important;
         align-items: center !important;
@@ -1969,7 +1974,7 @@ def _get_connection():
             produto_nome    TEXT    NOT NULL DEFAULT '',
             categoria_id    TEXT    NOT NULL DEFAULT '',
             categoria_label TEXT    NOT NULL DEFAULT '',
-            categoria_cor   TEXT    NOT NULL DEFAULT '#6B6B6B',
+            categoria_cor   TEXT    NOT NULL DEFAULT '#A3A5AB',
             qtd_sistema     REAL    NOT NULL DEFAULT 0,
             qtd_contada     REAL,
             divergencia     REAL,
@@ -2052,7 +2057,7 @@ def _get_connection():
                     COALESCE(em.produto, NEW.produto),
                     COALESCE(em.categoria, NEW.categoria),
                     COALESCE(em.categoria, NEW.categoria),
-                    '#6B6B6B',
+                    '#A3A5AB',
                     CAST(NEW.qtd_estoque AS REAL),
                     CASE NEW.status
                         WHEN 'certa' THEN CAST(NEW.qtd_estoque AS REAL)
@@ -2101,7 +2106,7 @@ def _get_connection():
                     NEW.produto,
                     NEW.categoria,
                     NEW.categoria,
-                    '#6B6B6B',
+                    '#A3A5AB',
                     CAST(COALESCE(NEW.qtd_sistema_na_contagem, NEW.qtd_sistema) AS REAL),
                     CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL),
                     CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL) - CAST(COALESCE(NEW.qtd_sistema_na_contagem, NEW.qtd_sistema) AS REAL),
@@ -3362,10 +3367,10 @@ def remover_foto_item(foto_id: int):
 
 def _galao_color(pct: float) -> dict:
     if pct > 60:
-        return {"main": "#2E7D32", "dark": "#2E7D32", "glow": "#2E7D32"}
+        return {"main": "#4CC38A", "dark": "#4CC38A", "glow": "#4CC38A"}
     if pct > 25:
-        return {"main": "#E08A00", "dark": "#E08A00", "glow": "#E08A00"}
-    return {"main": "#D32F2F", "dark": "#D32F2F", "glow": "#D32F2F"}
+        return {"main": "#FFB020", "dark": "#FFB020", "glow": "#FFB020"}
+    return {"main": "#FF5A5A", "dark": "#FF5A5A", "glow": "#FF5A5A"}
 
 
 def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> str:
@@ -3407,7 +3412,7 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
 
     scale_lines = "".join(
         f'<line x1="28" y1="{55 + i*28}" x2="272" y2="{55 + i*28}" '
-        f'stroke="rgba(17,17,17,0.1)" stroke-width="0.9"/>'
+        f'stroke="rgba(255,255,255,0.1)" stroke-width="0.9"/>'
         for i in range(1, 5)
     )
 
@@ -3429,10 +3434,10 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
         <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
       </linearGradient>
       <linearGradient id="pl_{bid}" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="#00897B" stop-opacity="0.52"/>
+        <stop offset="0%" stop-color="#3CCFBF" stop-opacity="0.52"/>
         <stop offset="42%" stop-color="#e0f4f0" stop-opacity="0.18"/>
         <stop offset="62%" stop-color="#f0faf8" stop-opacity="0.12"/>
-        <stop offset="100%" stop-color="#00897B" stop-opacity="0.52"/>
+        <stop offset="100%" stop-color="#3CCFBF" stop-opacity="0.52"/>
       </linearGradient>
       <linearGradient id="tp_{bid}" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#ccd8dc"/>
@@ -3450,7 +3455,7 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
           fill="url(#pl_{bid})"/>
     {scale_lines}
     <path d="M22,55 L278,55 L278,195 Q278,206 268,206 L52,206 Q22,206 22,195 Z"
-          fill="none" stroke="rgba(17,17,17,0.18)" stroke-width="1.5"/>
+          fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
     <path d="M22,55 L278,55 L264,44 L40,44 Z" fill="url(#tp_{bid})"/>
     <line x1="22" y1="55" x2="278" y2="55" stroke="#9aacb4" stroke-width="1.5"/>
     <path d="M40,44 L118,44 L118,22 L60,22 Z" fill="url(#tp_{bid})"/>
@@ -4739,9 +4744,9 @@ def carregar_mapa_produtos_camda() -> dict:
 
 
 _PA_PALETTE = [
-    "#2E7D32", "#3D63D8", "#E08A00", "#E08A00", "#7E57C2",
-    "#F472B6", "#2E7D32", "#E08A00", "#3D63D8", "#E879F9",
-    "#E08A00", "#00897B",
+    "#4CC38A", "#7B9BFF", "#FFB020", "#FFB020", "#B69CFF",
+    "#F472B6", "#4CC38A", "#FFB020", "#7B9BFF", "#E879F9",
+    "#FFB020", "#3CCFBF",
 ]
 
 
@@ -5016,7 +5021,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
     if "Barras" in chart_type:
         bar_colors = [
-            "#E08A00" if pa == pa_sel else (c if pa_sel is None else _rgba(c, 0.35))
+            "#FFB020" if pa == pa_sel else (c if pa_sel is None else _rgba(c, 0.35))
             for pa, c in zip(pa_list, cores)
         ]
         _y_vals = [
@@ -5038,24 +5043,24 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             marker_line_width=0,
             text=_text_vals,
             textposition="outside",
-            textfont=dict(size=10, color="#111111"),
+            textfont=dict(size=10, color="#F2F2F2"),
             hovertemplate="<b>%{x}</b><br>Volume: %{customdata[1]}<br>Produtos: %{customdata[0]}<extra></extra>",
             customdata=_hover_custom,
         ))
         fig.update_layout(
-            paper_bgcolor="#F8F8F8",
-            plot_bgcolor="#F8F8F8",
-            font=dict(color="#111111", size=11),
+            paper_bgcolor="#1C1D21",
+            plot_bgcolor="#1C1D21",
+            font=dict(color="#F2F2F2", size=11),
             height=380,
             margin=dict(l=10, r=20, t=30, b=100),
             xaxis=dict(
-                gridcolor="#E2E2E2", showgrid=False, showline=False,
-                tickangle=-35, tickfont=dict(size=10, color="#6B6B6B"),
+                gridcolor="#2E3036", showgrid=False, showline=False,
+                tickangle=-35, tickfont=dict(size=10, color="#A3A5AB"),
             ),
             yaxis=dict(
-                gridcolor="#E2E2E2", showgrid=True, gridwidth=1,
-                tickfont=dict(size=11, color="#6B6B6B"),
-                title=dict(text="Volume (L / kg)", font=dict(size=11, color="#6B6B6B")),
+                gridcolor="#2E3036", showgrid=True, gridwidth=1,
+                tickfont=dict(size=11, color="#A3A5AB"),
+                title=dict(text="Volume (L / kg)", font=dict(size=11, color="#A3A5AB")),
             ),
             showlegend=False,
             bargap=0.3,
@@ -5063,7 +5068,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             dragmode=False,
         )
     else:  # Pizza / donut
-        pie_line_colors = ["#E08A00" if pa == pa_sel else "rgba(0,0,0,0)" for pa in pa_list]
+        pie_line_colors = ["#FFB020" if pa == pa_sel else "rgba(0,0,0,0)" for pa in pa_list]
         pie_line_widths = [3 if pa == pa_sel else 0 for pa in pa_list]
         pie_opacities   = [1.0 if pa_sel is None or pa == pa_sel else 0.3 for pa in pa_list]
         _pie_vals = [
@@ -5089,11 +5094,11 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             sort=False,
         ))
         fig.update_layout(
-            paper_bgcolor="#F8F8F8",
-            font=dict(color="#111111", size=11),
+            paper_bgcolor="#1C1D21",
+            font=dict(color="#F2F2F2", size=11),
             height=420,
             margin=dict(l=10, r=10, t=30, b=30),
-            legend=dict(bgcolor="#F8F8F8", bordercolor="#E2E2E2", font=dict(size=10, color="#6B6B6B")),
+            legend=dict(bgcolor="#1C1D21", bordercolor="#2E3036", font=dict(size=10, color="#A3A5AB")),
             clickmode="event+select",
             dragmode=False,
         )
@@ -5269,7 +5274,7 @@ def _render_resumo_classes_vet(df_vet: pd.DataFrame):
     corpo = ""
     for x in linhas_resumo:
         med = "—" if pd.isna(x["mediana"]) else f'{x["mediana"]:.1f}'.rstrip("0").rstrip(".")
-        cor_classe = "#6B6B6B" if x["classe"] == _CLASSE_VET_SEM else "#111111"
+        cor_classe = "#A3A5AB" if x["classe"] == _CLASSE_VET_SEM else "#F2F2F2"
         crit_html = (f'<span style="color:{_FAIXAS_COBERTURA[_FAIXA_CRITICA]["cor"]};font-weight:700">'
                      f'{x["crit"]}</span>') if x["crit"] else '<span style="color:var(--c-label)">0</span>'
         baixo_html = (f'<span style="color:{_FAIXAS_COBERTURA[_FAIXA_BAIXA]["cor"]};font-weight:700">'
@@ -5437,7 +5442,7 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
             if u["dias"] < 0:
                 prazo = f'<span style="color:var(--c-crit);font-weight:700">VENCIDO há {-u["dias"]}d</span>'
             else:
-                cor_d = "#D32F2F" if u["dias"] <= 60 else "#E08A00"
+                cor_d = "#FF5A5A" if u["dias"] <= 60 else "#FFB020"
                 prazo = f'<span style="color:{cor_d};font-weight:700">vence em {u["dias"]}d</span>'
             fx = _FAIXAS_COBERTURA[u["faixa"]]
             linhas_urg += (
@@ -5563,7 +5568,7 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
         if r["faixa"] == "MORTO":
             # Sem velocidade: barra proporcional à quantidade parada
             pct = (disp / max_qtd_morto * 100) if max_qtd_morto > 0 else 0
-            badge = (' <span style="background:rgba(224,138,0,0.15);color:var(--c-warn-ink);font-size:9px;'
+            badge = (' <span style="background:rgba(255,176,32,0.15);color:var(--c-warn-ink);font-size:9px;'
                      'padding:1px 6px;border-radius:8px;font-weight:700">esfriando</span>'
                      ) if r["esfriando"] else ""
             janela = "90" if r["esfriando"] else "180"
@@ -5579,7 +5584,7 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
             f'<span style="color:var(--c-muted);font-size:10px;margin-left:6px">[{_cod}]</span>'
         ) if _cod and not _cod.startswith("AUTO_") else ""
         if is_vet:
-            _cor_cls = "#6B6B6B" if r["classe"] == _CLASSE_VET_SEM else "#7E57C2"
+            _cor_cls = "#A3A5AB" if r["classe"] == _CLASSE_VET_SEM else "#B69CFF"
             _cod_html += (f'<span style="color:{_cor_cls};font-size:10px;margin-left:6px">'
                           f'· {r["classe"]}</span>')
         # Sem indentação: Markdown trata 4+ espaços como bloco de código
@@ -7114,8 +7119,8 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
                 produto = info.get("produto", "")
                 qtd     = info.get("quantidade", "")
                 unidade = info.get("unidade", "")
-                cor     = info.get("cor", "#2E7D32")
-                bg      = "#E08A00" if pk in hl else cor
+                cor     = info.get("cor", "#4CC38A")
+                bg      = "#FFB020" if pk in hl else cor
                 nome_c  = short_name(produto)          # nome comercial sem categoria
                 short   = (nome_c[:9] + "…") if len(nome_c) > 10 else nome_c
                 qty_str = f"{qtd} {unidade}".strip() if qtd is not None else ""
@@ -7174,12 +7179,12 @@ body{margin:0;background:var(--c-surface);}
 .mr-chd{width:54px;color:var(--c-muted);font-size:0.55rem;text-align:center;flex-shrink:0;}
 .mr-cell{width:54px;height:48px;border-radius:5px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;flex-shrink:0;
-  border:1px solid rgba(17,17,17,0.07);}
+  border:1px solid rgba(255,255,255,0.07);}
 .mr-cell.emp{background:var(--c-surface-2);color:var(--c-label);border-color:var(--c-line-2);border-style:dashed;font-size:1rem;cursor:default;}
 .mr-cell.occ{cursor:grab;transition:filter .15s,opacity .15s;}
 .mr-cell.occ:hover{filter:brightness(0.95);}
 .mr-cell.occ:active{cursor:grabbing;}
-.mr-cell.dt{background:var(--c-info)!important;color:#fff!important;border:2px dashed var(--c-info)!important;}
+.mr-cell.dt{background:var(--c-info)!important;color:#111111!important;border:2px dashed var(--c-info)!important;}
 .mr-pname{font-size:0.48rem;font-weight:700;text-align:center;line-height:1.2;
   word-break:break-word;padding:0 2px;max-width:52px;overflow:hidden;}
 .mr-qty{font-size:0.42rem;opacity:.75;margin-top:1px;}
@@ -7652,7 +7657,7 @@ def render_mapa_visual(conn):
                 with pcol_name:
                     st.markdown(
                         f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;'
-                        f'background:{p["cor_hex"] or "#2E7D32"};margin-right:6px;vertical-align:middle;"></span>'
+                        f'background:{p["cor_hex"] or "#4CC38A"};margin-right:6px;vertical-align:middle;"></span>'
                         f'<b>{_hx(p["nome"])}</b> <span style="color:var(--c-muted);font-size:0.8rem;">({_hx(p["unidade_pad"])})</span>',
                         unsafe_allow_html=True,
                     )
@@ -7785,16 +7790,16 @@ def render_mapa_visual(conn):
             z=z_data,
             x=faces_hm,
             y=_all_hm,
-            colorscale=[[0, "#E2E2E2"], [0.35, "#E08A00"], [0.70, "#E08A00"], [1, "#2E7D32"]],
+            colorscale=[[0, "#2E3036"], [0.35, "#FFB020"], [0.70, "#FFB020"], [1, "#4CC38A"]],
             zmin=0, zmax=100,
             text=z_text,
             texttemplate="%{text}",
             showscale=True,
             colorbar=dict(
-                title=dict(text="% ocup.", font=dict(color="#444444")),
+                title=dict(text="% ocup.", font=dict(color="#C8C9CC")),
                 ticksuffix="%",
                 len=0.85,
-                tickfont=dict(color="#444444"),
+                tickfont=dict(color="#C8C9CC"),
             ),
         )
     )
@@ -7803,20 +7808,20 @@ def render_mapa_visual(conn):
         type="line",
         x0=-0.5, x1=1.5,
         y0=5.5,  y1=5.5,
-        line=dict(color="#D0D0D0", width=2, dash="dot"),
+        line=dict(color="#3A3C43", width=2, dash="dot"),
     )
     fig_hm.update_layout(
-        paper_bgcolor="#F8F8F8",
-        plot_bgcolor="#F8F8F8",
-        font=dict(color="#444444", size=12),
+        paper_bgcolor="#1C1D21",
+        plot_bgcolor="#1C1D21",
+        font=dict(color="#C8C9CC", size=12),
         margin=dict(l=55, r=60, t=30, b=20),
         height=390,
         xaxis=dict(side="top"),
         annotations=[
             dict(x=-0.62, y=2.5,  text="Fileira 1", showarrow=False,
-                 font=dict(color="#8A8A8A", size=10), xref="x", yref="y"),
+                 font=dict(color="#8E9096", size=10), xref="x", yref="y"),
             dict(x=-0.62, y=8.5,  text="Fileira 2", showarrow=False,
-                 font=dict(color="#8A8A8A", size=10), xref="x", yref="y"),
+                 font=dict(color="#8E9096", size=10), xref="x", yref="y"),
         ],
     )
     st.plotly_chart(fig_hm, use_container_width=True)
@@ -7891,10 +7896,10 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 return "", ""
             if dias <= 30:
                 blink = " card-urgent"
-                color = "#D32F2F"
+                color = "#FF5A5A"
             elif dias <= 60:
                 blink = " card-expiring"
-                color = "#E08A00"
+                color = "#FFB020"
             else:
                 return "", ""
             fmt = f"{exp.day:02d}/{_MONTHS_PT[exp.month-1]}/{exp.year}"
@@ -7914,16 +7919,16 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
     # Category badge style map
     _CAT_STYLES = {
-        "HERBICIDA":    ("rgba(46,125,50,0.12)",   "#2E7D32"),
-        "FUNGICIDA":    ("rgba(61,99,216,0.12)",   "#3D63D8"),
-        "INSETICIDA":   ("rgba(126,87,194,0.12)",   "#7E57C2"),
-        "FERTILIZANTE": ("rgba(224,138,0,0.12)",    "#E08A00"),
-        "SEMENTE":      ("rgba(224,138,0,0.12)",   "#E08A00"),
-        "ACARICIDA":    ("rgba(0,137,123,0.12)",    "#00897B"),
-        "ADJUVANTE":    ("rgba(17,17,17,0.12)",  "#444444"),
-        "OUTROS":       ("rgba(17,17,17,0.12)",  "#444444"),
+        "HERBICIDA":    ("rgba(76,195,138,0.12)",   "#4CC38A"),
+        "FUNGICIDA":    ("rgba(123,155,255,0.12)",   "#7B9BFF"),
+        "INSETICIDA":   ("rgba(182,156,255,0.12)",   "#B69CFF"),
+        "FERTILIZANTE": ("rgba(255,176,32,0.12)",    "#FFB020"),
+        "SEMENTE":      ("rgba(255,176,32,0.12)",   "#FFB020"),
+        "ACARICIDA":    ("rgba(60,207,191,0.12)",    "#3CCFBF"),
+        "ADJUVANTE":    ("rgba(255,255,255,0.12)",  "#C8C9CC"),
+        "OUTROS":       ("rgba(255,255,255,0.12)",  "#C8C9CC"),
     }
-    _CAT_DEFAULT = ("rgba(17,17,17,0.12)", "#444444")
+    _CAT_DEFAULT = ("rgba(255,255,255,0.12)", "#C8C9CC")
 
     ctx_attr = f' data-ctx="{ctx}"' if ctx else ''
 
@@ -7980,41 +7985,41 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     # Divergência antiga sem quantidades registradas: mantém vermelho
                     if diff < 0 or (status_c == "divergencia" and diff == 0
                                     and not _tem_contagem):
-                        border_color = "#D32F2F"
+                        border_color = "#FF5A5A"
                         card_bg = "var(--c-crit-soft)"
                     elif diff > 0:
-                        border_color = "#00897B"
-                        card_bg = "#E0F2F1"
+                        border_color = "#3CCFBF"
+                        card_bg = "rgba(60,207,191,0.14)"
                     else:
-                        border_color = "#2E7D32"
+                        border_color = "#4CC38A"
                         card_bg = "var(--c-ok-soft)"
                     qty_color = border_color
                     card_border = f"border:2px solid {border_color};"
                 else:
-                    border_color = "#E08A00"
-                    card_bg = "#FFFFFF"
-                    qty_color = "#111111"
-                    card_border = "border:1px solid rgba(17,17,17,0.06);border-left:3px solid var(--c-warn);"
+                    border_color = "#FFB020"
+                    card_bg = "var(--c-surface)"
+                    qty_color = "var(--c-text)"
+                    card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid var(--c-warn);"
             elif qtd_av > 0:
-                border_color = "#E08A00"
-                card_bg = "#FFFFFF"
-                qty_color = "#E08A00"
-                card_border = "border:1px solid rgba(17,17,17,0.06);border-left:3px solid var(--c-warn);"
+                border_color = "#FFB020"
+                card_bg = "var(--c-surface)"
+                qty_color = "#FFB020"
+                card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid var(--c-warn);"
             elif diff == 0:
-                border_color = "#2E7D32"
-                card_bg = "#FFFFFF"
-                qty_color = "#111111"
-                card_border = "border:1px solid rgba(17,17,17,0.06);border-left:3px solid var(--c-ok);"
+                border_color = "#4CC38A"
+                card_bg = "var(--c-surface)"
+                qty_color = "var(--c-text)"
+                card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid var(--c-ok);"
             elif diff < 0:
-                border_color = "#D32F2F"
+                border_color = "#FF5A5A"
                 card_bg = "var(--c-crit-soft)"
-                qty_color = "#D32F2F"
-                card_border = "border:2px solid rgba(211,47,47,0.55);"
+                qty_color = "#FF5A5A"
+                card_border = "border:2px solid rgba(255,90,90,0.55);"
             else:
-                border_color = "#00897B"
-                card_bg = "#E0F2F1"
-                qty_color = "#00897B"
-                card_border = "border:2px solid rgba(0,137,123,0.55);"
+                border_color = "#3CCFBF"
+                card_bg = "rgba(60,207,191,0.14)"
+                qty_color = "#3CCFBF"
+                card_border = "border:2px solid rgba(60,207,191,0.55);"
 
             # Category badge (ou código do produto no modo cíclico)
             cat_upper = str(r["categoria"]).strip().upper()
@@ -8024,7 +8029,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     f'<div style="display:inline-flex;align-items:center;gap:5px;'
                     f'font-size:11px;font-family:\'IBM Plex Mono\',monospace;font-weight:600;'
                     f'padding:3px 8px;border-radius:6px;'
-                    f'background:rgba(17,17,17,0.07);color:var(--c-text);margin-bottom:10px;flex-shrink:0;">'
+                    f'background:rgba(255,255,255,0.07);color:var(--c-text);margin-bottom:10px;flex-shrink:0;">'
                     f'<span style="width:6px;height:6px;border-radius:50%;background:{border_color};flex-shrink:0;"></span>'
                     f'{cod_str}</div>'
                 )
@@ -8044,7 +8049,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     f'<div style="position:absolute;top:10px;right:10px;'
                     f'font-size:10px;font-weight:600;font-family:\'IBM Plex Mono\',monospace;'
                     f'padding:2px 7px;border-radius:6px;'
-                    f'background:rgba(224,138,0,0.12);color:var(--c-warn-ink);">⚠ {qtd_av} av.</div>'
+                    f'background:rgba(255,176,32,0.12);color:var(--c-warn-ink);">⚠ {qtd_av} av.</div>'
                 )
             elif diff != 0:
                 sign = "▲" if diff > 0 else "▼"
@@ -8089,13 +8094,13 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     _ult_ts = str(_ult_ts or "").strip()
                     if _ult_ts and _ult_ts.lower() != "none" and len(_ult_ts) >= 10:
                         if _ult_dias is None:
-                            _idade_txt, _idade_cor = "", "rgba(17,17,17,0.45)"
+                            _idade_txt, _idade_cor = "", "rgba(255,255,255,0.45)"
                         elif _ult_dias > 60:
-                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#D32F2F"
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#FF5A5A"
                         elif _ult_dias > 30:
-                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#E08A00"
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#FFB020"
                         else:
-                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "rgba(17,17,17,0.45)"
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "rgba(255,255,255,0.45)"
                         ciclo_date_html = (
                             f'<div style="margin-top:6px;font-size:10px;font-weight:600;'
                             f'font-family:\'IBM Plex Mono\',monospace;letter-spacing:0.3px;'
@@ -8124,7 +8129,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     _coops_txt = ", ".join(f"{_n} ({_s}{_q})" for _n, _q, _s in _coops)
                     cooperado_popup_html = (
                         f'<div style="font-size:0.82rem;font-weight:600;color:var(--c-text);margin-top:6px;'
-                        f'border-top:1px solid rgba(17,17,17,0.12);padding-top:6px;">'
+                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
                         f'&#x1F464; {_coops_txt}</div>'
                     )
 
@@ -8138,7 +8143,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 if _obs_txt:
                     obs_popup_html = (
                         f'<div style="font-size:0.78rem;font-weight:500;color:var(--c-text);margin-top:6px;'
-                        f'border-top:1px solid rgba(17,17,17,0.12);padding-top:6px;">'
+                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
                         f'&#x1F4AC; {_obs_txt}'
                         + (f' <span style="color:var(--c-text-2);">&middot; {_obs_dt_fmt}</span>' if _obs_dt_fmt else '')
                         + '</div>'
@@ -9154,11 +9159,11 @@ def get_produtos_parados(dias_min: int) -> pd.DataFrame:
 # janela de tempo é a SOMA direta dos registros dessa janela.
 
 _FAIXAS_COBERTURA = {
-    "RUPTURA":  {"cor": "#D32F2F", "icone": "🚨", "desc": "< 1 mês"},
-    "ATENÇÃO":  {"cor": "#E08A00", "icone": "⚠️", "desc": "1–2 meses"},
-    "SAUDÁVEL": {"cor": "#2E7D32", "icone": "✅", "desc": "2–6 meses"},
-    "EXCESSO":  {"cor": "#3D63D8", "icone": "📦", "desc": "> 6 meses"},
-    "MORTO":    {"cor": "#6B6B6B", "icone": "💀", "desc": "0 vendas 180d"},
+    "RUPTURA":  {"cor": "#FF5A5A", "icone": "🚨", "desc": "< 1 mês"},
+    "ATENÇÃO":  {"cor": "#FFB020", "icone": "⚠️", "desc": "1–2 meses"},
+    "SAUDÁVEL": {"cor": "#4CC38A", "icone": "✅", "desc": "2–6 meses"},
+    "EXCESSO":  {"cor": "#7B9BFF", "icone": "📦", "desc": "> 6 meses"},
+    "MORTO":    {"cor": "#A3A5AB", "icone": "💀", "desc": "0 vendas 180d"},
 }
 
 # ── Dimensão CLASSE VETERINÁRIA (tabela classificacao_vet) ────────────────────
@@ -9526,30 +9531,30 @@ def _normalizar_qtd_filme(df: pd.DataFrame, col_produto: str = "produto", col_qt
 _PLOTLY_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="IBM Plex Sans, sans-serif", color="#111111", size=11),
+    font=dict(family="IBM Plex Sans, sans-serif", color="#F2F2F2", size=11),
     margin=dict(l=10, r=10, t=40, b=10),
     transition=dict(duration=800, easing="cubic-in-out"),
 )
 
 _DEFAULT_LEGEND = dict(
-    bgcolor="rgba(248,248,248,0.8)", bordercolor="#E2E2E2", borderwidth=1,
-    font=dict(size=10, color="#444444"),
+    bgcolor="rgba(28,29,33,0.8)", bordercolor="#2E3036", borderwidth=1,
+    font=dict(size=10, color="#C8C9CC"),
 )
 
 _GROUP_COLORS = {
-    "HERBICIDAS": "#3D63D8", "INSETICIDAS": "#2E7D32",
-    "ADUBOS FOLIARES": "#7E57C2", "ADUBOS QUÍMICOS": "#7E57C2",
-    "FUNGICIDAS": "#E08A00", "MATURADORES": "#00897B",
-    "BIOLOGICOS E INOCULANTES": "#2E7D32", "SEMENTES DE MILHO": "#E08A00",
-    "SUPLEMENTO MINERAL": "#ec4899", "LONAS": "#7E57C2",
+    "HERBICIDAS": "#7B9BFF", "INSETICIDAS": "#4CC38A",
+    "ADUBOS FOLIARES": "#B69CFF", "ADUBOS QUÍMICOS": "#B69CFF",
+    "FUNGICIDAS": "#FFB020", "MATURADORES": "#3CCFBF",
+    "BIOLOGICOS E INOCULANTES": "#4CC38A", "SEMENTES DE MILHO": "#FFB020",
+    "SUPLEMENTO MINERAL": "#ec4899", "LONAS": "#B69CFF",
     "ANTIBIOTICOS/ANTI-INFLAMATORIO": "#f472b6",
-    "ACESSORIOS DE CERCA ELETRICA": "#7E57C2",
-    "ADJUVANTES/ESPALHANTES ADESIVO": "#00897B",
+    "ACESSORIOS DE CERCA ELETRICA": "#B69CFF",
+    "ADJUVANTES/ESPALHANTES ADESIVO": "#3CCFBF",
 }
 
 
 def _get_color(grupo: str) -> str:
-    return _GROUP_COLORS.get(grupo, "#6B6B6B")
+    return _GROUP_COLORS.get(grupo, "#A3A5AB")
 
 
 def _build_df_zerados(df_vendas: pd.DataFrame) -> pd.DataFrame:
@@ -9667,15 +9672,15 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 cornerradius=4,
             ),
             text=df_top["qtd_vendida"].apply(lambda v: f"{v:,.0f}".replace(",", ".")),
-            textposition="outside", textfont=dict(size=10, color="#444444"),
+            textposition="outside", textfont=dict(size=10, color="#C8C9CC"),
             hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<extra></extra>",
         ))
         fig_bar.update_layout(
             **_PLOTLY_LAYOUT,
-            title=dict(text="Quantidade Vendida por Grupo", font=dict(size=14, color="#111111")),
+            title=dict(text="Quantidade Vendida por Grupo", font=dict(size=14, color="#F2F2F2")),
             height=max(350, top_n * 32),
             yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
-            xaxis=dict(gridcolor="#E2E2E2", title=None),
+            xaxis=dict(gridcolor="#2E3036", title=None),
             showlegend=False,
         )
         st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9696,7 +9701,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             ))
             fig_pie.update_layout(
                 **_PLOTLY_LAYOUT,
-                title=dict(text="Distribuição % Vendas", font=dict(size=13, color="#444444")),
+                title=dict(text="Distribuição % Vendas", font=dict(size=13, color="#C8C9CC")),
                 height=320, showlegend=True,
                 legend=dict(font=dict(size=9), orientation="h", y=-0.15),
             )
@@ -9708,15 +9713,15 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             df8 = df_top.head(8)
             fig_vs.add_trace(go.Bar(
                 name="Vendido", x=df8["grupo"], y=df8["qtd_vendida"],
-                marker=dict(color="#2E7D32", cornerradius=3, opacity=0.85),
+                marker=dict(color="#4CC38A", cornerradius=3, opacity=0.85),
             ))
             fig_vs.add_trace(go.Bar(
                 name="Estoque", x=df8["grupo"], y=df8["qtd_estoque"],
-                marker=dict(color="#3D63D8", cornerradius=3, opacity=0.5),
+                marker=dict(color="#7B9BFF", cornerradius=3, opacity=0.5),
             ))
             fig_vs.update_layout(
                 **_PLOTLY_LAYOUT, barmode="group",
-                title=dict(text="Vendido vs Estoque", font=dict(size=13, color="#444444")),
+                title=dict(text="Vendido vs Estoque", font=dict(size=13, color="#C8C9CC")),
                 height=320,
                 xaxis=dict(tickangle=-35, tickfont=dict(size=8), gridcolor="rgba(0,0,0,0)"),
                 legend=dict(orientation="h", y=1.12, font=dict(size=10)),
@@ -9762,7 +9767,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 
         if not df_alerta.empty:
             # Bar chart horizontal com cores de severidade
-            colors = ["#D32F2F" if n == "ZERADO" else "#E08A00" for n in df_alerta["nivel"]]
+            colors = ["#FF5A5A" if n == "ZERADO" else "#FFB020" for n in df_alerta["nivel"]]
             nomes = df_alerta["produto"].apply(lambda p: p[:35] + "…" if len(p) > 35 else p)
             estoque_x = df_alerta["qtd_estoque"].clip(lower=0)
 
@@ -9771,7 +9776,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 y=nomes, x=estoque_x, orientation="h",
                 marker=dict(color=colors, cornerradius=3),
                 text=df_alerta.apply(lambda r: f"Vendido: {int(r['qtd_vendida'])}", axis=1),
-                textposition="outside", textfont=dict(size=9, color="#444444"),
+                textposition="outside", textfont=dict(size=9, color="#C8C9CC"),
                 customdata=df_alerta[["qtd_vendida", "dias_cobertura"]].fillna(0).round(1).values,
                 hovertemplate="<b>%{y}</b><br>Estoque: %{x:,.0f}<br>Vendido: %{customdata[0]:,.0f}<br>Cobertura: %{customdata[1]}d<extra></extra>",
             ))
@@ -9780,7 +9785,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 title=dict(text="🚨 Produtos com Estoque Crítico — Qtd Restante em Estoque", font=dict(size=13)),
                 height=max(400, len(df_alerta) * 28),
                 yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
-                xaxis=dict(title="Qtd em Estoque", gridcolor="#E2E2E2"),
+                xaxis=dict(title="Qtd em Estoque", gridcolor="#2E3036"),
                 showlegend=False,
             )
             st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9813,7 +9818,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 
         if not df_burn.empty:
             colors_burn = [
-                "#D32F2F" if d < 15 else "#E08A00" if d < 30 else "#2E7D32"
+                "#FF5A5A" if d < 15 else "#FFB020" if d < 30 else "#4CC38A"
                 for d in df_burn["dias_estoque"]
             ]
 
@@ -9822,28 +9827,28 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 y=df_burn["grupo"], x=df_burn["dias_estoque"], orientation="h",
                 marker=dict(color=colors_burn, cornerradius=4),
                 text=df_burn["dias_estoque"].apply(lambda d: f"{d}d"),
-                textposition="outside", textfont=dict(size=10, color="#444444"),
+                textposition="outside", textfont=dict(size=10, color="#C8C9CC"),
                 hovertemplate="<b>%{y}</b><br>Dias restantes: %{x}<br><extra></extra>",
             ))
             # Linhas de referência
             fig_burn.add_shape(
                 type="line", x0=15, x1=15, y0=-0.5, y1=len(df_burn)-0.5,
-                line=dict(dash="dash", color="#D32F2F", width=1), yref="y",
+                line=dict(dash="dash", color="#FF5A5A", width=1), yref="y",
             )
             fig_burn.add_annotation(x=15, y=-0.5, text="Urgente", showarrow=False,
-                font=dict(size=9, color="#D32F2F"), yshift=-12)
+                font=dict(size=9, color="#FF5A5A"), yshift=-12)
             fig_burn.add_shape(
                 type="line", x0=30, x1=30, y0=-0.5, y1=len(df_burn)-0.5,
-                line=dict(dash="dash", color="#E08A00", width=1), yref="y",
+                line=dict(dash="dash", color="#FFB020", width=1), yref="y",
             )
             fig_burn.add_annotation(x=30, y=-0.5, text="Atenção", showarrow=False,
-                font=dict(size=9, color="#E08A00"), yshift=-12)
+                font=dict(size=9, color="#FFB020"), yshift=-12)
             fig_burn.update_layout(
                 **_PLOTLY_LAYOUT,
                 title=dict(text="🔥 Dias de Estoque Restante por Grupo", font=dict(size=14)),
                 height=max(350, len(df_burn) * 35),
                 yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
-                xaxis=dict(title="Dias", gridcolor="#E2E2E2"),
+                xaxis=dict(title="Dias", gridcolor="#2E3036"),
                 showlegend=False,
             )
             st.plotly_chart(fig_burn, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9882,7 +9887,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                     cornerradius=4,
                 ),
                 text=df_top_prod["qtd_vendida"].apply(lambda v: f"{v:,.0f}".replace(",", ".")),
-                textposition="outside", textfont=dict(size=9, color="#444444"),
+                textposition="outside", textfont=dict(size=9, color="#C8C9CC"),
                 hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br><extra></extra>",
             ))
             fig_top.update_layout(
@@ -9890,7 +9895,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 title=dict(text=f"🏆 Top 15 Produtos — {grupo_sel}", font=dict(size=14)),
                 height=max(380, len(df_top_prod) * 30),
                 yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
-                xaxis=dict(title="Qtd Vendida", gridcolor="#E2E2E2"),
+                xaxis=dict(title="Qtd Vendida", gridcolor="#2E3036"),
                 showlegend=False,
             )
             st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9904,7 +9909,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                     mode="markers", name=g[:15],
                     marker=dict(
                         color=_get_color(g), size=8, opacity=0.7,
-                        line=dict(width=1, color="#ECECEC"),
+                        line=dict(width=1, color="#111214"),
                     ),
                     hovertemplate="<b>%{text}</b><br>Vendido: %{x}<br>Estoque: %{y}<extra></extra>",
                     text=df_prod.loc[dg.index, "produto"].apply(lambda p: p[:30]),
@@ -9913,15 +9918,15 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             max_val = max(df_prod["qtd_vendida"].max(), df_prod["qtd_estoque"].max(), 100)
             fig_scatter.add_trace(go.Scatter(
                 x=[0, max_val], y=[0, max_val],
-                mode="lines", line=dict(dash="dash", color="#6B6B6B", width=1),
+                mode="lines", line=dict(dash="dash", color="#A3A5AB", width=1),
                 name="Equilíbrio", showlegend=True,
             ))
             fig_scatter.update_layout(
                 **_PLOTLY_LAYOUT,
-                title=dict(text="Vendido × Estoque (abaixo da linha = estoque menor que vendas)", font=dict(size=12, color="#444444")),
+                title=dict(text="Vendido × Estoque (abaixo da linha = estoque menor que vendas)", font=dict(size=12, color="#C8C9CC")),
                 height=380,
-                xaxis=dict(title="Qtd Vendida", gridcolor="#E2E2E2"),
-                yaxis=dict(title="Qtd Estoque", gridcolor="#E2E2E2"),
+                xaxis=dict(title="Qtd Vendida", gridcolor="#2E3036"),
+                yaxis=dict(title="Qtd Estoque", gridcolor="#2E3036"),
                 legend=dict(font=dict(size=8), orientation="h", y=-0.2),
             )
             st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -10011,7 +10016,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                             cornerradius=4,
                         ),
                         text=df_esq_grupo["qtd_produtos"],
-                        textposition="outside", textfont=dict(size=10, color="#444444"),
+                        textposition="outside", textfont=dict(size=10, color="#C8C9CC"),
                         hovertemplate="<b>%{y}</b><br>Produtos parados: %{x}<extra></extra>",
                     ))
                     fig_esq.update_layout(
@@ -10019,7 +10024,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                         title=dict(text="🌿 SKUs Parados por Grupo (sem vendas)", font=dict(size=14)),
                         height=max(280, len(df_esq_grupo) * 42),
                         yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
-                        xaxis=dict(title="Nº de SKUs parados", gridcolor="#E2E2E2"),
+                        xaxis=dict(title="Nº de SKUs parados", gridcolor="#2E3036"),
                         showlegend=False,
                     )
                     st.plotly_chart(fig_esq, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -10189,23 +10194,23 @@ def build_infograficos_tab():
             x=dias_labels,
             y=pivot.index.tolist(),
             colorscale=[
-                [0.0, "#EDF3FA"],
-                [0.25, "#2E7D32"],
-                [0.65, "#E08A00"],
-                [1.0, "#D32F2F"],
+                [0.0, "#24262B"],
+                [0.25, "#4CC38A"],
+                [0.65, "#FFB020"],
+                [1.0, "#FF5A5A"],
             ],
             hoverongaps=False,
             hovertemplate="<b>%{y}</b><br>%{x}: <b>%{z} un.</b><extra></extra>",
             colorbar=dict(
-                title=dict(text="Qtd", font=dict(color="#444444")),
-                tickfont=dict(color="#444444"),
+                title=dict(text="Qtd", font=dict(color="#C8C9CC")),
+                tickfont=dict(color="#C8C9CC"),
             ),
         ))
         fig.update_layout(**_PLOTLY_LAYOUT)
         fig.update_layout(
             height=max(420, len(pivot) * 30 + 90),
-            xaxis=dict(side="top", tickfont=dict(color="#111111")),
-            yaxis=dict(autorange="reversed", tickfont=dict(size=10, color="#111111")),
+            xaxis=dict(side="top", tickfont=dict(color="#F2F2F2")),
+            yaxis=dict(autorange="reversed", tickfont=dict(size=10, color="#F2F2F2")),
             margin=dict(l=20, r=20, t=60, b=20),
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -10253,11 +10258,11 @@ def build_infograficos_tab():
             x=top10_mais["total_vendido"],
             orientation="h",
             name="Mais vendidos",
-            marker_color="#2E7D32",
+            marker_color="#4CC38A",
             hovertemplate="<b>%{y}</b><br>Vendido: <b>%{x} un.</b><extra></extra>",
             text=top10_mais["total_vendido"].astype(str),
             textposition="outside",
-            textfont=dict(color="#2E7D32", size=10),
+            textfont=dict(color="#4CC38A", size=10),
         ))
 
         fig.add_trace(go.Bar(
@@ -10265,12 +10270,12 @@ def build_infograficos_tab():
             x=-top10_menos["total_vendido"],
             orientation="h",
             name="Menos vendidos",
-            marker_color="#E08A00",
+            marker_color="#FFB020",
             customdata=top10_menos["total_vendido"].values,
             hovertemplate="<b>%{y}</b><br>Vendido: <b>%{customdata} un.</b><extra></extra>",
             text=top10_menos["total_vendido"].astype(str),
             textposition="outside",
-            textfont=dict(color="#E08A00", size=10),
+            textfont=dict(color="#FFB020", size=10),
         ))
 
         _max_mais = int(top10_mais["total_vendido"].max()) if not top10_mais.empty else 1
@@ -10283,7 +10288,7 @@ def build_infograficos_tab():
             height=max(520, max(len(top10_mais), len(top10_menos)) * 32 + 130),
             xaxis=dict(
                 range=[-max_val, max_val],
-                gridcolor="#E2E2E2",
+                gridcolor="#2E3036",
                 title="← Menos vendidos   |   Mais vendidos →",
                 tickvals=[int(-max_val * f) for f in [1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75, -1] if abs(f) <= 1],
                 ticktext=[str(abs(int(-max_val * f))) for f in [1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75, -1] if abs(f) <= 1],
@@ -10293,7 +10298,7 @@ def build_infograficos_tab():
             shapes=[dict(
                 type="line", x0=0, x1=0,
                 y0=-0.5, y1=max(len(top10_mais), len(top10_menos)) - 0.5,
-                line=dict(color="#6B6B6B", width=1.5),
+                line=dict(color="#A3A5AB", width=1.5),
             )],
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -10348,7 +10353,7 @@ def build_infograficos_tab():
         )
 
         def _style_parado(row):
-            bg = "background-color: rgba(211,47,47,0.15);" if row["Dias parado"] > 90 else ""
+            bg = "background-color: rgba(255,90,90,0.15);" if row["Dias parado"] > 90 else ""
             return [bg] * len(row)
 
         styled = df_display.style.apply(_style_parado, axis=1)
@@ -10393,11 +10398,11 @@ def build_infograficos_tab():
                     size=row["bubble_size"],
                     color=cor,
                     opacity=0.78,
-                    line=dict(width=1.5, color="rgba(17,17,17,0.25)"),
+                    line=dict(width=1.5, color="rgba(255,255,255,0.25)"),
                 ),
                 text=[row["grupo"][:22]],
                 textposition="top center",
-                textfont=dict(size=9, color="#111111"),
+                textfont=dict(size=9, color="#F2F2F2"),
                 name=row["grupo"],
                 customdata=[[
                     row["grupo"], row["taxa_giro"],
@@ -10417,18 +10422,18 @@ def build_infograficos_tab():
 
         fig.add_shape(
             type="line", x0=med_giro, x1=med_giro, y0=0, y1=max_rupt,
-            line=dict(color="#8A8A8A", width=1.5, dash="dash"),
+            line=dict(color="#8E9096", width=1.5, dash="dash"),
         )
         fig.add_shape(
             type="line", x0=0, x1=max_giro, y0=med_ruptura, y1=med_ruptura,
-            line=dict(color="#8A8A8A", width=1.5, dash="dash"),
+            line=dict(color="#8E9096", width=1.5, dash="dash"),
         )
 
         for txt, x_f, y_f, color in [
-            ("⭐ Ideal",    (med_giro + max_giro) / 2, med_ruptura / 2,          "#2E7D32"),
-            ("🚨 Problema", med_giro / 2,              (med_ruptura + max_rupt) / 2, "#D32F2F"),
-            ("📦 Excesso",  (med_giro + max_giro) / 2, (med_ruptura + max_rupt) / 2, "#E08A00"),
-            ("💤 Parado",   med_giro / 2,              med_ruptura / 2,          "#444444"),
+            ("⭐ Ideal",    (med_giro + max_giro) / 2, med_ruptura / 2,          "#4CC38A"),
+            ("🚨 Problema", med_giro / 2,              (med_ruptura + max_rupt) / 2, "#FF5A5A"),
+            ("📦 Excesso",  (med_giro + max_giro) / 2, (med_ruptura + max_rupt) / 2, "#FFB020"),
+            ("💤 Parado",   med_giro / 2,              med_ruptura / 2,          "#C8C9CC"),
         ]:
             fig.add_annotation(
                 x=x_f, y=y_f, text=txt,
@@ -10443,13 +10448,13 @@ def build_infograficos_tab():
             showlegend=False,
             xaxis=dict(
                 title="Taxa de Giro (vendas / estoque)",
-                gridcolor="#E2E2E2",
+                gridcolor="#2E3036",
                 range=[0, max_giro],
                 zeroline=False,
             ),
             yaxis=dict(
                 title="% Ruptura (dias sem estoque)",
-                gridcolor="#E2E2E2",
+                gridcolor="#2E3036",
                 range=[0, max_rupt],
                 zeroline=False,
             ),
@@ -10495,7 +10500,7 @@ if _wd_dash:
     elif _c in (95,96,99):           _wemoji_d, _wdesc_d = "⛈️", "Tempestade"
     elif _c in (71,73,75,77):        _wemoji_d, _wdesc_d = "❄️", "Neve"
     else:                            _wemoji_d, _wdesc_d = "🌡️", ""
-    _whtml = f"""<div class="wco" style="text-align:center;background:rgba(248,248,248,0.85);backdrop-filter:blur(8px);">
+    _whtml = f"""<div class="wco" style="text-align:center;background:rgba(28,29,33,0.85);backdrop-filter:blur(8px);">
   <div style="font-size:1.6rem;line-height:1;">{_wemoji_d}</div>
   <div style="font-size:1.3rem;font-weight:700;line-height:1.2;letter-spacing:-0.5px;color:var(--c-text);margin-top:3px;">{_wtemp_d}°</div>
   <div style="font-size:0.6rem;color:var(--c-text-2);margin-top:2px;">{_wdesc_d}</div>
@@ -10599,10 +10604,10 @@ div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.
 }
 /* ── Zona esquerda: marca ── */
 .ct-brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-/* Logo: "C" limão dentro de um círculo preto */
+/* Logo: círculo limão com o "C" preto */
 .ct-logo {
     flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
-    background: var(--c-ink); color: var(--c-accent);
+    background: var(--c-accent); color: var(--c-on-accent);
     display: flex; align-items: center; justify-content: center;
     font-family: var(--f-sans); font-weight: 800; font-size: 19px; line-height: 1;
 }
@@ -10626,7 +10631,7 @@ div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.
     font-size: 9.5px; color: var(--c-label); margin-left: 5px;
     letter-spacing: .08em; text-transform: uppercase;
 }
-/* Contador de divergências do dia: pílula preta, texto branco */
+/* Contador de divergências do dia: pílula limão, texto preto */
 .ct-num.ct-pill {
     background: var(--c-ink); border-radius: var(--r-pill);
     padding: 5px 12px; align-items: center;
@@ -10681,16 +10686,16 @@ div.st-key-search_mestre [data-testid="stTextInput"] {
     min-width: 0;
     pointer-events: auto;
 }
-/* Busca em pílula branca com lupa à esquerda
+/* Busca em pílula escura (#1C1D21) com lupa à esquerda
    (1.59 usa react-aria: stTextInputRootElement é o wrapper com a borda) */
 div.st-key-search_mestre [data-testid="stTextInputRootElement"],
 div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"] {
-    background-color: var(--c-surface-2) !important;
+    background-color: var(--c-surface) !important;
     border: 1px solid transparent !important;
     border-radius: var(--r-pill) !important;
-    box-shadow: 0 1px 2px rgba(17,17,17,0.04);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
     transition: border-color .15s ease, box-shadow .15s ease;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%236B6B6B' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.2' y2='16.2'/%3E%3C/svg%3E") !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%238E9096' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.2' y2='16.2'/%3E%3C/svg%3E") !important;
     background-repeat: no-repeat !important;
     background-position: 11px center !important;
 }
@@ -10715,7 +10720,7 @@ div.st-key-search_mestre [data-testid="stTextInput"] input::placeholder {
 div.st-key-search_mestre [data-testid="stTextInputRootElement"]:focus-within,
 div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
     border-color: var(--c-text) !important;
-    box-shadow: 0 0 0 3px rgba(17,17,17,0.06) !important;
+    box-shadow: 0 0 0 3px rgba(215,240,0,0.18) !important;
 }
 /* Neutraliza o glow verde global (.stTextInput input:focus) apenas na busca */
 div.st-key-search_mestre [data-testid="stTextInput"] input:focus {
@@ -11219,7 +11224,7 @@ if has_mestre:
                         _tot = int(_bloco["delta"].abs().sum())
                         st.markdown(
                             f'<div style="margin:8px 0 4px 0;padding:4px 10px;border-radius:6px;'
-                            f'background:#EEF2F9;border-left:3px solid {_accent};'
+                            f'background:var(--c-info-soft);border-left:3px solid {_accent};'
                             f'display:flex;justify-content:space-between;align-items:center;">'
                             f'<span style="color:var(--c-info);font-weight:700;font-size:0.78rem;'
                             f'text-transform:uppercase;letter-spacing:0.3px;">{_coop_nome}</span>'
@@ -11239,10 +11244,10 @@ if has_mestre:
                 _col_f, _col_s = st.columns(2)
                 with _col_f:
                     st.markdown("**🔴 Faltando**")
-                    _render_grouped(_df_falta_i, "#D32F2F", "50", "Sem cooperado")
+                    _render_grouped(_df_falta_i, "#FF5A5A", "50", "Sem cooperado")
                 with _col_s:
                     st.markdown("**🟡 Sobrando**")
-                    _render_grouped(_df_sobra_i, "#E08A00", "50", "Sem cooperado")
+                    _render_grouped(_df_sobra_i, "#FFB020", "50", "Sem cooperado")
 
         # ── Produtos Vencendo ────────────────────────────────────────────────
         with st.expander(f"📅 Vencendo em 30 dias  —  {len(_df_venc_i)} lote(s)", expanded=True):
@@ -11251,7 +11256,7 @@ if has_mestre:
             else:
                 for _, _r in _df_venc_i.head(10).iterrows():
                     _dias_v = (_r["VENCIMENTO"].date() - _hoje_i).days
-                    _cor_v = "#D32F2F" if _dias_v <= 7 else "#E08A00" if _dias_v <= 15 else "#E08A00"
+                    _cor_v = "#FF5A5A" if _dias_v <= 7 else "#FFB020" if _dias_v <= 15 else "#FFB020"
                     st.markdown(
                         f'<div style="background:var(--c-surface-2);border:none;border-left:3px solid {_cor_v};border-radius:12px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
@@ -11273,7 +11278,7 @@ if has_mestre:
                     _qe_e = int(_r.get("qtd_estoque", 0))
                     _gr_e = str(_r.get("grupo", ""))
                     _dp_e_disp = "Nunca vendido" if _dp_e >= 9999 else f"{_dp_e}d"
-                    _cor_e = "#D32F2F" if _dp_e >= 365 else "#E08A00" if _dp_e >= 180 else "#E08A00"
+                    _cor_e = "#FF5A5A" if _dp_e >= 365 else "#FFB020" if _dp_e >= 180 else "#FFB020"
                     _venc_e = _r.get("vencimento")
                     _venc_str = ""
                     if pd.notna(_venc_e):
@@ -11327,7 +11332,7 @@ if has_mestre:
             else:
                 for _, _r in _df_crit_i.head(10).iterrows():
                     _qc = int(_r["qtd"])
-                    _cor_c = "#D32F2F" if _qc <= 3 else "#E08A00" if _qc <= 7 else "#3D63D8"
+                    _cor_c = "#FF5A5A" if _qc <= 3 else "#FFB020" if _qc <= 7 else "#7B9BFF"
                     st.markdown(
                         f'<div style="background:var(--c-surface-2);border:1px solid var(--c-line-2);border-left:3px solid {_cor_c};border-radius:12px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
@@ -11387,11 +11392,11 @@ if has_mestre:
 
   var overlay = doc.createElement('div');
   overlay.id = 'tm-div-overlay';
-  overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(17,17,17,0.45);z-index:99999;align-items:center;justify-content:center;';
+  overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:99999;align-items:center;justify-content:center;';
   overlay.innerHTML = [
     '<div id="tm-div-modal" style="background:var(--c-surface-2);border:1px solid var(--c-line-2);border-radius:16px;',
     'padding:24px;min-width:320px;max-width:480px;width:90%;',
-    'box-shadow:0 20px 60px rgba(17,17,17,0.2);position:relative;">',
+    'box-shadow:0 20px 60px rgba(0,0,0,0.2);position:relative;">',
       '<button id="tm-div-close" style="position:absolute;top:12px;right:14px;background:none;border:none;',
       'color:var(--c-muted);font-size:1.2rem;cursor:pointer;line-height:1;">&#x2715;</button>',
       '<div style="font-size:0.65rem;color:var(--c-muted);font-family:monospace;letter-spacing:1px;',
@@ -11428,7 +11433,7 @@ if has_mestre:
       esc(nome) + ' <span style="font-size:0.65rem;color:var(--c-muted);font-family:monospace;">' + esc(cod) + '</span>';
     var html = '<div style="display:flex;flex-direction:column;gap:8px;">';
     entries.forEach(function(e) {{
-      var clr  = e.delta < 0 ? '#D32F2F' : '#00897B';
+      var clr  = e.delta < 0 ? '#FF5A5A' : '#3CCFBF';
       var sign = e.delta < 0 ? '&#9660;' : '&#9650;';
       var lbl  = e.status === 'falta' ? 'Falta' : 'Sobra';
       html += '<div style="background:var(--c-surface-2);border-radius:12px;padding:12px 14px;' +
@@ -11509,7 +11514,7 @@ if has_mestre:
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'IBM Plex Sans',system-ui,sans-serif;}
 body{background:transparent;padding:0;}
-.card{background:var(--c-bg);border:0.5px solid rgba(17,17,17,0.08);border-radius:12px;padding:1.25rem 1.5rem 1rem;}
+.card{background:var(--c-bg);border:0.5px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.25rem 1.5rem 1rem;}
 .card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem;}
 .card-title{font-size:11px;font-weight:500;letter-spacing:0.08em;color:var(--c-muted);margin:0 0 4px;text-transform:uppercase;}
 .card-subtitle{font-size:13px;color:var(--c-text-2);margin:0;opacity:0.7;}
@@ -11518,26 +11523,26 @@ body{background:transparent;padding:0;}
 .ldot{width:8px;height:8px;border-radius:2px;display:inline-block;}
 .panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;align-items:center;justify-content:center;}
 .panel-overlay.open{display:flex;}
-.panel-box{background:var(--c-surface);border-radius:14px;width:90%;max-width:420px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:0.5px solid rgba(17,17,17,0.08);}
-.phead{padding:14px 16px 10px;border-bottom:0.5px solid rgba(17,17,17,0.08);flex-shrink:0;}
+.panel-box{background:var(--c-surface);border-radius:14px;width:90%;max-width:420px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:0.5px solid rgba(255,255,255,0.08);}
+.phead{padding:14px 16px 10px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;}
 .pclose{float:right;background:none;border:none;font-size:18px;color:var(--c-muted);cursor:pointer;}
 .pcolorbar{height:3px;border-radius:2px;width:36px;margin-bottom:6px;}
 .pname{font-size:16px;font-weight:500;color:var(--c-text);margin-bottom:8px;}
 .pstats{display:flex;gap:6px;}
-.pstat{flex:1;background:rgba(17,17,17,0.05);border-radius:8px;padding:8px 6px;text-align:center;}
+.pstat{flex:1;background:rgba(255,255,255,0.05);border-radius:8px;padding:8px 6px;text-align:center;}
 .pstatv{font-size:22px;font-weight:600;color:var(--c-info);}
 .pstatl{font-size:10px;color:var(--c-muted);margin-top:2px;}
 .pitems{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:7px;}
-.icard{background:rgba(17,17,17,0.04);border-radius:9px;padding:10px 12px;border-left:3px solid var(--c-crit);}
+.icard{background:rgba(255,255,255,0.04);border-radius:9px;padding:10px 12px;border-left:3px solid var(--c-crit);}
 .icard.sobra{border-left-color:var(--c-info);}
 .icard-name{font-size:12px;font-weight:500;color:var(--c-text);line-height:1.35;margin-bottom:3px;}
 .icard-meta{font-size:10px;color:var(--c-muted);margin-bottom:6px;}
 .icard-bar{display:flex;align-items:center;gap:7px;}
-.ibar-track{flex:1;height:5px;background:rgba(17,17,17,0.08);border-radius:3px;overflow:hidden;}
+.ibar-track{flex:1;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;}
 .ibar-fill{height:100%;border-radius:3px;transition:width .6s ease;}
 .icard-nums{font-size:10px;color:var(--c-muted);white-space:nowrap;}
-.icard-diff{font-size:13px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(211,47,47,0.15);color:var(--c-crit);min-width:40px;text-align:center;}
-.icard-diff.pos{background:rgba(61,99,216,0.15);color:var(--c-info);}
+.icard-diff{font-size:13px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(255,90,90,0.15);color:var(--c-crit);min-width:40px;text-align:center;}
+.icard-diff.pos{background:rgba(123,155,255,0.15);color:var(--c-info);}
 </style>
 </head>
 <body>
@@ -11571,10 +11576,10 @@ body{background:transparent;padding:0;}
 <script>
 const dados=__DADOS__;
 const SEM_COOP='SEM COOPERADO';
-const CLR_FALTA='#D32F2F';
-const CLR_SOBRA='#3D63D8';
-const CLR_EXCEP='#E08A00';
-const CLR_LABEL='rgba(17,17,17,0.75)';
+const CLR_FALTA='#FF5A5A';
+const CLR_SOBRA='#7B9BFF';
+const CLR_EXCEP='#FFB020';
+const CLR_LABEL='rgba(255,255,255,0.75)';
 const coopMap={};
 dados.forEach((d,i)=>{
   const totF=d.itens.filter(it=>it.diff<0).reduce((s,it)=>s+Math.abs(it.diff),0);
@@ -11637,7 +11642,7 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Faltas',
         data:valsF,
-        backgroundColor:'rgba(211,47,47,0.82)',
+        backgroundColor:'rgba(255,90,90,0.82)',
         hoverBackgroundColor:CLR_FALTA,
         borderRadius:{topLeft:4,bottomLeft:4,topRight:0,bottomRight:0},
         borderSkipped:false,
@@ -11646,7 +11651,7 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Sobras',
         data:valsS,
-        backgroundColor:'rgba(61,99,216,0.78)',
+        backgroundColor:'rgba(123,155,255,0.78)',
         hoverBackgroundColor:CLR_SOBRA,
         borderRadius:{topLeft:0,bottomLeft:0,topRight:4,bottomRight:4},
         borderSkipped:false,
@@ -11661,11 +11666,11 @@ new Chart(document.getElementById('coop-chart'),{
     plugins:{
       legend:{display:false},
       tooltip:{
-        backgroundColor:'#F8F8F8',
-        borderColor:'rgba(17,17,17,0.08)',
+        backgroundColor:'#1C1D21',
+        borderColor:'rgba(255,255,255,0.08)',
         borderWidth:1,
-        titleColor:'rgba(17,17,17,0.85)',
-        bodyColor:'rgba(17,17,17,0.6)',
+        titleColor:'rgba(255,255,255,0.85)',
+        bodyColor:'rgba(255,255,255,0.6)',
         padding:10,
         callbacks:{
           label:ctx=>{
@@ -11679,9 +11684,9 @@ new Chart(document.getElementById('coop-chart'),{
     scales:{
       x:{
         stacked:true,
-        grid:{color:'rgba(17,17,17,0.05)',drawBorder:false},
+        grid:{color:'rgba(255,255,255,0.05)',drawBorder:false},
         border:{display:false},
-        ticks:{font:{size:11},color:'rgba(17,17,17,0.5)'}
+        ticks:{font:{size:11},color:'rgba(255,255,255,0.5)'}
       },
       y:{
         stacked:true,
@@ -11766,16 +11771,16 @@ new Chart(document.getElementById('coop-chart'),{
                 df_div = df_div.sort_values(["_group_newest", "criado_em"], ascending=[False, False])
                 df_div = df_div.drop(columns=["_group_newest"])
 
-            # Paleta de cores discretas por pessoa (tema claro)
+            # Paleta de cores discretas por pessoa (tema escuro)
             _PERSON_PALETTE = [
-                {"h_bg": "#EDF1FC", "h_bd": "#3D63D8", "h_tx": "#3D63D8", "c_bg": "#F5F7FD"},  # azul
-                {"h_bg": "#EFF8F1", "h_bd": "#2E7D32", "h_tx": "#2E7D32", "c_bg": "#EFF8F0"},  # verde
-                {"h_bg": "#F7F0F4", "h_bd": "#ec4899", "h_tx": "#C2185B", "c_bg": "#F8EFF4"},  # rosa
-                {"h_bg": "#F8F5EF", "h_bd": "#E08A00", "h_tx": "#9A5B00", "c_bg": "#FAF6ED"},  # laranja
-                {"h_bg": "#F3F0F7", "h_bd": "#7E57C2", "h_tx": "#7E57C2", "c_bg": "#F3EFF9"},  # roxo
-                {"h_bg": "#F0F7F7", "h_bd": "#00897B", "h_tx": "#00897B", "c_bg": "#EFF8F8"},  # ciano
-                {"h_bg": "#F7F3F0", "h_bd": "#E08A00", "h_tx": "#B26B00", "c_bg": "#FAF4ED"},  # âmbar
-                {"h_bg": "#F4F7F0", "h_bd": "#689F38", "h_tx": "#558B2F", "c_bg": "#F6FAED"},  # lima
+                {"h_bg": "rgba(123,155,255,0.16)", "h_bd": "#7B9BFF", "h_tx": "#7B9BFF", "c_bg": "rgba(123,155,255,0.06)"},  # azul
+                {"h_bg": "rgba(76,195,138,0.16)", "h_bd": "#4CC38A", "h_tx": "#4CC38A", "c_bg": "rgba(76,195,138,0.06)"},  # verde
+                {"h_bg": "rgba(244,114,182,0.16)", "h_bd": "#F472B6", "h_tx": "#F472B6", "c_bg": "rgba(244,114,182,0.06)"},  # rosa
+                {"h_bg": "rgba(255,176,32,0.16)", "h_bd": "#FFB020", "h_tx": "#FFB020", "c_bg": "rgba(255,176,32,0.06)"},  # laranja
+                {"h_bg": "rgba(182,156,255,0.16)", "h_bd": "#B69CFF", "h_tx": "#B69CFF", "c_bg": "rgba(182,156,255,0.06)"},  # roxo
+                {"h_bg": "rgba(60,207,191,0.16)", "h_bd": "#3CCFBF", "h_tx": "#3CCFBF", "c_bg": "rgba(60,207,191,0.06)"},  # ciano
+                {"h_bg": "rgba(242,183,5,0.16)", "h_bd": "#F2B705", "h_tx": "#F2B705", "c_bg": "rgba(242,183,5,0.06)"},  # âmbar
+                {"h_bg": "rgba(156,204,101,0.16)", "h_bd": "#9CCC65", "h_tx": "#9CCC65", "c_bg": "rgba(156,204,101,0.06)"},  # lima
             ]
             # Mapeia cada grupo para uma cor fixa
             _group_color_map = {}
@@ -11827,7 +11832,7 @@ new Chart(document.getElementById('coop-chart'),{
 
             _prev_obs_group = None
             for _, item in df_div_agg.iterrows():
-                status_cor = "#D32F2F" if item["status"] == "falta" else "#E08A00"
+                status_cor = "#FF5A5A" if item["status"] == "falta" else "#FFB020"
                 status_label = "⬇️ FALTA" if item["status"] == "falta" else "⬆️ SOBRA"
                 delta = int(item["delta"]) if pd.notnull(item["delta"]) else 0
                 qtd_s = int(item["qtd_sistema"]) if pd.notnull(item["qtd_sistema"]) else 0
@@ -12003,7 +12008,7 @@ new Chart(document.getElementById('coop-chart'),{
                             )
 
                             if delta_corr != 0:
-                                cor = "#2E7D32" if delta_corr > 0 else "#D32F2F"
+                                cor = "#4CC38A" if delta_corr > 0 else "#FF5A5A"
                                 tipo = "sobra" if delta_corr > 0 else "falta"
                                 sinal = "+" if delta_corr > 0 else ""
                                 st.markdown(
@@ -12061,7 +12066,7 @@ new Chart(document.getElementById('coop-chart'),{
                     _prods += f" +{len(_itens) - 3}"
                 _linhas_pf.append(
                     f'<div style="padding:8px 14px;border-radius:8px;'
-                    f'background:rgba(61,99,216,0.08);border:1px solid rgba(61,99,216,0.3);'
+                    f'background:rgba(123,155,255,0.08);border:1px solid rgba(123,155,255,0.3);'
                     f'margin-bottom:6px;font-size:0.83rem;">'
                     f'🔵 <b>Possível faturamento:</b> <b style="color:var(--c-info)">{_a["cooperado"]}</b>'
                     f'<span style="color:var(--c-muted);font-size:0.75rem;margin-left:8px;">'
@@ -12172,7 +12177,7 @@ new Chart(document.getElementById('coop-chart'),{
 
                 def _style_gv(row):
                     if row["Divergência %"] > _GV_THRESHOLD_PCT:
-                        color = "rgba(211,47,47,0.12)" if row["Diferença"] < 0 else "rgba(224,138,0,0.10)"
+                        color = "rgba(255,90,90,0.12)" if row["Diferença"] < 0 else "rgba(255,176,32,0.10)"
                         return [f"background-color:{color}"] * len(row)
                     return [""] * len(row)
 
@@ -12340,17 +12345,17 @@ new Chart(document.getElementById('coop-chart'),{
                         x=[_uv_fmt_dia(d) for d in _df_uv_cron["dia"]],
                         y=pd.to_numeric(_df_uv_cron["qtd"], errors="coerce").fillna(0),
                         mode="lines+markers",
-                        line=dict(color="#3D63D8", width=2),
-                        marker=dict(size=6, color="#3D63D8"),
+                        line=dict(color="#7B9BFF", width=2),
+                        marker=dict(size=6, color="#7B9BFF"),
                         fill="tozeroy",
-                        fillcolor="rgba(61,99,216,0.10)",
+                        fillcolor="rgba(123,155,255,0.10)",
                         hovertemplate="<b>%{x}</b><br>%{y} un.<extra></extra>",
                     ))
                     _fig_uv.update_layout(
                         **_PLOTLY_LAYOUT,
                         height=260,
-                        xaxis=dict(gridcolor="#E2E2E2", tickangle=-45, tickfont=dict(size=9)),
-                        yaxis=dict(gridcolor="#E2E2E2", title="Unidades"),
+                        xaxis=dict(gridcolor="#2E3036", tickangle=-45, tickfont=dict(size=9)),
+                        yaxis=dict(gridcolor="#2E3036", title="Unidades"),
                         showlegend=False,
                     )
                     st.plotly_chart(_fig_uv, use_container_width=True,
@@ -12378,16 +12383,16 @@ new Chart(document.getElementById('coop-chart'),{
         # ── CSS da aba ──
         st.markdown("""
         <style>
-        .pend-card{background:rgba(17,17,17,0.04);border:1px solid rgba(17,17,17,0.08);border-radius:16px;padding:16px;margin-bottom:16px;}
-        .pend-card.alerta-amarelo{border-color:rgba(224,138,0,0.5);background:rgba(224,138,0,0.06);}
-        .pend-card.alerta-vermelho{border-color:rgba(211,47,47,0.6);background:rgba(211,47,47,0.08);animation:pulse-red 2s infinite;}
-        @keyframes pulse-red{0%{box-shadow:0 0 0 0 rgba(211,47,47,0.3)}70%{box-shadow:0 0 0 8px rgba(211,47,47,0)}100%{box-shadow:0 0 0 0 rgba(211,47,47,0)}}
+        .pend-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:16px;margin-bottom:16px;}
+        .pend-card.alerta-amarelo{border-color:rgba(255,176,32,0.5);background:rgba(255,176,32,0.06);}
+        .pend-card.alerta-vermelho{border-color:rgba(255,90,90,0.6);background:rgba(255,90,90,0.08);animation:pulse-red 2s infinite;}
+        @keyframes pulse-red{0%{box-shadow:0 0 0 0 rgba(255,90,90,0.3)}70%{box-shadow:0 0 0 8px rgba(255,90,90,0)}100%{box-shadow:0 0 0 0 rgba(255,90,90,0)}}
         .badge-dias{display:inline-block;padding:4px 14px;border-radius:20px;font-size:0.8rem;font-weight:700;letter-spacing:.5px;margin-bottom:10px;}
-        .badge-verde{background:rgba(46,125,50,0.15);color:var(--c-ok);border:1px solid #2E7D3244;}
-        .badge-amarelo{background:rgba(224,138,0,0.15);color:var(--c-warn-ink);border:1px solid #E08A0044;}
-        .badge-vermelho{background:rgba(211,47,47,0.15);color:var(--c-crit);border:1px solid #D32F2F44;}
+        .badge-verde{background:rgba(76,195,138,0.15);color:var(--c-ok);border:1px solid #2E7D3244;}
+        .badge-amarelo{background:rgba(255,176,32,0.15);color:var(--c-warn-ink);border:1px solid #E08A0044;}
+        .badge-vermelho{background:rgba(255,90,90,0.15);color:var(--c-crit);border:1px solid #D32F2F44;}
         .pend-data{font-size:0.7rem;color:var(--c-muted);font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
-        .pend-obs{background:rgba(17,17,17,0.06);border-left:3px solid rgba(61,99,216,0.5);border-radius:0 8px 8px 0;padding:8px 12px;margin:10px 0 4px 0;font-size:0.85rem;color:var(--c-text-2);white-space:pre-wrap;}
+        .pend-obs{background:rgba(255,255,255,0.06);border-left:3px solid rgba(123,155,255,0.5);border-radius:0 8px 8px 0;padding:8px 12px;margin:10px 0 4px 0;font-size:0.85rem;color:var(--c-text-2);white-space:pre-wrap;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -12485,7 +12490,7 @@ new Chart(document.getElementById('coop-chart'),{
     if _dash_tab == _TAB_AVARIAS:
         st.markdown("""
         <style>
-        .av-card{background:linear-gradient(145deg,#EEF3F9,#EEF3F9);
+        .av-card{background:var(--c-surface);
                  border:1px solid var(--c-line-2);border-left:3px solid var(--c-crit);
                  border-radius:14px;padding:14px 14px 10px;margin-bottom:2px;}
         .av-card.fechada{border-left:3px solid var(--c-line-2);opacity:0.6;}
@@ -12493,10 +12498,10 @@ new Chart(document.getElementById('coop-chart'),{
                   padding:3px 9px;border-radius:20px;font-size:10px;
                   font-weight:700;letter-spacing:.5px;
                   font-family:'IBM Plex Mono',monospace;}
-        .av-aberto{background:rgba(211,47,47,0.13);color:var(--c-crit);
-                   border:1px solid rgba(211,47,47,0.28);}
+        .av-aberto{background:rgba(255,90,90,0.13);color:var(--c-crit);
+                   border:1px solid rgba(255,90,90,0.28);}
         .av-resolvido{background:var(--c-info-soft);color:var(--c-info);
-                      border:1px solid rgba(61,99,216,0.3);}
+                      border:1px solid rgba(123,155,255,0.3);}
         .av-tempo{font-size:10px;color:var(--c-info);
                   font-family:'IBM Plex Mono',monospace;margin-left:auto;}
         .av-produto-nome{color:var(--c-text-2);font-size:12px;font-weight:700;
@@ -12517,7 +12522,7 @@ new Chart(document.getElementById('coop-chart'),{
                              font-family:'IBM Plex Mono',monospace;
                              margin-bottom:12px;display:flex;
                              align-items:center;gap:8px;}
-        .av-count-badge{background:var(--c-crit);color:white;font-size:10px;
+        .av-count-badge{background:var(--c-crit);color:#111111;font-size:10px;
                         font-weight:700;border-radius:50%;width:20px;height:20px;
                         display:inline-flex;align-items:center;justify-content:center;
                         font-family:'IBM Plex Mono',monospace;}
@@ -12681,11 +12686,11 @@ new Chart(document.getElementById('coop-chart'),{
                             f'<div onclick="openAvLightbox(this)" '
                             f'style="display:flex;flex-direction:column;align-items:center;'
                             f'min-width:80px;max-width:80px;height:100px;border-radius:10px;'
-                            f'overflow:hidden;border:1px solid rgba(61,99,216,0.2);'
+                            f'overflow:hidden;border:1px solid rgba(123,155,255,0.2);'
                             f'flex-shrink:0;background:rgba(0,0,0,0.25);cursor:zoom-in;">'
                             f'<img src="data:image/jpeg;base64,{f["foto_base64"]}" '
                             f'style="width:80px;height:80px;object-fit:cover;pointer-events:none;">'
-                            f'<div style="font-size:8px;color:rgba(61,99,216,0.5);padding:3px 0;'
+                            f'<div style="font-size:8px;color:rgba(123,155,255,0.5);padding:3px 0;'
                             f'letter-spacing:0.5px;font-family:monospace;pointer-events:none;">'
                             f'Foto {i+1}</div>'
                             f'</div>'
@@ -12977,7 +12982,7 @@ new Chart(document.getElementById('coop-chart'),{
     padding: 20px 18px 16px 18px;
     min-width: 290px;
     max-width: 320px;
-    box-shadow: 0 8px 32px rgba(17,17,17,0.10);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.10);
   }}
   .cal-header {{
     display: flex;
@@ -13004,7 +13009,7 @@ new Chart(document.getElementById('coop-chart'),{
     text-transform: uppercase;
     letter-spacing: 1px;
     padding-bottom: 7px;
-    border-bottom: 1px solid rgba(17,17,17,0.05);
+    border-bottom: 1px solid rgba(255,255,255,0.05);
     margin-bottom: 3px;
   }}
   .cal-day {{
@@ -13026,7 +13031,7 @@ new Chart(document.getElementById('coop-chart'),{
     margin: 0 auto;
   }}
   .cal-day:not(.empty):hover {{
-    background: rgba(46,125,50,0.15);
+    background: rgba(76,195,138,0.15);
     color: var(--c-ok);
     transform: scale(1.12);
   }}
@@ -13041,7 +13046,7 @@ new Chart(document.getElementById('coop-chart'),{
     color: var(--c-bg);
   }}
   .cal-day.selected {{
-    background: rgba(46,125,50,0.25);
+    background: rgba(76,195,138,0.25);
     color: var(--c-ok);
     border: 1.5px solid var(--c-ok);
     font-weight: 700;
@@ -13087,11 +13092,11 @@ new Chart(document.getElementById('coop-chart'),{
     max-height: 340px;
     padding-right: 6px;
     scrollbar-width: thin;
-    scrollbar-color: rgba(46,125,50,0.3) transparent;
+    scrollbar-color: rgba(76,195,138,0.3) transparent;
   }}
   .ev-scroll::-webkit-scrollbar {{ width: 4px; }}
   .ev-scroll::-webkit-scrollbar-track {{ background: transparent; }}
-  .ev-scroll::-webkit-scrollbar-thumb {{ background: rgba(46,125,50,0.35); border-radius: 4px; }}
+  .ev-scroll::-webkit-scrollbar-thumb {{ background: rgba(76,195,138,0.35); border-radius: 4px; }}
   .ev-empty {{
     color: var(--c-faint);
     font-size: 0.78rem;
@@ -13288,13 +13293,13 @@ new Chart(document.getElementById('coop-chart'),{
                 text-transform:uppercase;letter-spacing:1px;padding:8px 12px;text-align:left;
                 border-bottom:2px solid var(--c-line);}
             .hdiv-table td{padding:8px 12px;border-bottom:1px solid var(--c-line);color:var(--c-text);vertical-align:middle;}
-            .hdiv-table tr:hover td{background:rgba(17,17,17,0.02);}
+            .hdiv-table tr:hover td{background:rgba(255,255,255,0.02);}
             .hdiv-falta{color:var(--c-crit);font-weight:700;font-family:monospace;}
             .hdiv-sobra{color:var(--c-teal);font-weight:700;font-family:monospace;}
             .hdiv-badge-falta{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.65rem;font-weight:700;
-                background:rgba(211,47,47,0.12);color:var(--c-crit);border:1px solid rgba(211,47,47,0.3);}
+                background:rgba(255,90,90,0.12);color:var(--c-crit);border:1px solid rgba(255,90,90,0.3);}
             .hdiv-badge-sobra{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.65rem;font-weight:700;
-                background:rgba(0,137,123,0.12);color:var(--c-teal);border:1px solid rgba(0,137,123,0.3);}
+                background:rgba(60,207,191,0.12);color:var(--c-teal);border:1px solid rgba(60,207,191,0.3);}
             .hdiv-cod{font-family:monospace;font-size:0.75rem;color:var(--c-text-2);}
             </style>
             """, unsafe_allow_html=True)
@@ -13369,13 +13374,13 @@ new Chart(document.getElementById('coop-chart'),{
     def _aba_contagem():
         st.markdown("""
         <style>
-        .ct-card{background:rgba(61,99,216,0.06);border:1px solid rgba(61,99,216,0.18);border-radius:12px;padding:10px 14px;margin-bottom:6px;}
-        .ct-card.certa{background:rgba(46,125,50,0.06);border-color:rgba(46,125,50,0.25);}
-        .ct-card.divergencia{background:rgba(211,47,47,0.06);border-color:rgba(211,47,47,0.25);}
+        .ct-card{background:rgba(123,155,255,0.06);border:1px solid rgba(123,155,255,0.18);border-radius:12px;padding:10px 14px;margin-bottom:6px;}
+        .ct-card.certa{background:rgba(76,195,138,0.06);border-color:rgba(76,195,138,0.25);}
+        .ct-card.divergencia{background:rgba(255,90,90,0.06);border-color:rgba(255,90,90,0.25);}
         .ct-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;letter-spacing:.5px;}
-        .ct-certa{background:rgba(46,125,50,0.15);color:var(--c-ok);border:1px solid #2E7D3244;}
-        .ct-divergencia{background:rgba(211,47,47,0.15);color:var(--c-crit);border:1px solid #D32F2F44;}
-        .ct-pendente{background:rgba(17,17,17,0.15);color:var(--c-text-2);border:1px solid #8A8A8A44;}
+        .ct-certa{background:rgba(76,195,138,0.15);color:var(--c-ok);border:1px solid #2E7D3244;}
+        .ct-divergencia{background:rgba(255,90,90,0.15);color:var(--c-crit);border:1px solid #D32F2F44;}
+        .ct-pendente{background:rgba(255,255,255,0.15);color:var(--c-text-2);border:1px solid #8A8A8A44;}
         .ct-cat-header{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--c-muted);margin:12px 0 4px;padding:0 2px;}
         .ct-nome{font-weight:600;font-size:0.88rem;color:var(--c-text);}
         .ct-qty{font-family:'IBM Plex Mono',monospace;font-size:0.82rem;color:var(--c-info);margin-left:8px;}
@@ -13559,14 +13564,14 @@ new Chart(document.getElementById('coop-chart'),{
         .val-kpi-v.red{color:var(--c-crit);} .val-kpi-v.amber{color:var(--c-warn-ink);} .val-kpi-v.yellow{color:var(--c-warn-ink);}
         .val-kpi-l{font-size:0.58rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;}
         .val-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;}
-        .val-vencido{background:rgba(211,47,47,.15);color:var(--c-crit);border:1px solid #D32F2F55;}
-        .val-30{background:rgba(211,47,47,.12);color:var(--c-crit);border:1px solid #D32F2F55;}
-        .val-60{background:rgba(224,138,0,.12);color:var(--c-warn-ink);border:1px solid #E08A0055;}
-        .val-90{background:rgba(224,138,0,.10);color:var(--c-warn-ink);border:1px solid #E08A0055;}
-        .val-ok{background:rgba(46,125,50,.10);color:var(--c-ok);border:1px solid #2E7D3255;}
+        .val-vencido{background:rgba(255,90,90,.15);color:var(--c-crit);border:1px solid #D32F2F55;}
+        .val-30{background:rgba(255,90,90,.12);color:var(--c-crit);border:1px solid #D32F2F55;}
+        .val-60{background:rgba(255,176,32,.12);color:var(--c-warn-ink);border:1px solid #E08A0055;}
+        .val-90{background:rgba(255,176,32,.10);color:var(--c-warn-ink);border:1px solid #E08A0055;}
+        .val-ok{background:rgba(76,195,138,.10);color:var(--c-ok);border:1px solid #2E7D3255;}
         .val-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
                      color:var(--c-muted);margin:14px 0 4px;padding:0 2px;}
-        .val-row{background:rgba(17,17,17,.02);border:1px solid rgba(17,17,17,.06);
+        .val-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);
                  border-radius:8px;padding:8px 10px;margin-bottom:4px;}
         .val-prod{font-weight:600;font-size:0.85rem;color:var(--c-text);}
         .val-meta{font-size:0.68rem;color:var(--c-muted);margin-top:2px;}
@@ -13805,21 +13810,21 @@ new Chart(document.getElementById('coop-chart'),{
                 x=dias_label,
                 y=df_dia["total_vendido"],
                 mode="lines+markers",
-                line=dict(color="#2E7D32", width=2),
-                marker=dict(size=5, color="#2E7D32"),
+                line=dict(color="#4CC38A", width=2),
+                marker=dict(size=5, color="#4CC38A"),
                 fill="tozeroy",
-                fillcolor="rgba(46,125,50,0.08)",
+                fillcolor="rgba(76,195,138,0.08)",
                 hovertemplate="<b>%{x}</b><br>%{y} unidades<extra></extra>",
             ))
             fig_linha.update_layout(
                 **_PLOTLY_LAYOUT,
                 height=280,
                 xaxis=dict(
-                    gridcolor="#E2E2E2",
+                    gridcolor="#2E3036",
                     tickangle=-45,
                     tickfont=dict(size=9),
                 ),
-                yaxis=dict(gridcolor="#E2E2E2", title="Unidades"),
+                yaxis=dict(gridcolor="#2E3036", title="Unidades"),
                 showlegend=False,
             )
             st.plotly_chart(fig_linha, use_container_width=True,
@@ -13843,13 +13848,13 @@ new Chart(document.getElementById('coop-chart'),{
                     marker=dict(color=cores_top[::-1], cornerradius=4),
                     text=df_top["total"][::-1].apply(lambda v: f"{int(v):,}".replace(",", ".")),
                     textposition="outside",
-                    textfont=dict(size=9, color="#444444"),
+                    textfont=dict(size=9, color="#C8C9CC"),
                     hovertemplate="<b>%{y}</b><br>%{x} unidades<extra></extra>",
                 ))
                 fig_top_h.update_layout(
                     **_PLOTLY_LAYOUT,
                     height=max(400, len(df_top) * 28),
-                    xaxis=dict(gridcolor="#E2E2E2", title="Unidades vendidas"),
+                    xaxis=dict(gridcolor="#2E3036", title="Unidades vendidas"),
                     yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9),
                                categoryorder="total ascending"),
                     showlegend=False,
@@ -13892,12 +13897,12 @@ new Chart(document.getElementById('coop-chart'),{
 
         # ── Variações de Quantidade Detectadas ───────────────────────────────
         _var_count = get_variacoes_pendentes_count()
-        _badge_color = "#E08A00" if _var_count > 0 else "#6B6B6B"
+        _badge_color = "#FFB020" if _var_count > 0 else "#A3A5AB"
         _badge_txt = f"{_var_count} pendentes"
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:10px;margin:24px 0 12px 0;">'
             f'<span style="font-size:1.05rem;font-weight:700;color:var(--c-text);">⚠️ Variações de Quantidade Detectadas</span>'
-            f'<span style="background:{_badge_color};color:#fff;font-family:\'IBM Plex Mono\',monospace;'
+            f'<span style="background:{_badge_color};color:#111111;font-family:\'IBM Plex Mono\',monospace;'
             f'font-size:0.72rem;font-weight:700;padding:2px 10px;border-radius:20px;">{_badge_txt}</span>'
             f'</div>',
             unsafe_allow_html=True,
@@ -13938,12 +13943,12 @@ new Chart(document.getElementById('coop-chart'),{
             )
         else:
             for _, _vr in _df_var.iterrows():
-                _delta_color = "#2E7D32" if _vr["delta"] > 0 else "#D32F2F"
+                _delta_color = "#4CC38A" if _vr["delta"] > 0 else "#FF5A5A"
                 _delta_sign = "+" if _vr["delta"] > 0 else ""
                 _delta_arrow = "▲" if _vr["delta"] > 0 else "▼"
                 _card_html = (
                     f'<div style="background:linear-gradient(135deg,var(--c-surface),var(--c-surface-2));'
-                    f'border:1px solid rgba(17,17,17,0.07);border-radius:10px;'
+                    f'border:1px solid rgba(255,255,255,0.07);border-radius:10px;'
                     f'padding:12px 16px;margin-bottom:8px;display:flex;'
                     f'align-items:center;justify-content:space-between;gap:12px;">'
                     f'<div style="flex:1;min-width:0;">'
@@ -14335,7 +14340,7 @@ new Chart(document.getElementById('coop-chart'),{
         # Os nomes dos filtros (Armazém, Tipo, Cooperado, Produto, Visualização)
         # saíam ilegíveis quando o app tinha fundo escuro e o tema do
         # Streamlit era o claro (label branco sobre escuro, ~1.4:1). Hoje o
-        # tema é claro nas duas camadas; a regra só reforça o cinza escuro.
+        # tema é escuro nas duas camadas; a regra só reforça o cinza claro.
         #
         # A tentativa anterior mirava [data-baseweb="select"], que não existe
         # mais: o selectbox do Streamlit 1.59 é react-aria (.react-aria-ComboBox),
@@ -14343,7 +14348,7 @@ new Chart(document.getElementById('coop-chart'),{
         # <p> dentro de label[data-testid="stWidgetLabel"].
         #
         # Só o label muda de cor. O valor selecionado fica como está: ele é
-        # escuro sobre a caixa clara e já se lê bem — pintá-lo de
+        # claro sobre a caixa escura e já se lê bem — pintá-lo de
         # azul pioraria o contraste (cairia para ~2.6:1).
         st.markdown("""<style>
 .st-key-mat_armazem_sel [data-testid="stWidgetLabel"] p,
@@ -14467,12 +14472,12 @@ new Chart(document.getElementById('coop-chart'),{
                     # amarelo-claro com selo, falta separar em vermelho-claro.
                     _parcial = bool(_n_sep_p) and not _ja_separado
                     _cor_borda = (
-                        "#2E7D32" if _ja_separado
-                        else ("#F2B705" if _n_sep_p else "#D32F2F")
+                        "#4CC38A" if _ja_separado
+                        else ("#F2B705" if _n_sep_p else "#FF5A5A")
                     )
                     _bg_header = (
                         "var(--c-surface-2)" if _ja_separado
-                        else ("#FFF4C2" if _parcial else "var(--c-crit-soft)")
+                        else ("rgba(242,183,5,0.16)" if _parcial else "var(--c-crit-soft)")
                     )
                     if _ja_separado:
                         _status_txt = (
@@ -14483,7 +14488,7 @@ new Chart(document.getElementById('coop-chart'),{
                             f'<span style="display:inline-block;background:#F2B705;color:#111111;'
                             f'font-weight:800;font-size:0.68rem;letter-spacing:.06em;'
                             f'padding:2px 9px;border-radius:999px;margin-right:6px;">PARCIAL</span>'
-                            f'<span style="color:#7A5A00;font-weight:700;">'
+                            f'<span style="color:#F2B705;font-weight:700;">'
                             f'{_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
                         )
                     else:
@@ -14562,7 +14567,7 @@ new Chart(document.getElementById('coop-chart'),{
                                 ),
                                 label_visibility="collapsed",
                             )
-                        _cor_prod = "#2E7D32" if _item_sep else "#111111"
+                        _cor_prod = "#4CC38A" if _item_sep else "var(--c-text)"
                         _rc2.markdown(
                             f'<div style="color:{_cor_prod};font-size:0.84rem;">'
                             f'{"✅ " if _item_sep else ""}{_prod_nome_r}</div>',
@@ -14573,7 +14578,7 @@ new Chart(document.getElementById('coop-chart'),{
                             unsafe_allow_html=True,
                         )
                         _rc4.markdown(
-                            f'<div style="color:{"#2E7D32" if _item_sep else "#D32F2F"};'
+                            f'<div style="color:{"#4CC38A" if _item_sep else "#FF5A5A"};'
                             f'font-weight:700;font-size:0.84rem;text-align:right;">'
                             f'{int(_r["total"]):,} un.</div>',
                             unsafe_allow_html=True,
@@ -14595,12 +14600,12 @@ new Chart(document.getElementById('coop-chart'),{
                     # amarelo-claro com selo, falta separar em vermelho-claro.
                     _parcial = bool(_n_sep_p) and not _ja_separado
                     _cor_borda = (
-                        "#2E7D32" if _ja_separado
-                        else ("#F2B705" if _n_sep_p else "#D32F2F")
+                        "#4CC38A" if _ja_separado
+                        else ("#F2B705" if _n_sep_p else "#FF5A5A")
                     )
                     _bg_header = (
                         "var(--c-surface-2)" if _ja_separado
-                        else ("#FFF4C2" if _parcial else "var(--c-crit-soft)")
+                        else ("rgba(242,183,5,0.16)" if _parcial else "var(--c-crit-soft)")
                     )
                     if _ja_separado:
                         _status_txt = (
@@ -14611,7 +14616,7 @@ new Chart(document.getElementById('coop-chart'),{
                             f'<span style="display:inline-block;background:#F2B705;color:#111111;'
                             f'font-weight:800;font-size:0.68rem;letter-spacing:.06em;'
                             f'padding:2px 9px;border-radius:999px;margin-right:6px;">PARCIAL</span>'
-                            f'<span style="color:#7A5A00;font-weight:700;">'
+                            f'<span style="color:#F2B705;font-weight:700;">'
                             f'{_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
                         )
                     else:
@@ -14647,7 +14652,7 @@ new Chart(document.getElementById('coop-chart'),{
                         )
 
                     for _, _mrow in _df_p.iterrows():
-                        _saldo_cor = "#D32F2F" if _mrow["saldo"] > 0 else "#2E7D32"
+                        _saldo_cor = "#FF5A5A" if _mrow["saldo"] > 0 else "#4CC38A"
                         _tm_label = "📤 Saída" if _mrow["tm"] == "D" else "📥 Entrada"
                         _item_sep_d = (_parceiro, _mrow["descricao"]) in _sep_itens
                         _sel_prod_d = (
@@ -14836,7 +14841,7 @@ new Chart(document.getElementById('coop-chart'),{
         .ent-kpi-l{font-size:0.58rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
         .ent-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
                      color:var(--c-muted);margin:14px 0 5px;padding:0 2px;border-bottom:1px solid var(--c-line);padding-bottom:4px;}
-        .ent-row{background:rgba(17,17,17,.02);border:1px solid rgba(17,17,17,.05);
+        .ent-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
                  border-radius:8px;padding:7px 10px;margin-bottom:3px;
                  display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
         .ent-prod{font-weight:600;font-size:0.83rem;color:var(--c-text);flex:1;min-width:160px;}
@@ -14846,9 +14851,9 @@ new Chart(document.getElementById('coop-chart'),{
         .ent-qty{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-text-2);min-width:100px;text-align:right;}
         .ent-date{font-size:0.67rem;color:var(--c-muted);min-width:88px;text-align:right;}
         .ent-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;}
-        .ent-pend{background:rgba(224,138,0,.12);color:var(--c-warn-ink);border:1px solid rgba(224,138,0,.3);}
-        .ent-verif{background:rgba(46,125,50,.10);color:var(--c-ok);border:1px solid rgba(46,125,50,.25);}
-        .ent-manual{background:rgba(61,99,216,.10);color:var(--c-info);border:1px solid rgba(61,99,216,.25);}
+        .ent-pend{background:rgba(255,176,32,.12);color:var(--c-warn-ink);border:1px solid rgba(255,176,32,.3);}
+        .ent-verif{background:rgba(76,195,138,.10);color:var(--c-ok);border:1px solid rgba(76,195,138,.25);}
+        .ent-manual{background:rgba(123,155,255,.10);color:var(--c-info);border:1px solid rgba(123,155,255,.25);}
         .ent-delta.ent-neg{color:var(--c-purple);}
         </style>
         """, unsafe_allow_html=True)

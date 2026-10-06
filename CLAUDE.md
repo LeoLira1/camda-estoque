@@ -126,17 +126,26 @@ antemão em vez de redescobri-las:
   resumo operacional à direita) — breakpoints em 980px e 720px. Se mudar o
   conteúdo do header, reveja esses paddings.
 
-## Tema visual (claro minimalista)
+## Tema visual (escuro minimalista)
 
 - Paleta única em `theme.py` (`PALETTE`). O CSS global de `app_turso.py`
   publica os valores como `--c-*` no `:root`; HTML de `st.markdown` usa
-  `var(--c-*)`. `.streamlit/config.toml` (`base="light"`) espelha a paleta
+  `var(--c-*)`. `.streamlit/config.toml` (`base="dark"`) espelha a paleta
   para os widgets nativos.
+- Fundo `#111214`, cards `#1C1D21` sem borda, linhas de lista `#24262B`,
+  texto `#F2F2F2`, rótulos `#8E9096`. Status vivos: falta/avarias `#FF5A5A`,
+  sobra `#FFB020`, ok `#4CC38A`, repor loja `#7B9BFF`. Os `*_soft` são
+  `rgba` translúcidos (círculos de ícone dos banners).
+- `--c-ink` (pílula/botão/aba ativa) agora É o limão, com `--c-on-ink`
+  preto. Overlays translúcidos sobre o fundo usam `rgba(255,255,255,a)`;
+  sombras e fundos de modal usam `rgba(0,0,0,a)`. Nada de `rgba(17,17,17,…)`
+  como preenchimento: no escuro some.
 - Plotly e cores calculadas em Python não aceitam `var()`: use os hex da
   paleta. Iframes (`iframe_compat.html`) recebem os tokens automaticamente
-  quando o conteúdo usa `var(--c-`. Mural e Mapa 3D têm a paleta clara
-  escrita direto no HTML deles.
+  quando o conteúdo usa `var(--c-`. Mural e Mapa 3D têm a paleta escura
+  escrita direto no HTML deles (os post-its do Mural continuam pastel).
+- Exceções claras de propósito: a prévia e o HTML impresso da aba 🏷️
+  Etiquetas (papel branco) e o relatório imprimível do Inv. Cíclico.
 - A tela de login roda antes do CSS global (o `st.stop()` vem antes): ela
   injeta `_THEME_ROOT_VARS` no próprio `<style>`.
-- Limão `--c-accent` só como preenchimento, com texto preto. Laranja de
-  sobra em texto pequeno usa `--c-warn-ink` (o `#E08A00` só tem 2,6:1).
+- Limão `--c-accent` só como preenchimento, com texto preto.

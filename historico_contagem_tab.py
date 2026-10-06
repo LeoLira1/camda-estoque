@@ -82,7 +82,7 @@ _CSS = """<style>
 .hc-kpi-v.red{color:var(--c-crit);}
 .hc-kpi-v.blue{color:var(--c-info);}
 .hc-kpi-l{font-size:0.58rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
-.hc-row{background:rgba(17,17,17,.02);border:1px solid rgba(17,17,17,.05);
+.hc-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
          border-radius:8px;padding:7px 12px;margin-bottom:3px;
          display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .hc-row.ok{border-left:3px solid var(--c-ok);}
@@ -96,8 +96,8 @@ _CSS = """<style>
 .hc-delta.pos{color:var(--c-warn-ink);}
 .hc-hora{font-size:0.65rem;color:var(--c-muted);min-width:75px;text-align:right;}
 .hc-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;min-width:60px;text-align:center;}
-.hc-badge.ok{background:rgba(46,125,50,.12);color:var(--c-ok);border:1px solid rgba(46,125,50,.3);}
-.hc-badge.div{background:rgba(211,47,47,.12);color:var(--c-crit);border:1px solid rgba(211,47,47,.3);}
+.hc-badge.ok{background:rgba(76,195,138,.12);color:var(--c-ok);border:1px solid rgba(76,195,138,.3);}
+.hc-badge.div{background:rgba(255,90,90,.12);color:var(--c-crit);border:1px solid rgba(255,90,90,.3);}
 .hc-empty{text-align:center;padding:40px 20px;color:var(--c-faint);font-size:0.85rem;}
 .hc-section{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
              color:var(--c-muted);margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--c-line);}

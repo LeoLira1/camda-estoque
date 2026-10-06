@@ -39,7 +39,7 @@ _CICLO_LAST = frozenset({
 _CSS_CARDS = """<style>
 [data-testid="stColumn"]:has([id^="cic-pend-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-pend-"]) [data-testid="stButton"] button {
-    background:rgba(224,138,0,0.20)!important;
+    background:rgba(255,176,32,0.20)!important;
     border:none!important; border-left:3px solid var(--c-warn)!important;
     border-radius:10px!important; padding:10px 8px!important;
     text-align:left!important; min-height:68px!important;
@@ -51,11 +51,11 @@ _CSS_CARDS = """<style>
 }
 [data-testid="stColumn"]:has([id^="cic-ok-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-ok-"]) [data-testid="stButton"] button {
-    background:rgba(46,125,50,0.72)!important;
+    background:rgba(76,195,138,0.88)!important;
     border:2px solid var(--c-ok)!important;
     border-radius:10px!important; padding:10px 8px!important;
     text-align:left!important; min-height:68px!important;
-    width:100%!important; color:#ffffff!important;
+    width:100%!important; color:#111111!important;
     font-family:'IBM Plex Mono',monospace!important;
     font-size:0.75rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
@@ -63,20 +63,20 @@ _CSS_CARDS = """<style>
 }
 [data-testid="stColumn"]:has([id^="cic-div-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-div-"]) [data-testid="stButton"] button {
-    background:rgba(211,47,47,0.72)!important;
+    background:rgba(255,90,90,0.88)!important;
     border:2px solid var(--c-crit)!important;
     border-radius:10px!important; padding:10px 8px!important;
     text-align:left!important; min-height:68px!important;
-    width:100%!important; color:#ffffff!important;
+    width:100%!important; color:#111111!important;
     font-family:'IBM Plex Mono',monospace!important;
     font-size:0.75rem!important; line-height:1.35!important;
     white-space:normal!important; word-break:break-word!important;
     transition:opacity .12s,transform .1s!important;
 }
-/* Anel branco no card selecionado */
+/* Anel limão no card selecionado */
 [data-testid="stColumn"]:has([id^="cic-sel-"]) [data-testid="stButton"] button,
 [data-testid="stVerticalBlock"]:has([id^="cic-sel-"]) [data-testid="stButton"] button {
-    outline:2px solid #ffffff!important; outline-offset:2px!important;
+    outline:2px solid #D7F000!important; outline-offset:2px!important;
 }
 /* Hover para qualquer card cíclico */
 [data-testid="stColumn"]:has([id^="cic-pend-"]) [data-testid="stButton"] button:hover,
@@ -833,11 +833,11 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
             for _, _dv in _df_div.iterrows():
                 _delta = int(_dv["delta"]) if pd.notna(_dv.get("delta")) else 0
                 _falta = _delta < 0
-                _seta, _cor = ("▼", "#D32F2F") if _falta else ("▲", "#E08A00")
+                _seta, _cor = ("▼", "#FF5A5A") if _falta else ("▲", "#FFB020")
                 _tipo = "falta" if _falta else "sobra"
                 _coop = str(_dv.get("cooperado") or "").strip() or "sem cooperado"
                 st.markdown(
-                    f'<div style="background:rgba(211,47,47,0.10);border-left:3px solid {_cor};'
+                    f'<div style="background:rgba(255,90,90,0.10);border-left:3px solid {_cor};'
                     f'border-radius:6px;padding:6px 10px;margin:4px 0;'
                     f"font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:var(--c-text);\">"
                     f'<span style="color:{_cor};font-weight:700;">{_seta} {abs(_delta)} un ({_tipo})</span>'
@@ -850,7 +850,7 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
     _obs = _get_ultima_observacao_cicli(get_db, sel_codigo)
     if _obs and str(_obs[0] or "").strip():
         st.markdown(
-            f'<div style="background:rgba(61,99,216,0.10);border-left:3px solid var(--c-info);'
+            f'<div style="background:rgba(123,155,255,0.10);border-left:3px solid var(--c-info);'
             f'border-radius:6px;padding:6px 10px;margin:4px 0;'
             f"font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:var(--c-text);\">"
             f'💬 "{_html.escape(str(_obs[0]).strip())}"'
@@ -886,9 +886,9 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
         )
     elif _ult:
         _dias_v = _dias_desde(_ult.get("contado_em"))
-        _cor_v = ("#D32F2F" if (_dias_v or 0) > _CICLO_CRITICO_DIAS
-                  else "#E08A00" if (_dias_v or 0) > _CICLO_ALERTA_DIAS
-                  else "#444444")
+        _cor_v = ("#FF5A5A" if (_dias_v or 0) > _CICLO_CRITICO_DIAS
+                  else "#FFB020" if (_dias_v or 0) > _CICLO_ALERTA_DIAS
+                  else "#C8C9CC")
         try:
             _sis_antes = float(_ult.get("qtd_sistema") or 0)
         except (TypeError, ValueError):
@@ -899,7 +899,7 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
             _mov = (f" · sistema {_fmt_qtd(_sis_antes)} → {qtd_sistema} "
                     f"({_delta_sis:+.0f}) desde então")
         st.markdown(
-            f'<div style="background:rgba(224,138,0,0.10);border-left:3px solid {_cor_v};'
+            f'<div style="background:rgba(255,176,32,0.10);border-left:3px solid {_cor_v};'
             f'border-radius:6px;padding:6px 10px;margin:4px 0;'
             f"font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:var(--c-text);\">"
             f'🕐 Última contagem física: <b>{_fmt_qtd(_ult.get("qtd_contada"))} un</b> em '
@@ -932,7 +932,7 @@ def _dialog_conferencia(produto_row, get_db, sync_db, get_divergencias=None,
             unsafe_allow_html=True,
         )
     else:
-        cor = "#D32F2F" if diferenca < 0 else "#E08A00"
+        cor = "#FF5A5A" if diferenca < 0 else "#FFB020"
         st.markdown(
             f"<span style='color:{cor};font-size:0.85rem'>Diferença: {diferenca:+d} unidades</span>",
             unsafe_allow_html=True,
@@ -1128,7 +1128,7 @@ def build_inventario_ciclico_tab(
     if sel_codigo:
         highlight_css = (
             f'<style>.tm-tile[data-codigo="{sel_codigo}"]'
-            f'{{outline:3px solid rgba(17,17,17,0.85)!important;'
+            f'{{outline:3px solid rgba(255,255,255,0.85)!important;'
             f'outline-offset:3px!important;}}</style>'
         )
     # Cursor pointer em todos os cards do treemap

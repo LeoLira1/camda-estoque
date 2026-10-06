@@ -1,16 +1,16 @@
 [client]
 toolbarMode = "minimal"
 
-# Tema claro minimalista — espelha theme.PALETTE / tokens --c-* do CSS
+# Tema escuro minimalista — espelha theme.PALETTE / tokens --c-* do CSS
 # global (app_turso.py). Widgets nativos (dataframe, inputs, sliders,
 # selects, datas) herdam daqui.
 [theme]
-base = "light"
-primaryColor = "#111111"
-backgroundColor = "#ECECEC"
-secondaryBackgroundColor = "#F8F8F8"
-textColor = "#111111"
-borderColor = "#E2E2E2"
+base = "dark"
+primaryColor = "#D7F000"
+backgroundColor = "#111214"
+secondaryBackgroundColor = "#1C1D21"
+textColor = "#F2F2F2"
+borderColor = "#2E3036"
 baseRadius = "12px"
 buttonRadius = "full"
 font = "Inter, sans-serif"

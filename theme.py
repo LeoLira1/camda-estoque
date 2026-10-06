@@ -1,4 +1,4 @@
-"""theme.py — paleta clara minimalista do CAMDA Estoque (fonte única).
+"""theme.py — paleta escura minimalista do CAMDA Estoque (fonte única).
 
 O CSS global (app_turso.py) publica estes valores como variáveis --c-* no
 :root da página; todo HTML renderizado por st.markdown usa ``var(--c-*)``.
@@ -8,7 +8,7 @@ Dois lugares NÃO enxergam as variáveis do :root:
   os hex deste dict;
 - iframes (st.iframe): documento separado — ``iframe_compat.html`` anexa
   ``ROOT_CSS`` automaticamente a todo conteúdo que usa ``var(--c-*)``.
-  (Mural e Mapa 3D têm paleta clara própria escrita direto no HTML.)
+  (Mural e Mapa 3D têm paleta escura própria escrita direto no HTML.)
 
 Regra do destaque: o verde-limão (``accent``) é só preenchimento e sempre
 com texto preto (``on_accent``) — nunca como cor de texto ou de borda fina.
@@ -16,35 +16,35 @@ com texto preto (``on_accent``) — nunca como cor de texto ou de borda fina.
 
 PALETTE = {
     # Superfícies
-    "bg": "#ECECEC",          # fundo da página
-    "surface": "#F8F8F8",     # cards (sem borda, raio 20px)
-    "surface_2": "#FFFFFF",   # linhas de lista, campos, pílula de busca
-    "line": "#E2E2E2",        # divisórias finas / grade de gráfico
-    "line_2": "#D0D0D0",      # borda de campo / hover
+    "bg": "#111214",          # fundo da página
+    "surface": "#1C1D21",     # cards (sem borda, raio 20px), pílula de busca
+    "surface_2": "#24262B",   # linhas de lista (falta/sobra), campos
+    "line": "#2E3036",        # divisórias finas / grade de gráfico
+    "line_2": "#3A3C43",      # borda de campo / hover
     # Texto
-    "text": "#111111",        # texto principal
-    "text_2": "#444444",      # texto secundário (descrições, detalhes)
-    "muted": "#6B6B6B",       # texto auxiliar legível (≥4.5:1 sobre #F8F8F8)
-    "label": "#8A8A8A",       # rótulos pequenos em maiúsculas (TOTAL, OK…)
+    "text": "#F2F2F2",        # texto principal
+    "text_2": "#C8C9CC",      # texto secundário (descrições, abas inativas)
+    "muted": "#A3A5AB",       # texto auxiliar legível (≥6:1 sobre #1C1D21)
+    "label": "#8E9096",       # rótulos pequenos em maiúsculas (TOTAL, OK…)
     # Destaque
     "accent": "#D7F000",      # verde-limão — só preenchimento
     "on_accent": "#111111",   # texto sobre o limão
-    "ink": "#111111",         # pílulas/botões pretos
-    "on_ink": "#FFFFFF",
-    # Status
-    "crit": "#D32F2F",        # falta, avarias
-    "warn": "#E08A00",        # sobra (números grandes, preenchimentos)
-    "warn_ink": "#9A5B00",    # sobra em texto pequeno (≥4.5:1 sobre branco)
-    "ok": "#2E7D32",          # ok
-    "info": "#3D63D8",        # repor loja
-    "purple": "#7E57C2",
-    "teal": "#00897B",
-    # Fundos suaves de status (círculos de ícone, chips)
-    "crit_soft": "#FDE7EA",   # rosa claro
-    "warn_soft": "#FFEBD2",   # laranja claro
-    "ok_soft": "#DDF3DF",     # verde claro
-    "info_soft": "#E3E9FB",
-    "purple_soft": "#EEE7F8",
+    "ink": "#D7F000",         # pílulas/botões/aba ativa: limão
+    "on_ink": "#111111",      # …com texto preto
+    # Status (tons vivos para leitura no escuro)
+    "crit": "#FF5A5A",        # falta, avarias
+    "warn": "#FFB020",        # sobra
+    "warn_ink": "#FFB020",    # sobra em texto pequeno (≥9:1 sobre #1C1D21)
+    "ok": "#4CC38A",          # ok
+    "info": "#7B9BFF",        # repor loja
+    "purple": "#B69CFF",
+    "teal": "#3CCFBF",
+    # Fundos de status escuros e translúcidos (círculos de ícone, chips)
+    "crit_soft": "rgba(255,90,90,0.16)",     # rosa
+    "warn_soft": "rgba(255,176,32,0.16)",    # laranja
+    "ok_soft": "rgba(76,195,138,0.16)",      # verde
+    "info_soft": "rgba(123,155,255,0.16)",
+    "purple_soft": "rgba(182,156,255,0.18)", # roxo
 }
 
 _VAR_NAMES = {
@@ -61,7 +61,7 @@ _VAR_NAMES = {
 
 # Declarações prontas para colar dentro de um bloco :root { ... }
 ROOT_VARS = "\n".join(f"{_VAR_NAMES[k]}: {v};" for k, v in PALETTE.items()) + """
---c-faint: #8A8A8A;
+--c-faint: #8E9096;
 --r-card: 20px; --r-row: 12px; --r-pill: 999px;
 --f-sans: 'Inter', 'IBM Plex Sans', system-ui, sans-serif;
 --f-mono: 'IBM Plex Mono', ui-monospace, monospace;

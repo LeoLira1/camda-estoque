@@ -65,13 +65,13 @@ def _build_html(
     css = f"""
 <style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ background: #ECECEC; overflow: hidden; }}
+body {{ background: #111214; overflow: hidden; }}
 #rc {{
   width: 100%;
   height: {height}px;
   position: relative;
   overflow: hidden;
-  background: #ECECEC;
+  background: #111214;
   border-radius: 20px;
 }}
 canvas {{
@@ -82,7 +82,7 @@ canvas {{
 #tt {{
   position: absolute;
   display: none;
-  background: rgba(255,255,255,0.97);
+  background: rgba(36,38,43,0.97);
   border: none;
   border-radius: 12px;
   padding: 7px 11px;
@@ -91,16 +91,16 @@ canvas {{
   max-width: 220px;
   z-index: 100;
   line-height: 1.5;
-  box-shadow: 0 6px 20px rgba(17,17,17,0.14);
+  box-shadow: 0 6px 20px rgba(0,0,0,0.45);
 }}
 #info {{
   position: absolute;
   top: 8px;
   left: 8px;
-  color: #6B6B6B;
+  color: #A3A5AB;
   font-family: monospace;
   font-size: 0.62rem;
-  background: rgba(248,248,248,0.75);
+  background: rgba(28,29,33,0.75);
   padding: 4px 9px;
   border-radius: 4px;
   pointer-events: none;
@@ -111,10 +111,10 @@ canvas {{
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-  color: #444444;
+  color: #C8C9CC;
   font-family: monospace;
   font-size: 0.7rem;
-  background: rgba(248,248,248,0.7);
+  background: rgba(28,29,33,0.7);
   padding: 3px 10px;
   border-radius: 4px;
   pointer-events: none;
@@ -199,8 +199,8 @@ _THREE_JS_CODE = r"""
 
   /* ── Cena ────────────────────────────────────────────────────── */
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xECECEC);
-  scene.fog = new THREE.FogExp2(0xECECEC, 0.018);
+  scene.background = new THREE.Color(0x111214);
+  scene.fog = new THREE.FogExp2(0x111214, 0.018);
 
   /* ── Câmera ──────────────────────────────────────────────────── */
   var camera = new THREE.PerspectiveCamera(44, W / H, 0.1, 200);
@@ -229,13 +229,13 @@ _THREE_JS_CODE = r"""
   /* ── Chão e grid ─────────────────────────────────────────────── */
   var floor = new THREE.Mesh(
     new THREE.PlaneGeometry(80, 50),
-    new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.95, metalness: 0.0 })
+    new THREE.MeshStandardMaterial({ color: 0x24262b, roughness: 0.95, metalness: 0.0 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
   floor.receiveShadow = true;
   scene.add(floor);
-  scene.add(new THREE.GridHelper(80, 80, 0xc4c4c4, 0xd4d4d4));
+  scene.add(new THREE.GridHelper(80, 80, 0x3a3c43, 0x2e3036));
 
   /* ── Materiais reutilizáveis ─────────────────────────────────── */
   var matPost   = new THREE.MeshStandardMaterial({ color: 0x9ca3af, metalness: 0.85, roughness: 0.25 });
@@ -458,13 +458,13 @@ _THREE_JS_CODE = r"""
         ? String(ud.quantidade) + ' ' + (ud.unidade || '') : '';
       if (ud.isEmpty) {
         tooltip.innerHTML =
-          '<span style="color:#3D63D8;font-size:0.75rem;font-weight:700">' + ud.pos_key + '</span>' +
-          '<br><span style="color:#8A8A8A;font-size:0.7rem">Vazio</span>';
+          '<span style="color:#7B9BFF;font-size:0.75rem;font-weight:700">' + ud.pos_key + '</span>' +
+          '<br><span style="color:#8E9096;font-size:0.7rem">Vazio</span>';
       } else {
         tooltip.innerHTML =
-          '<span style="color:#3D63D8;font-size:0.78rem;font-weight:700">' + ud.pos_key + '</span>' +
-          '<br><span style="color:#111111;font-size:0.8rem">' + ud.produto + '</span>' +
-          (qty.trim() ? '<br><span style="color:#444444;font-size:0.72rem">' + qty.trim() + '</span>' : '');
+          '<span style="color:#7B9BFF;font-size:0.78rem;font-weight:700">' + ud.pos_key + '</span>' +
+          '<br><span style="color:#F2F2F2;font-size:0.8rem">' + ud.produto + '</span>' +
+          (qty.trim() ? '<br><span style="color:#C8C9CC;font-size:0.72rem">' + qty.trim() + '</span>' : '');
       }
       var r = canvas.getBoundingClientRect();
       var tx = e.clientX - r.left + 14;

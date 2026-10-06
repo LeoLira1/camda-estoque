@@ -22,13 +22,13 @@ _HTML = r"""<!DOCTYPE html>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* Iframe: espelha theme.PALETTE (tema claro) — o :root do app não chega aqui */
-  --text-main: #111111;
-  --text-muted: #6B6B6B;
-  --ink-dark: rgba(17,17,17, 0.86);
-  --line-soft: #E2E2E2;
-  --surface-soft: #F8F8F8;
-  --surface-strong: #FFFFFF;
+  /* Iframe: espelha theme.PALETTE (tema escuro) — o :root do app não chega aqui */
+  --text-main: #F2F2F2;
+  --text-muted: #A3A5AB;
+  --ink-dark: rgba(0,0,0, 0.86);
+  --line-soft: #2E3036;
+  --surface-soft: #1C1D21;
+  --surface-strong: #24262B;
   --brand: #D7F000;        /* limão: só preenchimento, texto preto */
   --brand-strong: #111111;
 }
@@ -66,7 +66,7 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .topbar-subtitle {
-  color: #6B6B6B;
+  color: #A3A5AB;
   font-size: 12px;
   letter-spacing: 0.2px;
 }
@@ -81,8 +81,8 @@ button { -webkit-tap-highlight-color: transparent; }
 .count-pill {
   font-size: 12px;
   font-weight: 600;
-  color: #FFFFFF;
-  background: #111111;
+  color: #111111;
+  background: #D7F000;
   border: none;
   border-radius: 999px;
   padding: 6px 14px;
@@ -92,9 +92,9 @@ button { -webkit-tap-highlight-color: transparent; }
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: #111111;
+  background: #D7F000;
   border: none;
-  color: #D7F000;
+  color: #111111;
   font-size: 25px;
   cursor: pointer;
   display: flex;
@@ -102,13 +102,13 @@ button { -webkit-tap-highlight-color: transparent; }
   justify-content: center;
   line-height: 1;
   transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
-  box-shadow: 0 6px 16px rgba(17,17,17,0.18);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.18);
   flex-shrink: 0;
 }
 .add-btn:hover {
   transform: translateY(-2px) scale(1.06) rotate(4deg);
   filter: brightness(1.08);
-  box-shadow: 0 10px 22px rgba(17,17,17,0.22);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.22);
 }
 .add-btn:active { transform: translateY(0) scale(0.98); }
 
@@ -133,19 +133,19 @@ button { -webkit-tap-highlight-color: transparent; }
   border-radius: 999px;
   border: none;
   background: transparent;
-  color: #444444;
+  color: #C8C9CC;
   font-weight: 500;
   cursor: pointer;
   transition: transform 0.13s ease, background 0.13s ease, color 0.13s ease, border-color 0.13s ease, box-shadow 0.13s ease;
 }
 .ftag:hover {
   transform: translateY(-1px);
-  color: #111111;
-  background: rgba(17,17,17,0.06);
+  color: #F2F2F2;
+  background: rgba(255,255,255,0.06);
 }
 .ftag.on {
-  background: #111111;
-  color: #FFFFFF;
+  background: #D7F000;
+  color: #111111;
   font-weight: 600;
 }
 
@@ -180,7 +180,7 @@ button { -webkit-tap-highlight-color: transparent; }
   transform-origin: 50% 45%;
   transition: transform 0.22s cubic-bezier(.34,1.56,.64,1), box-shadow 0.22s ease, filter 0.22s ease;
   box-shadow:
-    0 14px 30px rgba(17,17,17,0.10),
+    0 14px 30px rgba(0,0,0,0.10),
     0 3px 8px rgba(0,0,0,0.18),
     inset 0 1px 0 rgba(255,255,255,0.36);
   animation: popIn 0.34s cubic-bezier(.34,1.56,.64,1) both;
@@ -220,7 +220,7 @@ button { -webkit-tap-highlight-color: transparent; }
   transform: translateY(-7px) rotate(-0.7deg) scale(1.012);
   filter: saturate(1.04);
   box-shadow:
-    0 20px 40px rgba(17,17,17,0.16),
+    0 20px 40px rgba(0,0,0,0.16),
     0 8px 20px rgba(0,0,0,0.16),
     inset 0 1px 0 rgba(255,255,255,0.38);
   z-index: 3;
@@ -420,24 +420,24 @@ button { -webkit-tap-highlight-color: transparent; }
 .btn-attach {
   padding: 9px 12px;
   border-radius: 12px;
-  border: 1px dashed #D0D0D0;
-  background: #FFFFFF;
-  color: #444444;
+  border: 1px dashed #3A3C43;
+  background: #24262B;
+  color: #C8C9CC;
   font-size: 12px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 .btn-attach:hover {
-  background: #F8F8F8;
-  color: #111111;
-  border-color: #8A8A8A;
+  background: #1C1D21;
+  color: #F2F2F2;
+  border-color: #8E9096;
 }
 .btn-attach input[type="file"] { display: none; }
 
 .card.urgent-note {
   box-shadow:
     0 24px 50px rgba(244, 168, 106, 0.18),
-    0 14px 30px rgba(17,17,17,0.10),
+    0 14px 30px rgba(0,0,0,0.10),
     inset 0 1px 0 rgba(255,255,255,0.36);
 }
 .card.urgent-note .card-tag { opacity: 0.82; }
@@ -454,20 +454,20 @@ button { -webkit-tap-highlight-color: transparent; }
 .empty {
   text-align: center;
   padding: 58px 18px;
-  color: #6B6B6B;
+  color: #A3A5AB;
   font-size: 14px;
   border: none;
   border-radius: 20px;
-  background: #F8F8F8;
+  background: #1C1D21;
 }
-.empty strong { color: #111111; }
+.empty strong { color: #F2F2F2; }
 
 /* MODAL */
 .modal-bg {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(17,17,17,0.35);
+  background: rgba(0,0,0,0.6);
   z-index: 100;
   align-items: center;
   justify-content: center;
@@ -476,7 +476,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .modal-bg.open { display: flex; }
 
 .modal {
-  background: #F8F8F8;
+  background: #1C1D21;
   border-radius: 20px;
   padding: 28px;
   width: 340px;
@@ -484,7 +484,7 @@ button { -webkit-tap-highlight-color: transparent; }
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 24px 60px rgba(17,17,17,0.18);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.18);
   animation: modalIn 0.24s cubic-bezier(.34,1.56,.64,1) both;
   border: none;
 }
@@ -505,31 +505,31 @@ button { -webkit-tap-highlight-color: transparent; }
   width: 100%;
   padding: 11px 14px;
   border-radius: 12px;
-  border: 1px solid #E2E2E2;
+  border: 1px solid #2E3036;
   font-size: 13px;
-  background: #FFFFFF;
+  background: #24262B;
   color: var(--text-main);
   resize: none;
   outline: none;
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 .modal input::placeholder,
-.modal textarea::placeholder { color: #8A8A8A; }
+.modal textarea::placeholder { color: #8E9096; }
 .modal input:focus,
 .modal textarea:focus,
 .modal select:focus {
-  border-color: #111111;
-  background: #FFFFFF;
-  box-shadow: 0 0 0 3px rgba(17,17,17,0.06);
+  border-color: #D7F000;
+  background: #24262B;
+  box-shadow: 0 0 0 3px rgba(215,240,0,0.18);
 }
-.modal select option { background: #FFFFFF; color: #111111; }
+.modal select option { background: #24262B; color: #F2F2F2; }
 .modal textarea { height: 98px; line-height: 1.55; }
 
 .label-sm {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.7px;
-  color: #8A8A8A;
+  color: #8E9096;
   text-transform: uppercase;
   margin-bottom: -4px;
 }
@@ -546,28 +546,28 @@ button { -webkit-tap-highlight-color: transparent; }
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.38), 0 8px 16px rgba(0,0,0,0.16);
 }
 .cswatch:hover { transform: translateY(-2px) scale(1.10); }
-.cswatch.on { border-color: #111111; transform: scale(1.10); box-shadow: 0 0 0 3px rgba(17,17,17,0.10), inset 0 1px 0 rgba(255,255,255,0.42); }
+.cswatch.on { border-color: #D7F000; transform: scale(1.10); box-shadow: 0 0 0 3px rgba(215,240,0,0.25), inset 0 1px 0 rgba(255,255,255,0.42); }
 
 .modal-actions { display: flex; gap: 9px; margin-top: 4px; }
 .btn-cancel {
   flex: 1;
   padding: 11px;
   border-radius: 999px;
-  border: 1px solid #D0D0D0;
+  border: 1px solid #3A3C43;
   background: transparent;
   font-size: 13px;
   cursor: pointer;
-  color: #111111;
+  color: #F2F2F2;
   transition: background 0.1s ease, transform 0.1s ease;
 }
-.btn-cancel:hover { background: rgba(17,17,17,0.05); transform: translateY(-1px); }
+.btn-cancel:hover { background: rgba(255,255,255,0.06); transform: translateY(-1px); }
 .btn-save {
   flex: 2;
   padding: 11px;
   border-radius: 999px;
   border: none;
-  background: #111111;
-  color: #FFFFFF;
+  background: #D7F000;
+  color: #111111;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
@@ -583,8 +583,8 @@ button { -webkit-tap-highlight-color: transparent; }
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%) translateY(80px);
-  background: #111111;
-  color: #FFFFFF;
+  background: #D7F000;
+  color: #111111;
   padding: 10px 20px;
   border-radius: 999px;
   font-size: 13px;
@@ -594,7 +594,7 @@ button { -webkit-tap-highlight-color: transparent; }
   pointer-events: none;
   opacity: 0;
   white-space: nowrap;
-  box-shadow: 0 10px 28px rgba(17,17,17,0.20);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.20);
 }
 .toast.show {
   transform: translateX(-50%) translateY(0);
