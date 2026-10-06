@@ -43,6 +43,15 @@ import streamlit as st
 
 _HAS_ST_IFRAME = hasattr(st, "iframe")
 
+try:
+    from theme import ROOT_CSS as _THEME_ROOT_CSS
+except Exception:  # pragma: no cover — tema é opcional para o módulo
+    _THEME_ROOT_CSS = ""
+
+# O iframe é um documento separado: as variáveis --c-* do :root do app não
+# chegam aqui. Conteúdo que usa var(--c-*) recebe os tokens do tema.
+_THEME_STYLE = f"<style>{_THEME_ROOT_CSS}</style>" if _THEME_ROOT_CSS else ""
+
 # Reproduz o comportamento de scrolling=False da API antiga (overflow oculto
 # no elemento iframe): esconde qualquer estouro do documento embutido.
 _NO_SCROLL_STYLE = "<style>html,body{overflow:hidden !important;}</style>"
@@ -92,6 +101,11 @@ def html(
                 0 = injetor invisível (vira 1px, colapsado via CSS global).
     scrolling : False (default) esconde overflow, como na API antiga.
     """
+    if _THEME_STYLE and "var(--c-" in content:
+        # Anexado ao FINAL (mesmo motivo do _NO_SCROLL_STYLE abaixo): não
+        # quebra o <!DOCTYPE> e as custom properties valem de qualquer ponto.
+        content = content + _THEME_STYLE
+
     if not _HAS_ST_IFRAME:
         import streamlit.components.v1 as _components_v1
 

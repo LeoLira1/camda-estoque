@@ -125,3 +125,18 @@ antemão em vez de redescobri-las:
   via CSS com paddings que reservam as zonas laterais (marca à esquerda,
   resumo operacional à direita) — breakpoints em 980px e 720px. Se mudar o
   conteúdo do header, reveja esses paddings.
+
+## Tema visual (claro minimalista)
+
+- Paleta única em `theme.py` (`PALETTE`). O CSS global de `app_turso.py`
+  publica os valores como `--c-*` no `:root`; HTML de `st.markdown` usa
+  `var(--c-*)`. `.streamlit/config.toml` (`base="light"`) espelha a paleta
+  para os widgets nativos.
+- Plotly e cores calculadas em Python não aceitam `var()`: use os hex da
+  paleta. Iframes (`iframe_compat.html`) recebem os tokens automaticamente
+  quando o conteúdo usa `var(--c-`. Mural e Mapa 3D têm a paleta clara
+  escrita direto no HTML deles.
+- A tela de login roda antes do CSS global (o `st.stop()` vem antes): ela
+  injeta `_THEME_ROOT_VARS` no próprio `<style>`.
+- Limão `--c-accent` só como preenchimento, com texto preto. Laranja de
+  sobra em texto pequeno usa `--c-warn-ink` (o `#E08A00` só tem 2,6:1).

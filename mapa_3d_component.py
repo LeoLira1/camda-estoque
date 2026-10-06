@@ -65,13 +65,14 @@ def _build_html(
     css = f"""
 <style>
 * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-body {{ background: #171614; overflow: hidden; }}
+body {{ background: #ECECEC; overflow: hidden; }}
 #rc {{
   width: 100%;
   height: {height}px;
   position: relative;
   overflow: hidden;
-  background: #171614;
+  background: #ECECEC;
+  border-radius: 20px;
 }}
 canvas {{
   display: block;
@@ -81,25 +82,25 @@ canvas {{
 #tt {{
   position: absolute;
   display: none;
-  background: rgba(23,22,20,0.94);
-  border: 1px solid #4a7a94;
-  border-radius: 6px;
+  background: rgba(255,255,255,0.97);
+  border: none;
+  border-radius: 12px;
   padding: 7px 11px;
   pointer-events: none;
   font-family: 'Courier New', monospace;
   max-width: 220px;
   z-index: 100;
   line-height: 1.5;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  box-shadow: 0 6px 20px rgba(17,17,17,0.14);
 }}
 #info {{
   position: absolute;
   top: 8px;
   left: 8px;
-  color: #6b6358;
+  color: #6B6B6B;
   font-family: monospace;
   font-size: 0.62rem;
-  background: rgba(23,22,20,0.75);
+  background: rgba(248,248,248,0.75);
   padding: 4px 9px;
   border-radius: 4px;
   pointer-events: none;
@@ -110,10 +111,10 @@ canvas {{
   bottom: 10px;
   left: 50%;
   transform: translateX(-50%);
-  color: #3a352d;
+  color: #444444;
   font-family: monospace;
   font-size: 0.7rem;
-  background: rgba(23,22,20,0.7);
+  background: rgba(248,248,248,0.7);
   padding: 3px 10px;
   border-radius: 4px;
   pointer-events: none;
@@ -198,14 +199,14 @@ _THREE_JS_CODE = r"""
 
   /* ── Cena ────────────────────────────────────────────────────── */
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0f172a);
-  scene.fog = new THREE.FogExp2(0x0f172a, 0.022);
+  scene.background = new THREE.Color(0xECECEC);
+  scene.fog = new THREE.FogExp2(0xECECEC, 0.018);
 
   /* ── Câmera ──────────────────────────────────────────────────── */
   var camera = new THREE.PerspectiveCamera(44, W / H, 0.1, 200);
 
   /* ── Iluminação ──────────────────────────────────────────────── */
-  scene.add(new THREE.AmbientLight(0x405070, 1.1));
+  scene.add(new THREE.AmbientLight(0xffffff, 1.25));
 
   var sun = new THREE.DirectionalLight(0xffffff, 0.95);
   sun.position.set(14, 20, 12);
@@ -228,13 +229,13 @@ _THREE_JS_CODE = r"""
   /* ── Chão e grid ─────────────────────────────────────────────── */
   var floor = new THREE.Mesh(
     new THREE.PlaneGeometry(80, 50),
-    new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9, metalness: 0.05 })
+    new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.95, metalness: 0.0 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.01;
   floor.receiveShadow = true;
   scene.add(floor);
-  scene.add(new THREE.GridHelper(80, 80, 0x1e3a5a, 0x172030));
+  scene.add(new THREE.GridHelper(80, 80, 0xc4c4c4, 0xd4d4d4));
 
   /* ── Materiais reutilizáveis ─────────────────────────────────── */
   var matPost   = new THREE.MeshStandardMaterial({ color: 0x9ca3af, metalness: 0.85, roughness: 0.25 });
@@ -457,13 +458,13 @@ _THREE_JS_CODE = r"""
         ? String(ud.quantidade) + ' ' + (ud.unidade || '') : '';
       if (ud.isEmpty) {
         tooltip.innerHTML =
-          '<span style="color:#8db5ca;font-size:0.75rem;font-weight:700">' + ud.pos_key + '</span>' +
-          '<br><span style="color:#6b6358;font-size:0.7rem">Vazio</span>';
+          '<span style="color:#3D63D8;font-size:0.75rem;font-weight:700">' + ud.pos_key + '</span>' +
+          '<br><span style="color:#8A8A8A;font-size:0.7rem">Vazio</span>';
       } else {
         tooltip.innerHTML =
-          '<span style="color:#8db5ca;font-size:0.78rem;font-weight:700">' + ud.pos_key + '</span>' +
-          '<br><span style="color:#e6dfd3;font-size:0.8rem">' + ud.produto + '</span>' +
-          (qty.trim() ? '<br><span style="color:#b3aa9c;font-size:0.72rem">' + qty.trim() + '</span>' : '');
+          '<span style="color:#3D63D8;font-size:0.78rem;font-weight:700">' + ud.pos_key + '</span>' +
+          '<br><span style="color:#111111;font-size:0.8rem">' + ud.produto + '</span>' +
+          (qty.trim() ? '<br><span style="color:#444444;font-size:0.72rem">' + qty.trim() + '</span>' : '');
       }
       var r = canvas.getBoundingClientRect();
       var tx = e.clientX - r.left + 14;

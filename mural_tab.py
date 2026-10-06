@@ -22,18 +22,19 @@ _HTML = r"""<!DOCTYPE html>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --text-main: #ece6dc;
-  --text-muted: #b3aa9c;
-  --ink-dark: rgba(23,22,20, 0.86);
-  --line-soft: rgba(255,255,255,0.13);
-  --surface-soft: rgba(255,255,255,0.055);
-  --surface-strong: rgba(255,255,255,0.095);
-  --brand: #d9a441;
-  --brand-strong: #b8862c;
+  /* Iframe: espelha theme.PALETTE (tema claro) — o :root do app não chega aqui */
+  --text-main: #111111;
+  --text-muted: #6B6B6B;
+  --ink-dark: rgba(17,17,17, 0.86);
+  --line-soft: #E2E2E2;
+  --surface-soft: #F8F8F8;
+  --surface-strong: #FFFFFF;
+  --brand: #D7F000;        /* limão: só preenchimento, texto preto */
+  --brand-strong: #111111;
 }
 
 body {
-  font-family: 'IBM Plex Sans', ui-sans-serif, -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Inter', 'IBM Plex Sans', ui-sans-serif, -apple-system, 'Segoe UI', system-ui, sans-serif;
   background: transparent;
   padding: 4px 2px 18px;
 }
@@ -65,7 +66,7 @@ button { -webkit-tap-highlight-color: transparent; }
 }
 
 .topbar-subtitle {
-  color: #8f8679;
+  color: #6B6B6B;
   font-size: 12px;
   letter-spacing: 0.2px;
 }
@@ -79,21 +80,21 @@ button { -webkit-tap-highlight-color: transparent; }
 
 .count-pill {
   font-size: 12px;
-  color: #d6cfc3;
-  background: linear-gradient(180deg, rgba(255,255,255,0.11), rgba(255,255,255,0.06));
-  border: 1px solid var(--line-soft);
+  font-weight: 600;
+  color: #FFFFFF;
+  background: #111111;
+  border: none;
   border-radius: 999px;
   padding: 6px 14px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.09), 0 10px 24px rgba(0,0,0,0.12);
 }
 
 .add-btn {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background: var(--brand);
-  border: 1px solid rgba(255,255,255,0.18);
-  color: #1a1408;
+  background: #111111;
+  border: none;
+  color: #D7F000;
   font-size: 25px;
   cursor: pointer;
   display: flex;
@@ -101,13 +102,13 @@ button { -webkit-tap-highlight-color: transparent; }
   justify-content: center;
   line-height: 1;
   transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
-  box-shadow: 0 14px 28px rgba(74,122,148, 0.34), inset 0 1px 0 rgba(255,255,255,0.28);
+  box-shadow: 0 6px 16px rgba(17,17,17,0.18);
   flex-shrink: 0;
 }
 .add-btn:hover {
   transform: translateY(-2px) scale(1.06) rotate(4deg);
   filter: brightness(1.08);
-  box-shadow: 0 18px 34px rgba(74,122,148, 0.42), inset 0 1px 0 rgba(255,255,255,0.30);
+  box-shadow: 0 10px 22px rgba(17,17,17,0.22);
 }
 .add-btn:active { transform: translateY(0) scale(0.98); }
 
@@ -130,23 +131,22 @@ button { -webkit-tap-highlight-color: transparent; }
   font-size: 11px;
   padding: 6px 14px;
   border-radius: 999px;
-  border: 1px solid var(--line-soft);
-  background: rgba(23,22,20,0.20);
-  color: var(--text-muted);
+  border: none;
+  background: transparent;
+  color: #444444;
+  font-weight: 500;
   cursor: pointer;
   transition: transform 0.13s ease, background 0.13s ease, color 0.13s ease, border-color 0.13s ease, box-shadow 0.13s ease;
 }
 .ftag:hover {
   transform: translateY(-1px);
-  color: #dbeafe;
-  background: rgba(255,255,255,0.075);
-  border-color: rgba(255,255,255,0.22);
+  color: #111111;
+  background: rgba(17,17,17,0.06);
 }
 .ftag.on {
-  background: #e5edf7;
-  color: #141311;
-  border-color: #e5edf7;
-  box-shadow: 0 12px 28px rgba(179,170,156,0.18);
+  background: #111111;
+  color: #FFFFFF;
+  font-weight: 600;
 }
 
 #btn-archived { flex-shrink: 0; white-space: nowrap; }
@@ -180,7 +180,7 @@ button { -webkit-tap-highlight-color: transparent; }
   transform-origin: 50% 45%;
   transition: transform 0.22s cubic-bezier(.34,1.56,.64,1), box-shadow 0.22s ease, filter 0.22s ease;
   box-shadow:
-    0 22px 44px rgba(0,0,0,0.25),
+    0 14px 30px rgba(17,17,17,0.10),
     0 3px 8px rgba(0,0,0,0.18),
     inset 0 1px 0 rgba(255,255,255,0.36);
   animation: popIn 0.34s cubic-bezier(.34,1.56,.64,1) both;
@@ -220,7 +220,7 @@ button { -webkit-tap-highlight-color: transparent; }
   transform: translateY(-7px) rotate(-0.7deg) scale(1.012);
   filter: saturate(1.04);
   box-shadow:
-    0 28px 58px rgba(0,0,0,0.34),
+    0 20px 40px rgba(17,17,17,0.16),
     0 8px 20px rgba(0,0,0,0.16),
     inset 0 1px 0 rgba(255,255,255,0.38);
   z-index: 3;
@@ -420,24 +420,24 @@ button { -webkit-tap-highlight-color: transparent; }
 .btn-attach {
   padding: 9px 12px;
   border-radius: 12px;
-  border: 1px dashed rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.04);
-  color: #b3aa9c;
+  border: 1px dashed #D0D0D0;
+  background: #FFFFFF;
+  color: #444444;
   font-size: 12px;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 .btn-attach:hover {
-  background: rgba(255,255,255,0.08);
-  color: #d6cfc3;
-  border-color: rgba(255,255,255,0.26);
+  background: #F8F8F8;
+  color: #111111;
+  border-color: #8A8A8A;
 }
 .btn-attach input[type="file"] { display: none; }
 
 .card.urgent-note {
   box-shadow:
     0 24px 50px rgba(244, 168, 106, 0.18),
-    0 22px 44px rgba(0,0,0,0.25),
+    0 14px 30px rgba(17,17,17,0.10),
     inset 0 1px 0 rgba(255,255,255,0.36);
 }
 .card.urgent-note .card-tag { opacity: 0.82; }
@@ -454,20 +454,20 @@ button { -webkit-tap-highlight-color: transparent; }
 .empty {
   text-align: center;
   padding: 58px 18px;
-  color: #8f8679;
+  color: #6B6B6B;
   font-size: 14px;
-  border: 1px dashed rgba(179,170,156,0.24);
-  border-radius: 22px;
-  background: rgba(255,255,255,0.025);
+  border: none;
+  border-radius: 20px;
+  background: #F8F8F8;
 }
-.empty strong { color: #d6cfc3; }
+.empty strong { color: #111111; }
 
 /* MODAL */
 .modal-bg {
   display: none;
   position: fixed;
   inset: 0;
-  background: rgba(20,19,17,0.74);
+  background: rgba(17,17,17,0.35);
   z-index: 100;
   align-items: center;
   justify-content: center;
@@ -476,17 +476,17 @@ button { -webkit-tap-highlight-color: transparent; }
 .modal-bg.open { display: flex; }
 
 .modal {
-  background: linear-gradient(180deg, rgba(31,41,59,0.97), rgba(23,22,20,0.98));
-  border-radius: 26px;
+  background: #F8F8F8;
+  border-radius: 20px;
   padding: 28px;
   width: 340px;
   max-width: calc(100vw - 32px);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  box-shadow: 0 28px 86px rgba(0,0,0,0.58), inset 0 1px 0 rgba(255,255,255,0.08);
+  box-shadow: 0 24px 60px rgba(17,17,17,0.18);
   animation: modalIn 0.24s cubic-bezier(.34,1.56,.64,1) both;
-  border: 1px solid rgba(255,255,255,0.10);
+  border: none;
 }
 @keyframes modalIn {
   from { opacity: 0; transform: scale(0.92) translateY(12px); }
@@ -504,32 +504,32 @@ button { -webkit-tap-highlight-color: transparent; }
 .modal select {
   width: 100%;
   padding: 11px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 12px;
+  border: 1px solid #E2E2E2;
   font-size: 13px;
-  background: rgba(255,255,255,0.065);
+  background: #FFFFFF;
   color: var(--text-main);
   resize: none;
   outline: none;
   transition: border-color 0.12s ease, background 0.12s ease, box-shadow 0.12s ease;
 }
 .modal input::placeholder,
-.modal textarea::placeholder { color: #8f8679; }
+.modal textarea::placeholder { color: #8A8A8A; }
 .modal input:focus,
 .modal textarea:focus,
 .modal select:focus {
-  border-color: rgba(111,159,184,0.78);
-  background: rgba(255,255,255,0.085);
-  box-shadow: 0 0 0 4px rgba(111,159,184,0.12);
+  border-color: #111111;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 3px rgba(17,17,17,0.06);
 }
-.modal select option { background: #1e2536; }
+.modal select option { background: #FFFFFF; color: #111111; }
 .modal textarea { height: 98px; line-height: 1.55; }
 
 .label-sm {
   font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.7px;
-  color: #8f8679;
+  color: #8A8A8A;
   text-transform: uppercase;
   margin-bottom: -4px;
 }
@@ -546,33 +546,33 @@ button { -webkit-tap-highlight-color: transparent; }
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.38), 0 8px 16px rgba(0,0,0,0.16);
 }
 .cswatch:hover { transform: translateY(-2px) scale(1.10); }
-.cswatch.on { border-color: #ece6dc; transform: scale(1.10); box-shadow: 0 0 0 4px rgba(255,255,255,0.10), inset 0 1px 0 rgba(255,255,255,0.42); }
+.cswatch.on { border-color: #111111; transform: scale(1.10); box-shadow: 0 0 0 3px rgba(17,17,17,0.10), inset 0 1px 0 rgba(255,255,255,0.42); }
 
 .modal-actions { display: flex; gap: 9px; margin-top: 4px; }
 .btn-cancel {
   flex: 1;
   padding: 11px;
-  border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 999px;
+  border: 1px solid #D0D0D0;
   background: transparent;
   font-size: 13px;
   cursor: pointer;
-  color: #b3aa9c;
+  color: #111111;
   transition: background 0.1s ease, transform 0.1s ease;
 }
-.btn-cancel:hover { background: rgba(255,255,255,0.06); transform: translateY(-1px); }
+.btn-cancel:hover { background: rgba(17,17,17,0.05); transform: translateY(-1px); }
 .btn-save {
   flex: 2;
   padding: 11px;
-  border-radius: 14px;
+  border-radius: 999px;
   border: none;
-  background: var(--brand);
-  color: #1a1408;
+  background: #111111;
+  color: #FFFFFF;
   font-size: 13px;
   font-weight: 800;
   cursor: pointer;
   transition: filter 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
-  box-shadow: 0 14px 24px rgba(74,122,148,0.26), inset 0 1px 0 rgba(255,255,255,0.20);
+  box-shadow: none;
 }
 .btn-save:hover { filter: brightness(1.07); transform: translateY(-1px); }
 .btn-save:disabled { opacity: 0.56; cursor: default; transform: none; filter: none; }
@@ -583,18 +583,18 @@ button { -webkit-tap-highlight-color: transparent; }
   bottom: 20px;
   left: 50%;
   transform: translateX(-50%) translateY(80px);
-  background: rgba(23,22,20,0.94);
-  color: var(--text-main);
+  background: #111111;
+  color: #FFFFFF;
   padding: 10px 20px;
   border-radius: 999px;
   font-size: 13px;
-  border: 1px solid rgba(255,255,255,0.12);
+  border: none;
   transition: transform 0.3s ease, opacity 0.3s ease;
   z-index: 200;
   pointer-events: none;
   opacity: 0;
   white-space: nowrap;
-  box-shadow: 0 14px 36px rgba(0,0,0,0.30);
+  box-shadow: 0 10px 28px rgba(17,17,17,0.20);
 }
 .toast.show {
   transform: translateX(-50%) translateY(0);

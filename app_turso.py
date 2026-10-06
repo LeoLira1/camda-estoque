@@ -49,6 +49,7 @@ except ImportError:
         return False
 from historico_contagem_tab import build_historico_contagem_tab as _render_historico_contagem_tab
 from etiquetas_tab import build_etiquetas_tab as _render_etiquetas_tab
+from theme import ROOT_VARS as _THEME_ROOT_VARS
 
 # ── Page Config ──────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -242,30 +243,6 @@ if "admin_unlocked" not in st.session_state:
 if "_upload_success_msg" not in st.session_state:
     st.session_state["_upload_success_msg"] = None
 
-# ── Weather gradient helper (usada na tela de login e no dashboard) ───────────
-def _wcode_bg_gradient(code, alpha=1.0):
-    if code is None:
-        r = "30,60,114"; g = "42,82,152"
-    elif int(code) == 0:
-        r = "15,32,39"; g = "44,83,100"
-    elif int(code) in (1, 2):
-        r = "21,101,192"; g = "94,146,200"
-    elif int(code) == 3:
-        r = "44,62,80"; g = "74,98,116"
-    elif int(code) in (45, 48):
-        r = "74,85,104"; g = "143,163,177"
-    elif int(code) in (51,53,55,61,63,65,80,81,82):
-        r = "13,27,62"; g = "30,87,153"
-    elif int(code) in (95,96,99):
-        r = "15,12,41"; g = "36,36,62"
-    elif int(code) in (71,73,75,77):
-        r = "44,62,80"; g = "107,143,166"
-    else:
-        r = "30,60,114"; g = "42,82,152"
-    if alpha < 1.0:
-        return f"linear-gradient(160deg,rgba({r},{alpha}) 0%,rgba({g},{alpha}) 100%)"
-    return f"linear-gradient(160deg,rgb({r}) 0%,rgb({g}) 100%)"
-
 # ── Login Screen ─────────────────────────────────────────────────────────────
 if not st.session_state.authenticated:
     _DIAS_PT_FULL = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
@@ -300,41 +277,51 @@ if not st.session_state.authenticated:
 
     st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+    :root {
+""" + _THEME_ROOT_VARS + """
+    }
     .stApp {
-        background: linear-gradient(160deg,rgba(20,19,17,0.32) 0%,rgba(20,19,17,0.24) 100%);
-        font-family:'IBM Plex Sans',sans-serif;
+        background: var(--c-bg);
+        font-family: var(--f-sans);
+        color: var(--c-text);
     }
     #MainMenu,footer,header{visibility:hidden;}
     .block-container{padding:1.5rem 1rem !important;max-width:100% !important;}
-    .stTextInput>div>div>input{
-        background:rgba(255,255,255,0.1) !important;
-        border:1px solid rgba(255,255,255,0.22) !important;
-        border-radius:30px !important;
-        color:black !important;
+    .stTextInput [data-testid="stTextInputRootElement"],
+    .stTextInput [data-baseweb="input"]{
+        background:var(--c-surface-2) !important;
+        border:1px solid transparent !important;
+        border-radius:var(--r-pill) !important;
+    }
+    .stTextInput input{
+        background:transparent !important;
+        color:var(--c-text) !important;
         padding:12px 20px !important;
         font-size:1rem !important;
         text-align:center;
-        font-family:'IBM Plex Sans',sans-serif !important;
+        font-family:var(--f-sans) !important;
         letter-spacing:1px;
     }
-    .stTextInput>div>div>input::placeholder{color:rgba(255,255,255,0.4) !important;}
+    .stTextInput input::placeholder{color:var(--c-label) !important;}
+    .stTextInput [data-testid="stTextInputRootElement"]:focus-within{border-color:var(--c-text) !important;}
     .stTextInput label{display:none !important;}
     .stForm{border:none !important;padding:0 !important;}
     .stFormSubmitButton>button{
-        background:rgba(255,255,255,0.12) !important;
-        border:1px solid rgba(255,255,255,0.28) !important;
-        border-radius:30px !important;
-        color:white !important;
+        background:var(--c-ink) !important;
+        border:1px solid var(--c-ink) !important;
+        border-radius:var(--r-pill) !important;
+        color:var(--c-on-ink) !important;
         font-size:0.95rem !important;
         font-weight:600 !important;
         letter-spacing:1.5px !important;
         padding:10px !important;
-        font-family:'IBM Plex Sans',sans-serif !important;
+        font-family:var(--f-sans) !important;
         transition:background .2s !important;
         width:100%;
     }
-    .stFormSubmitButton>button:hover{background:rgba(255,255,255,0.22) !important;}
+    .stFormSubmitButton>button p{color:var(--c-on-ink) !important;}
+    .stFormSubmitButton>button:hover{background:#2A2A2A !important;}
     @media(max-width:640px){.block-container{padding:0.8rem 0.5rem !important;}}
     @keyframes sunSpin {
         from { transform: rotate(0deg); }
@@ -351,8 +338,8 @@ if not st.session_state.authenticated:
         100% { transform: translateY(0px); }
     }
     @keyframes stormFlash {
-        0%,100% { filter: drop-shadow(0 6px 16px rgba(255,255,255,0.25)); }
-        50%     { filter: drop-shadow(0 0 24px rgba(255,220,50,0.9)); }
+        0%,100% { filter: drop-shadow(0 6px 16px rgba(17,17,17,0.25)); }
+        50%     { filter: drop-shadow(0 0 24px rgba(224,138,0,0.9)); }
     }
     @keyframes snowSpin {
         0%   { transform: rotate(0deg) translateY(0px); }
@@ -401,23 +388,23 @@ if not st.session_state.authenticated:
             em_d   = _wcode_emoji_login(daily["weathercode"][i])
             tmax   = round(daily["temperature_2m_max"][i])
             tmin   = round(daily["temperature_2m_min"][i])
-            bg_d   = "rgba(255,255,255,0.18)" if i == 0 else "rgba(0,0,0,0.18)"
-            bd_d   = "border:1px solid rgba(255,255,255,0.28);" if i == 0 else "border:1px solid rgba(255,255,255,0.06);"
+            bg_d   = "var(--c-accent)" if i == 0 else "var(--c-surface-2)"
+            bd_d   = "border:none;"
             fw_d   = "700" if i == 0 else "400"
             dias_cards_html += (
                 f'<div style="flex:1;background:{bg_d};border-radius:14px;padding:9px 2px;'
                 f'text-align:center;{bd_d}">'
-                f'<div style="font-size:0.55rem;color:rgba(255,255,255,0.6);'
+                f'<div style="font-size:0.55rem;color:var(--c-text-2);'
                 f'margin-bottom:4px;font-weight:{fw_d};text-transform:uppercase;letter-spacing:0.3px;">{nome_d}</div>'
                 f'<div style="font-size:1.1rem;margin:3px 0;'
-                f'filter:drop-shadow(0 2px 6px rgba(255,255,255,0.2));">{em_d}</div>'
-                f'<div style="font-size:0.78rem;font-weight:700;color:#fff;margin-top:2px;">{tmax}°</div>'
-                f'<div style="font-size:0.58rem;color:rgba(255,255,255,0.4);">{tmin}°</div>'
+                f'filter:drop-shadow(0 2px 6px rgba(17,17,17,0.2));">{em_d}</div>'
+                f'<div style="font-size:0.78rem;font-weight:700;color:var(--c-text);margin-top:2px;">{tmax}°</div>'
+                f'<div style="font-size:0.58rem;color:var(--c-muted);">{tmin}°</div>'
                 f'</div>'
             )
 
         def _wcode_animated_icon(code):
-            shadow = "filter:drop-shadow(0 6px 16px rgba(255,255,255,0.25));"
+            shadow = "filter:drop-shadow(0 6px 16px rgba(17,17,17,0.25));"
             code = int(code) if code is not None else -1
             if code == 0:
                 return (
@@ -472,52 +459,50 @@ if not st.session_state.authenticated:
                     f'{shadow}display:inline-block;">🌡️</div>'
                 )
 
-        _bg_grad = _wcode_bg_gradient(wcode_cur)
         card_weather = f"""
 <div style="
-    background:{_bg_grad};
-    border-radius:28px;padding:26px 20px 18px;
-    color:#fff;font-family:'IBM Plex Sans',sans-serif;
-    box-shadow:0 24px 64px rgba(0,0,0,0.55),inset 0 1px 0 rgba(255,255,255,0.12);
+    background:var(--c-surface);
+    border-radius:var(--r-card);padding:26px 20px 18px;
+    color:var(--c-text);font-family:var(--f-sans);
     position:relative;overflow:hidden;margin-bottom:12px;">
   <div style="position:absolute;top:-55px;right:-55px;width:210px;height:210px;
-              border-radius:50%;background:rgba(255,255,255,0.055);pointer-events:none;"></div>
+              border-radius:50%;background:rgba(17,17,17,0.055);pointer-events:none;"></div>
   <div style="position:absolute;bottom:-75px;left:-65px;width:260px;height:260px;
-              border-radius:50%;background:rgba(255,255,255,0.035);pointer-events:none;"></div>
-  <div style="font-size:0.75rem;color:rgba(255,255,255,0.55);letter-spacing:0.5px;
+              border-radius:50%;background:rgba(17,17,17,0.035);pointer-events:none;"></div>
+  <div style="font-size:0.75rem;color:var(--c-text-2);letter-spacing:0.5px;
               margin-bottom:20px;position:relative;">
     {_dia_nome} &nbsp;·&nbsp; {_data_fmt} &nbsp;·&nbsp; {_hora}
   </div>
   <div style="text-align:center;padding:4px 0 18px;position:relative;">
     {_wcode_animated_icon(wcode_cur)}
     <div style="font-size:4.2rem;font-weight:700;line-height:1;letter-spacing:-2px;
-                text-shadow:0 4px 24px rgba(0,0,0,0.3);">{temp_cur}°</div>
-    <div style="font-size:1rem;font-weight:500;color:rgba(255,255,255,0.85);margin-top:10px;">{desc_cur}</div>
-    <div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-top:5px;">📍 Quirinópolis, GO</div>
+                ">{temp_cur}°</div>
+    <div style="font-size:1rem;font-weight:500;color:var(--c-text);margin-top:10px;">{desc_cur}</div>
+    <div style="font-size:0.75rem;color:var(--c-muted);margin-top:5px;">📍 Quirinópolis, GO</div>
   </div>
-  <div style="display:flex;background:rgba(0,0,0,0.22);border-radius:18px;
+  <div style="display:flex;background:var(--c-surface-2);border-radius:16px;
               padding:14px 6px;margin-bottom:12px;position:relative;">
-    <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.1);">
+    <div style="flex:1;text-align:center;border-right:1px solid rgba(17,17,17,0.1);">
       <div style="font-size:1.3rem;margin-bottom:3px;">💧</div>
       <div style="font-size:1.05rem;font-weight:700;">{humid}%</div>
-      <div style="font-size:0.6rem;color:rgba(255,255,255,0.48);margin-top:2px;">Umidade</div>
+      <div style="font-size:0.6rem;color:var(--c-muted);margin-top:2px;">Umidade</div>
     </div>
-    <div style="flex:1;text-align:center;border-right:1px solid rgba(255,255,255,0.1);">
+    <div style="flex:1;text-align:center;border-right:1px solid rgba(17,17,17,0.1);">
       <div style="font-size:1.3rem;margin-bottom:3px;">💨</div>
       <div style="font-size:1.05rem;font-weight:700;">{vento} km/h</div>
-      <div style="font-size:0.6rem;color:rgba(255,255,255,0.48);margin-top:2px;">Vento</div>
+      <div style="font-size:0.6rem;color:var(--c-muted);margin-top:2px;">Vento</div>
     </div>
     <div style="flex:1;text-align:center;">
       <div style="font-size:1.3rem;margin-bottom:3px;">🌧️</div>
       <div style="font-size:1.05rem;font-weight:700;">{chuva_pct}%</div>
-      <div style="font-size:0.6rem;color:rgba(255,255,255,0.48);margin-top:2px;">Chuva</div>
+      <div style="font-size:0.6rem;color:var(--c-muted);margin-top:2px;">Chuva</div>
     </div>
   </div>
-  <div style="background:rgba(0,0,0,0.18);border-radius:30px;padding:7px 16px;
+  <div style="background:var(--c-surface-2);border-radius:var(--r-pill);padding:7px 16px;
               display:flex;justify-content:space-between;align-items:center;
               font-size:0.7rem;margin-bottom:14px;position:relative;">
     <span>🌅 {sunrise_t}</span>
-    <span style="color:rgba(255,255,255,0.3);font-size:0.58rem;">── {dur_str} ──</span>
+    <span style="color:var(--c-muted);font-size:0.58rem;">── {dur_str} ──</span>
     <span>🌇 {sunset_t}</span>
   </div>
   <div style="display:flex;gap:4px;position:relative;">{dias_cards_html}</div>
@@ -525,17 +510,16 @@ if not st.session_state.authenticated:
     else:
         card_weather = f"""
 <div style="
-    background:linear-gradient(160deg,#1e3c72 0%,#2a5298 100%);
-    border-radius:28px;padding:32px 20px;
-    color:#fff;font-family:'IBM Plex Sans',sans-serif;
-    box-shadow:0 24px 64px rgba(0,0,0,0.5);
+    background:var(--c-surface);
+    border-radius:var(--r-card);padding:32px 20px;
+    color:var(--c-text);font-family:var(--f-sans);
     text-align:center;margin-bottom:12px;">
-  <div style="font-size:0.75rem;color:rgba(255,255,255,0.5);margin-bottom:20px;">
+  <div style="font-size:0.75rem;color:var(--c-muted);margin-bottom:20px;">
     {_dia_nome} &nbsp;·&nbsp; {_data_fmt} &nbsp;·&nbsp; {_hora}</div>
   <div style="font-size:3.5rem;margin:14px 0;
-              filter:drop-shadow(0 4px 12px rgba(255,255,255,0.2));">🌡️</div>
-  <div style="font-size:0.9rem;color:rgba(255,255,255,0.5);">Clima indisponível</div>
-  <div style="font-size:0.72rem;color:rgba(255,255,255,0.3);margin-top:6px;">📍 Quirinópolis, GO</div>
+              filter:drop-shadow(0 4px 12px rgba(17,17,17,0.2));">🌡️</div>
+  <div style="font-size:0.9rem;color:var(--c-muted);">Clima indisponível</div>
+  <div style="font-size:0.72rem;color:var(--c-muted);margin-top:6px;">📍 Quirinópolis, GO</div>
 </div>"""
 
     _, col_login, _ = st.columns([1, 1.5, 1])
@@ -601,16 +585,16 @@ if not st.session_state.authenticated:
 
         if not ACCESS_PASSWORD:
             st.markdown(
-                '<div style="background:rgba(255,171,64,0.15);border:1px solid rgba(255,171,64,0.35);'
-                'border-radius:12px;padding:10px 16px;color:#ffc078;text-align:center;'
+                '<div style="background:rgba(224,138,0,0.15);border:1px solid rgba(224,138,0,0.35);'
+                'border-radius:12px;padding:10px 16px;color:var(--c-warn-ink);text-align:center;'
                 'font-size:0.85rem;margin-top:6px;">⚠️ Senha de acesso não configurada. '
                 'Defina <b>CAMDA_ACCESS_PASSWORD</b> nos Secrets do app.</div>',
                 unsafe_allow_html=True
             )
         elif st.session_state.login_error:
             st.markdown(
-                '<div style="background:rgba(229,83,61,0.15);border:1px solid rgba(229,83,61,0.3);'
-                'border-radius:12px;padding:8px 16px;color:#ff6b7a;text-align:center;'
+                '<div style="background:rgba(211,47,47,0.15);border:1px solid rgba(211,47,47,0.3);'
+                'border-radius:12px;padding:8px 16px;color:var(--c-crit);text-align:center;'
                 'font-size:0.85rem;margin-top:6px;">❌ Senha incorreta</div>',
                 unsafe_allow_html=True
             )
@@ -757,27 +741,37 @@ _stc_cal.html(f"""
 # ── CSS ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
-    /* ── Tokens "Cerrado Instrumental": fonte única de verdade da paleta ──
-       Escuro quente (grafite/terra), acento ocre para navegação e foco;
-       verde/âmbar/vermelho reservados a status operacional. */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+    /* ── Tema claro minimalista: fonte única de verdade da paleta ─────────
+       Valores vêm de theme.PALETTE. Fundo cinza claro, cards #F8F8F8 sem
+       borda (raio 20px), linhas de lista brancas (raio 12px). O verde-limão
+       (--c-accent) é só preenchimento, sempre com texto preto. */
     :root {
-        --c-bg: #141311; --c-surface: #1c1a17; --c-surface-2: #24211d;
-        --c-line: #2e2a24; --c-line-2: #3a352d;
-        --c-text: #ece6dc; --c-muted: #9a9184; --c-faint: #6b6358;
-        --c-accent: #d9a441; --c-accent-soft: rgba(217,164,65,0.12);
-        --c-ok: #3fbf7f; --c-warn: #e0a030; --c-crit: #e5533d; --c-info: #6f9fb8;
-        --f-sans: 'IBM Plex Sans', system-ui, sans-serif;
-        --f-mono: 'IBM Plex Mono', ui-monospace, monospace;
+""" + _THEME_ROOT_VARS + """
     }
-    .stApp { background: var(--c-bg); color: var(--c-text); font-family: var(--f-sans); }
+    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+        background: var(--c-bg) !important; color: var(--c-text);
+    }
+    .stApp { font-family: var(--f-sans); }
     .stApp p, .stApp li, .stApp label, .stApp button, .stApp input, .stApp textarea,
     .stApp [data-testid="stMarkdownContainer"] { font-family: var(--f-sans); }
-    .stApp h1, .stApp h2, .stApp h3, .stApp h4 {
-        font-family: var(--f-sans) !important; font-weight: 600 !important;
-        letter-spacing: -0.01em; color: var(--c-text);
+    .stApp [data-testid="stMarkdownContainer"],
+    .stApp [data-testid="stMarkdownContainer"] p,
+    .stApp [data-testid="stMarkdownContainer"] li { color: var(--c-text); }
+    /* Dentro de botões/abas o rótulo segue a cor do botão (pílula preta → branco) */
+    .stApp button [data-testid="stMarkdownContainer"],
+    .stApp button [data-testid="stMarkdownContainer"] p,
+    .stApp [role="tab"] [data-testid="stMarkdownContainer"] p { color: inherit !important; }
+    .stApp [data-testid="stCaptionContainer"],
+    .stApp [data-testid="stCaptionContainer"] p { color: var(--c-muted) !important; }
+    .stApp [data-testid="stWidgetLabel"] p, .stApp [data-testid="stWidgetLabel"] label {
+        color: var(--c-text-2) !important;
     }
-    ::selection { background: rgba(217,164,65,0.35); }
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4 {
+        font-family: var(--f-sans) !important; font-weight: 700 !important;
+        letter-spacing: -0.02em; color: var(--c-text);
+    }
+    ::selection { background: var(--c-accent); color: var(--c-on-accent); }
     /* Números sempre em colunas alinhadas */
     .stApp [style*="IBM Plex Mono"], .stat-value, .stat-value-lg, .tm-info {
         font-variant-numeric: tabular-nums;
@@ -828,10 +822,8 @@ st.markdown("""
         overflow: hidden !important;
     }
     .main-title {
-        font-family: 'IBM Plex Sans', sans-serif; font-weight: 900; font-size: 1.6rem;
-        background: linear-gradient(135deg, #3fbf7f, #00b887);
-        -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        text-align: center; margin: 0.3rem 0;
+        font-family: var(--f-sans); font-weight: 800; font-size: 1.6rem;
+        color: var(--c-text); text-align: center; margin: 0.3rem 0;
     }
     /* Elimina espaço do Streamlit acima do header compacto */
     div[data-testid="stVerticalBlock"] > div:has(.camda-topbar) {
@@ -841,38 +833,55 @@ st.markdown("""
         margin-top: 0 !important; padding-top: 0 !important;
     }
     .sub-title {
-        font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem;
-        color: #6b6358; text-align: center; margin-bottom: 0.5rem;
+        font-family: var(--f-mono); font-size: 0.7rem;
+        color: var(--c-muted); text-align: center; margin-bottom: 0.5rem;
     }
     .sync-badge {
-        font-family: 'IBM Plex Mono', monospace; font-size: 0.55rem;
-        color: #6f9fb8; text-align: center; margin-bottom: 0.5rem; opacity: 0.8;
+        font-family: var(--f-mono); font-size: 0.55rem;
+        color: var(--c-info); text-align: center; margin-bottom: 0.5rem;
     }
-    .stat-row { display: flex; gap: 6px; margin-bottom: 0.5rem; }
+    /* ── Grade de métricas: 2 colunas no celular, 3+ em telas maiores ──── */
+    .stat-row {
+        display: grid; gap: 10px; margin-bottom: 0.75rem;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    }
     .stat-card {
-        flex: 1; background: var(--c-surface);
-        border: 1px solid var(--c-line); border-radius: 6px;
-        padding: 8px 12px; text-align: left;
-        display: flex; flex-direction: column-reverse; gap: 2px;
+        position: relative; min-width: 0;
+        background: var(--c-surface); border: none; border-radius: var(--r-card);
+        padding: 14px 16px 16px; text-align: left;
+        display: flex; flex-direction: column-reverse; justify-content: flex-end; gap: 6px;
     }
     .stat-value {
-        font-family: var(--f-mono); font-size: 1.25rem;
-        font-weight: 600; color: var(--c-text); line-height: 1.2;
+        font-family: var(--f-sans); font-size: 1.6rem;
+        font-weight: 700; color: var(--c-text); line-height: 1.1;
+        letter-spacing: -0.02em;
     }
     .stat-value.green { color: var(--c-ok); }
     .stat-value.red { color: var(--c-crit); }
     .stat-value.amber { color: var(--c-warn); }
-    .stat-value.purple { color: #a98bc9; }
+    .stat-value.purple { color: var(--c-purple); }
     .stat-value.blue { color: var(--c-info); }
     .stat-label {
-        font-family: var(--f-mono); font-size: 0.62rem; color: var(--c-muted);
-        text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500;
+        font-family: var(--f-sans); font-size: 0.66rem; color: var(--c-label);
+        text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600;
     }
+    /* Card TOTAL em limão: ícone e seta em círculos de contorno preto */
+    .stat-card.stat-hero { background: var(--c-accent); padding-top: 52px; }
+    .stat-card.stat-hero .stat-value { color: var(--c-on-accent) !important; }
+    .stat-card.stat-hero .stat-label { color: var(--c-on-accent); opacity: .72; }
+    .stat-hero-ic, .stat-hero-arrow {
+        position: absolute; top: 12px; width: 30px; height: 30px; border-radius: 50%;
+        border: 1.5px solid var(--c-on-accent); color: var(--c-on-accent);
+        display: flex; align-items: center; justify-content: center;
+    }
+    .stat-hero-ic { left: 14px; }
+    .stat-hero-arrow { right: 14px; }
+    .stat-hero-ic svg, .stat-hero-arrow svg { width: 15px; height: 15px; }
     /* ── Treemap tiles ─────────────────────────────────────────────────── */
     .tm-wrap { display: flex; flex-wrap: wrap; gap: 10px; }
     .tm-tile {
         width: 150px; height: auto; min-height: 120px;
-        border-radius: 12px; padding: 0; margin: 0;
+        border-radius: 16px; padding: 0; margin: 0;
         display: flex; flex-direction: column;
         justify-content: flex-start; align-items: flex-start;
         overflow: visible; box-sizing: border-box;
@@ -881,76 +890,136 @@ st.markdown("""
     .tm-name {
         font-size: 0.875rem; font-weight: 600; text-align: left; width: 100%;
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-        margin-bottom: 4px; color: #ece6dc;
+        margin-bottom: 4px; color: var(--c-text);
     }
     .tm-info {
         font-size: 1.625rem; line-height: 1.1;
-        font-family: 'IBM Plex Mono', monospace;
+        font-family: var(--f-sans);
         font-weight: 700; margin-bottom: 8px;
     }
     .tm-av { font-size: 0.5rem; font-weight: 700; margin-top: 2px; }
-    /* ── Expander: fundo escuro e texto legível ─────────────────────────── */
+    /* ── Expander: card claro sem borda ────────────────────────────────── */
     [data-testid="stExpander"] {
         background: var(--c-surface) !important;
-        border: 1px solid var(--c-line) !important;
-        border-radius: 6px !important;
+        border: none !important;
+        border-radius: var(--r-card) !important;
     }
-    [data-testid="stExpander"] details { border: none !important; }
+    [data-testid="stExpander"] details {
+        border: none !important; background: transparent !important;
+        border-radius: var(--r-card) !important;
+    }
     [data-testid="stExpander"] summary {
-        background: var(--c-surface) !important;
+        background: transparent !important;
         color: var(--c-text) !important;
-        border-radius: 6px !important;
+        border-radius: var(--r-card) !important;
     }
     [data-testid="stExpander"] summary:hover {
-        background: var(--c-surface-2) !important;
+        background: rgba(17,17,17,0.03) !important;
         color: var(--c-text) !important;
     }
     [data-testid="stExpander"] summary p,
     [data-testid="stExpander"] summary span {
-        color: var(--c-text) !important; font-weight: 500;
+        color: var(--c-text) !important; font-weight: 600;
     }
-    [data-testid="stExpander"] summary:hover svg { color: var(--c-accent) !important; }
+    [data-testid="stExpander"] summary svg { color: var(--c-text) !important; }
     .stat-value-lg {
-        font-family: var(--f-mono); font-size: 1.9rem;
-        font-weight: 600; color: var(--c-text); line-height: 1.1;
+        font-family: var(--f-sans); font-size: 2rem;
+        font-weight: 700; color: var(--c-text); line-height: 1.05;
+        letter-spacing: -0.02em;
     }
     .stat-value-lg.red { color: var(--c-crit); }
     .stat-value-lg.amber { color: var(--c-warn); }
     .stat-value-lg.blue { color: var(--c-info); }
-    /* ── Widgets nativos: foco, alertas, tabelas, botões ──────────────── */
-    /* st.info/success/warning/error: superfície neutra + filete lateral na
-       cor do status (1.59: o fundo colorido fica no stAlertContainer). */
+    .stat-value-lg.green { color: var(--c-ok); }
+    /* ── Widgets nativos: alertas, tabelas, campos, botões ────────────── */
+    /* st.info/success/warning/error: card claro + filete lateral na cor do
+       status (1.59: o fundo colorido fica no stAlertContainer). */
     .stApp [data-testid="stAlertContainer"] {
-        background: var(--c-surface) !important;
-        border: 1px solid var(--c-line) !important;
-        border-left: 3px solid var(--c-info) !important;
-        border-radius: 6px !important; color: var(--c-text) !important;
+        background: var(--c-surface-2) !important;
+        border: none !important;
+        border-left: 4px solid var(--c-info) !important;
+        border-radius: var(--r-row) !important; color: var(--c-text) !important;
     }
     .stApp [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) { border-left-color: var(--c-ok) !important; }
     .stApp [data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) { border-left-color: var(--c-warn) !important; }
     .stApp [data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"])   { border-left-color: var(--c-crit) !important; }
     .stApp [data-testid="stAlertContainer"] [data-testid="stMarkdownContainer"] p { color: var(--c-text) !important; }
     .stApp [data-testid="stDataFrame"], .stApp [data-testid="stTable"] {
-        border: 1px solid var(--c-line); border-radius: 6px;
+        border: none; border-radius: var(--r-row); overflow: hidden;
+        background: var(--c-surface-2);
     }
+    .stApp [data-testid="stMetric"] {
+        background: var(--c-surface); border-radius: var(--r-card); padding: 12px 16px;
+    }
+    .stApp [data-testid="stMetricLabel"] p {
+        color: var(--c-label) !important; text-transform: uppercase;
+        font-size: 0.68rem !important; letter-spacing: .08em; font-weight: 600;
+    }
+    .stApp [data-testid="stMetricValue"] { color: var(--c-text) !important; font-weight: 700; }
+    /* Campos: brancos, cantos arredondados, sem contorno pesado */
+    .stApp [data-baseweb="input"], .stApp [data-baseweb="select"] > div,
+    .stApp [data-baseweb="textarea"], .stApp [data-testid="stTextInputRootElement"],
+    .stApp [data-testid="stNumberInputContainer"], .stApp [data-testid="stDateInputField"] {
+        background: var(--c-surface-2) !important;
+        border-color: var(--c-line) !important;
+        border-radius: var(--r-row) !important;
+    }
+    .stApp input, .stApp textarea { color: var(--c-text) !important; }
+    .stApp input::placeholder, .stApp textarea::placeholder { color: var(--c-label) !important; }
+    /* Botões em pílula preta com texto branco */
     .stApp [data-testid="stBaseButton-secondary"],
-    .stApp [data-testid="stBaseButton-secondaryFormSubmit"] {
-        background: var(--c-surface) !important;
-        border: 1px solid var(--c-line-2) !important;
-        color: var(--c-text) !important; border-radius: 6px !important;
+    .stApp [data-testid="stBaseButton-secondaryFormSubmit"],
+    .stApp [data-testid="stBaseButton-primary"],
+    .stApp [data-testid="stBaseButton-primaryFormSubmit"],
+    .stApp [data-testid="stDownloadButton"] button,
+    .stApp [data-testid="stFormSubmitButton"] button {
+        background: var(--c-ink) !important;
+        border: 1px solid var(--c-ink) !important;
+        color: var(--c-on-ink) !important;
+        border-radius: var(--r-pill) !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
     }
+    .stApp [data-testid="stBaseButton-secondary"] p,
+    .stApp [data-testid="stBaseButton-secondaryFormSubmit"] p,
+    .stApp [data-testid="stBaseButton-primary"] p,
+    .stApp [data-testid="stBaseButton-primaryFormSubmit"] p,
+    .stApp [data-testid="stDownloadButton"] button p,
+    .stApp [data-testid="stFormSubmitButton"] button p { color: var(--c-on-ink) !important; }
     .stApp [data-testid="stBaseButton-secondary"]:hover,
-    .stApp [data-testid="stBaseButton-secondaryFormSubmit"]:hover {
-        border-color: var(--c-accent) !important; color: var(--c-accent) !important;
+    .stApp [data-testid="stBaseButton-secondaryFormSubmit"]:hover,
+    .stApp [data-testid="stDownloadButton"] button:hover {
+        background: #2A2A2A !important; border-color: #2A2A2A !important;
     }
+    /* Primário: pílula limão com texto preto (ação principal da tela) */
     .stApp [data-testid="stBaseButton-primary"],
     .stApp [data-testid="stBaseButton-primaryFormSubmit"] {
         background: var(--c-accent) !important; border-color: var(--c-accent) !important;
-        color: #1a1408 !important; font-weight: 600 !important; border-radius: 6px !important;
+        color: var(--c-on-accent) !important;
     }
-    .stApp input:focus, .stApp textarea:focus { caret-color: var(--c-accent); }
+    .stApp [data-testid="stBaseButton-primary"] p,
+    .stApp [data-testid="stBaseButton-primaryFormSubmit"] p { color: var(--c-on-accent) !important; }
+    .stApp [data-testid="stBaseButton-primary"]:hover,
+    .stApp [data-testid="stBaseButton-primaryFormSubmit"]:hover { filter: brightness(0.95); }
+    .stApp [data-testid="stBaseButton-tertiary"] { color: var(--c-text) !important; }
+    .stApp button:disabled { opacity: .45 !important; }
+    .stApp button:focus-visible { outline: 2px solid var(--c-text) !important; outline-offset: 2px; }
+    .stApp input:focus, .stApp textarea:focus { caret-color: var(--c-text); }
     hr, .stApp [data-testid="stDivider"] { border-color: var(--c-line) !important; }
-    /* ── Streamlit tabs: sempre scrollável ─────────────────────────────── */
+    /* ── Pills genéricos (st.pills / segmented): pílula preta na ativa ── */
+    .stApp [data-testid="stBaseButton-pills"],
+    .stApp [data-testid="stBaseButton-segmented_control"] {
+        background: transparent !important; border: 1px solid var(--c-line-2) !important;
+        color: var(--c-text) !important; border-radius: var(--r-pill) !important;
+    }
+    .stApp [data-testid="stBaseButton-pillsActive"],
+    .stApp [data-testid="stBaseButton-segmented_controlActive"] {
+        background: var(--c-ink) !important; border: 1px solid var(--c-ink) !important;
+        color: var(--c-on-ink) !important; border-radius: var(--r-pill) !important;
+    }
+    .stApp [data-testid="stBaseButton-pillsActive"] p,
+    .stApp [data-testid="stBaseButton-segmented_controlActive"] p { color: var(--c-on-ink) !important; }
+    /* ── Streamlit tabs (st.tabs internos): pílulas ──────────────────── */
     .stTabs [data-baseweb="tab-list"] {
         flex-wrap: nowrap !important;
         overflow-x: auto;
@@ -958,83 +1027,79 @@ st.markdown("""
         scrollbar-width: none;
     }
     .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { display: none; }
-    .stTabs [data-baseweb="tab-list"] { gap: 4px !important; padding: 4px 4px 0 4px !important; }
+    .stTabs [data-baseweb="tab-list"] { gap: 4px !important; padding: 4px 0 !important; }
     /* Streamlit <=1.58 usa [data-baseweb="tab"]; >=1.59 (react-aria) usa
        [data-testid="stTab"] — os dois seletores mantêm o visual nas duas
        gerações de DOM. */
     .stTabs [data-baseweb="tab"],
     .stTabs [data-testid="stTab"] {
-        color: var(--c-muted) !important;
+        color: var(--c-text-2) !important;
         background: transparent !important;
         border: none !important;
-        border-bottom: 2px solid transparent !important;
-        border-radius: 0 !important;
-        padding: 6px 12px !important;
+        border-radius: var(--r-pill) !important;
+        padding: 7px 14px !important;
         font-weight: 500 !important;
-        transition: color 0.15s, border-color 0.15s !important;
+        transition: color 0.15s, background 0.15s !important;
         margin-bottom: 0 !important;
+        white-space: nowrap;
     }
     .stTabs [data-baseweb="tab"]:hover,
-    .stTabs [data-testid="stTab"]:hover { color: var(--c-text) !important; }
+    .stTabs [data-testid="stTab"]:hover { color: var(--c-text) !important; background: rgba(17,17,17,0.05) !important; }
     .stTabs [data-baseweb="tab"][aria-selected="true"],
     .stTabs [data-testid="stTab"][aria-selected="true"] {
-        color: var(--c-text) !important;
-        border-bottom-color: var(--c-accent) !important;
+        color: var(--c-on-ink) !important;
+        background: var(--c-ink) !important;
         box-shadow: none !important;
     }
-    .stTabs [data-baseweb="tab-list"] { border-bottom: 1px solid var(--c-line) !important; }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] p,
+    .stTabs [data-testid="stTab"][aria-selected="true"] p { color: var(--c-on-ink) !important; }
+    .stTabs [data-baseweb="tab-list"] { border-bottom: none !important; }
     .stTabs [data-baseweb="tab-highlight"] { display: none !important; }
     .stTabs [data-baseweb="tab-border"] { display: none !important; }
     .stTabs .react-aria-SelectionIndicator { display: none !important; }
     /* ── Navegação principal do dashboard (st.pills key=dash_nav) ────────
-       Visual de abas: texto muted, sublinhado ocre de 2px na ativa, filete
-       inferior contínuo. As pills quebram linha (todas visíveis de uma
-       vez, sem setas de scroll). */
+       Pílulas: a ativa preta com texto branco, as outras sem fundo. As
+       pills quebram linha (todas visíveis de uma vez, sem setas). */
     div.st-key-dash_nav {
-        border-bottom: 1px solid var(--c-line);
-        margin: 2px 0 12px 0;
+        margin: 4px 0 14px 0;
     }
     div.st-key-dash_nav [data-testid="stButtonGroup"] {
         display: flex;
         flex-wrap: wrap;
-        gap: 0 2px !important;
+        gap: 4px 2px !important;
         padding: 0;
     }
     div.st-key-dash_nav button {
-        color: var(--c-muted) !important;
+        color: var(--c-text-2) !important;
         background: transparent !important;
         border: none !important;
-        border-bottom: 2px solid transparent !important;
-        border-radius: 0 !important;
-        padding: 7px 11px 6px !important;
-        margin-bottom: -1px !important;
+        border-radius: var(--r-pill) !important;
+        padding: 7px 13px !important;
         font-family: var(--f-sans) !important;
         font-weight: 500 !important;
         font-size: 0.85rem !important;
         min-height: 0 !important;
         box-shadow: none !important;
-        transition: color 0.15s, border-color 0.15s !important;
+        transition: color 0.15s, background 0.15s !important;
     }
-    div.st-key-dash_nav button p { font-size: inherit !important; }
+    div.st-key-dash_nav button p { font-size: inherit !important; color: inherit !important; }
     div.st-key-dash_nav button:hover {
         color: var(--c-text) !important;
-        background: transparent !important;
-        border-bottom-color: var(--c-line-2) !important;
+        background: rgba(17,17,17,0.06) !important;
     }
     div.st-key-dash_nav button[data-testid="stBaseButton-pillsActive"],
     div.st-key-dash_nav button[kind="pillsActive"],
     div.st-key-dash_nav button[data-selected],
     div.st-key-dash_nav [role="radio"][aria-checked="true"],
     div.st-key-dash_nav [role="option"][aria-selected="true"] {
-        color: var(--c-text) !important;
-        background: transparent !important;
+        color: var(--c-on-ink) !important;
+        background: var(--c-ink) !important;
         border: none !important;
-        border-bottom: 2px solid var(--c-accent) !important;
         box-shadow: none !important;
         font-weight: 600 !important;
     }
     div.st-key-dash_nav button:focus-visible {
-        outline: 2px solid var(--c-accent) !important; outline-offset: -2px;
+        outline: 2px solid var(--c-text) !important; outline-offset: 2px;
     }
     /* ── Blindagem: painel de aba inativo nunca fica visível ───────────
        O esconder padrão depende de CSS gerado em runtime pelo frontend do
@@ -1047,23 +1112,28 @@ st.markdown("""
     .stTabs [inert] {
         display: none !important;
     }
+    /* ── Telas médias: 3 colunas fixas na grade de métricas ───────────── */
+    @media (max-width: 900px) and (min-width: 641px) {
+        .stat-row { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
     /* ── Mobile (≤640px) ───────────────────────────────────────────────── */
     @media (max-width: 640px) {
-        .block-container { padding: 0.3rem 0.3rem !important; }
+        .block-container { padding: 0.3rem 0.6rem !important; }
         .main-title { font-size: 1.2rem; }
-        .stat-row { flex-wrap: wrap; gap: 4px; }
-        .stat-card { flex: 1 1 calc(33% - 4px); min-width: 0; padding: 6px 4px; }
-        .stat-value { font-size: 0.85rem; }
-        .stat-label { font-size: 0.48rem; letter-spacing: 0.5px; }
+        .stat-row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+        .stat-card { padding: 12px 14px 14px; border-radius: 18px; }
+        .stat-card.stat-hero { padding-top: 48px; }
+        .stat-value { font-size: 1.35rem; }
+        .stat-value-lg { font-size: 1.6rem; }
+        .stat-label { font-size: 0.62rem; letter-spacing: 0.06em; }
         .stTabs [data-baseweb="tab"],
         .stTabs [data-testid="stTab"] {
-            padding: 5px 8px !important;
-            font-size: 0.65rem !important;
-            border-radius: 6px !important;
+            padding: 6px 10px !important;
+            font-size: 0.72rem !important;
         }
         div.st-key-dash_nav button {
-            padding: 6px 7px 5px !important;
-            font-size: 0.7rem !important;
+            padding: 6px 10px !important;
+            font-size: 0.74rem !important;
         }
         .tm-tile { width: calc(50% - 5px); min-width: 130px; height: auto; min-height: 110px; }
     }
@@ -1077,10 +1147,9 @@ st.markdown("""
         transition: all 0.25s ease;
     }
     .tm-tile:hover {
-        background: #1f2337 !important;
-        border-color: rgba(255,255,255,0.12) !important;
+        background: var(--c-surface-2) !important;
         transform: translateY(-2px) !important;
-        box-shadow: 0 8px 24px rgba(0,0,0,0.3) !important;
+        box-shadow: 0 8px 22px rgba(17,17,17,0.08) !important;
         z-index: 1;
     }
     .tm-cod {
@@ -1091,28 +1160,27 @@ st.markdown("""
     }
     .tm-tile:hover .tm-cod { display: block; }
     /* ── Popup nome completo ao clicar/focar no tile (CSS puro, sem JS) ── */
-    .tm-tile:focus { z-index: 100; box-shadow: 0 0 0 2px rgba(255,255,255,0.6), 0 8px 30px rgba(0,0,0,0.5) !important; }
+    .tm-tile:focus { z-index: 100; box-shadow: 0 0 0 2px var(--c-text), 0 8px 24px rgba(17,17,17,0.12) !important; }
     .tm-popup {
         display: none;
         position: absolute;
         top: calc(100% + 8px);
         left: 50%; transform: translateX(-50%);
-        background: rgba(23,22,20,0.97);
-        color: #e6dfd3;
+        background: var(--c-surface-2);
+        color: var(--c-text);
         padding: 8px 14px;
-        border-radius: 10px;
+        border-radius: var(--r-row);
         font-size: 0.8rem; font-weight: 600;
         line-height: 1.4; text-align: center;
         white-space: normal;
         min-width: 180px; max-width: 260px;
         z-index: 9999;
-        box-shadow: 0 6px 24px rgba(0,0,0,0.6);
-        border: 1px solid rgba(143,134,121,0.5);
+        box-shadow: 0 10px 30px rgba(17,17,17,0.16);
         pointer-events: none;
     }
     .tm-popup-code {
-        font-size: 0.62rem; color: #b3aa9c;
-        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.62rem; color: var(--c-muted);
+        font-family: var(--f-mono);
         margin-bottom: 4px; letter-spacing: 0.5px;
     }
     .tm-tile:focus .tm-popup { display: block; }
@@ -1138,20 +1206,20 @@ st.markdown("""
     .tm-tile:nth-child(20) { animation-delay: 0.60s; }
     /* ── Animações de validade nos tiles do Mapa Estoque ─────────────── */
     @keyframes blink-urgent {
-        0%, 100% { border-color: #e5533d; box-shadow: 0 0 0 0 rgba(229,83,61,0); }
-        50%       { border-color: #e5533d; box-shadow: 0 0 0 4px rgba(229,83,61,0.35); }
+        0%, 100% { border-color: var(--c-crit); box-shadow: 0 0 0 0 rgba(211,47,47,0); }
+        50%       { border-color: var(--c-crit); box-shadow: 0 0 0 4px rgba(211,47,47,0.25); }
     }
     @keyframes blink-expiring {
-        0%, 100% { border-color: #e0a030; box-shadow: 0 0 0 0 rgba(239,159,39,0); }
-        50%       { border-color: #e0a030; box-shadow: 0 0 0 4px rgba(239,159,39,0.35); }
+        0%, 100% { border-color: var(--c-warn); box-shadow: 0 0 0 0 rgba(224,138,0,0); }
+        50%       { border-color: var(--c-warn); box-shadow: 0 0 0 4px rgba(224,138,0,0.25); }
     }
     .tm-tile.card-urgent {
         animation: cardPop 0.4s ease both, blink-urgent 0.8s ease-in-out 0.5s infinite;
-        border: 2px solid #e5533d !important;
+        border: 2px solid var(--c-crit) !important;
     }
     .tm-tile.card-expiring {
         animation: cardPop 0.4s ease both, blink-expiring 1.2s ease-in-out 0.5s infinite;
-        border: 2px solid #e0a030 !important;
+        border: 2px solid var(--c-warn) !important;
     }
     /* ── Transição suave entre abas ───────────────────────────────────── */
     @keyframes tabFadeIn {
@@ -1162,11 +1230,14 @@ st.markdown("""
     .stTabs [role="tabpanel"]:not([inert]):not([data-inert="true"]) {
         animation: tabFadeIn 0.3s ease both;
     }
-    /* ── Search input glow ao focar ───────────────────────────────────── */
+    /* ── Campo em foco: anel discreto em grafite ──────────────────────── */
     .stTextInput input:focus {
-        border-color: rgba(45,255,122,0.5) !important;
-        box-shadow: 0 0 0 3px rgba(45,255,122,0.1) !important;
+        box-shadow: none !important;
         transition: all 0.2s ease;
+    }
+    .stApp [data-baseweb="input"]:focus-within,
+    .stApp [data-testid="stTextInputRootElement"]:focus-within {
+        border-color: var(--c-text) !important;
     }
     /* ── Hover nos cards stat-card ────────────────────────────────────── */
     .stat-card {
@@ -1174,14 +1245,14 @@ st.markdown("""
     }
     .stat-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        box-shadow: 0 6px 18px rgba(17,17,17,0.06);
     }
     /* ── Hover nos itens Repor na Loja ────────────────────────────────── */
     .repor-item {
         transition: background 0.2s ease, transform 0.15s ease;
     }
     .repor-item:hover {
-        background: #1a2438 !important;
+        background: var(--c-surface-2) !important;
         transform: translateX(4px);
     }
     /* ── Respeitar prefers-reduced-motion ─────────────────────────────── */
@@ -1202,19 +1273,18 @@ st.markdown("""
     [data-testid="stTabs"] button[aria-label="scroll left"],
     [data-testid="stTabs"] [aria-label="Scroll tab list right"],
     [data-testid="stTabs"] [aria-label="Scroll tab list left"] {
-        width: 44px !important;
-        height: 44px !important;
-        min-width: 44px !important;
-        border-radius: 14px !important;
-        background: linear-gradient(160deg, #0f2a48 0%, #1d4f7f 100%) !important;
-        border: 2px solid #a5f3fc !important;
-        color: #e0f2fe !important;
-        box-shadow: 0 0 0 2px rgba(14,116,144,0.40), 0 8px 20px rgba(44,58,64,0.55) !important;
+        width: 36px !important;
+        height: 36px !important;
+        min-width: 36px !important;
+        border-radius: 50% !important;
+        background: var(--c-ink) !important;
+        border: none !important;
+        color: var(--c-on-ink) !important;
+        box-shadow: 0 4px 12px rgba(17,17,17,0.15) !important;
         transition: all 0.2s ease !important;
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        backdrop-filter: blur(3px);
         z-index: 30 !important;
     }
     [data-testid="stTabScrollRightButton"]:hover,
@@ -1223,9 +1293,7 @@ st.markdown("""
     [data-testid="stTabs"] button[aria-label="scroll left"]:hover,
     [data-testid="stTabs"] [aria-label="Scroll tab list right"]:hover,
     [data-testid="stTabs"] [aria-label="Scroll tab list left"]:hover {
-        background: linear-gradient(160deg, #16406a 0%, #2f6aa3 100%) !important;
-        box-shadow: 0 0 0 2px rgba(111,159,184,0.45), 0 10px 24px rgba(44,58,64,0.7) !important;
-        transform: translateY(-1px) scale(1.07) !important;
+        transform: scale(1.06) !important;
     }
     [data-testid="stTabScrollRightButton"] svg,
     [data-testid="stTabScrollLeftButton"] svg,
@@ -1233,10 +1301,9 @@ st.markdown("""
     [data-testid="stTabs"] button[aria-label="scroll left"] svg,
     [data-testid="stTabs"] [aria-label="Scroll tab list right"] svg,
     [data-testid="stTabs"] [aria-label="Scroll tab list left"] svg {
-        fill: #f0f9ff !important;
-        width: 22px !important;
-        height: 22px !important;
-        filter: drop-shadow(0 0 6px rgba(111,159,184,0.65));
+        fill: var(--c-on-ink) !important;
+        width: 18px !important;
+        height: 18px !important;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -1902,7 +1969,7 @@ def _get_connection():
             produto_nome    TEXT    NOT NULL DEFAULT '',
             categoria_id    TEXT    NOT NULL DEFAULT '',
             categoria_label TEXT    NOT NULL DEFAULT '',
-            categoria_cor   TEXT    NOT NULL DEFAULT '#888888',
+            categoria_cor   TEXT    NOT NULL DEFAULT '#6B6B6B',
             qtd_sistema     REAL    NOT NULL DEFAULT 0,
             qtd_contada     REAL,
             divergencia     REAL,
@@ -1985,7 +2052,7 @@ def _get_connection():
                     COALESCE(em.produto, NEW.produto),
                     COALESCE(em.categoria, NEW.categoria),
                     COALESCE(em.categoria, NEW.categoria),
-                    '#888888',
+                    '#6B6B6B',
                     CAST(NEW.qtd_estoque AS REAL),
                     CASE NEW.status
                         WHEN 'certa' THEN CAST(NEW.qtd_estoque AS REAL)
@@ -2034,7 +2101,7 @@ def _get_connection():
                     NEW.produto,
                     NEW.categoria,
                     NEW.categoria,
-                    '#888888',
+                    '#6B6B6B',
                     CAST(COALESCE(NEW.qtd_sistema_na_contagem, NEW.qtd_sistema) AS REAL),
                     CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL),
                     CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL) - CAST(COALESCE(NEW.qtd_sistema_na_contagem, NEW.qtd_sistema) AS REAL),
@@ -3295,10 +3362,10 @@ def remover_foto_item(foto_id: int):
 
 def _galao_color(pct: float) -> dict:
     if pct > 60:
-        return {"main": "#3fbf7f", "dark": "#15803d", "glow": "#6fd39c"}
+        return {"main": "#2E7D32", "dark": "#2E7D32", "glow": "#2E7D32"}
     if pct > 25:
-        return {"main": "#e0a030", "dark": "#b45309", "glow": "#e8b44f"}
-    return {"main": "#e5533d", "dark": "#991b1b", "glow": "#ec7a66"}
+        return {"main": "#E08A00", "dark": "#E08A00", "glow": "#E08A00"}
+    return {"main": "#D32F2F", "dark": "#D32F2F", "glow": "#D32F2F"}
 
 
 def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> str:
@@ -3340,7 +3407,7 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
 
     scale_lines = "".join(
         f'<line x1="28" y1="{55 + i*28}" x2="272" y2="{55 + i*28}" '
-        f'stroke="rgba(255,255,255,0.1)" stroke-width="0.9"/>'
+        f'stroke="rgba(17,17,17,0.1)" stroke-width="0.9"/>'
         for i in range(1, 5)
     )
 
@@ -3362,10 +3429,10 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
         <stop offset="100%" stop-color="#fff" stop-opacity="0"/>
       </linearGradient>
       <linearGradient id="pl_{bid}" x1="0%" y1="0%" x2="100%" y2="0%">
-        <stop offset="0%" stop-color="#7ab0a8" stop-opacity="0.52"/>
+        <stop offset="0%" stop-color="#00897B" stop-opacity="0.52"/>
         <stop offset="42%" stop-color="#e0f4f0" stop-opacity="0.18"/>
         <stop offset="62%" stop-color="#f0faf8" stop-opacity="0.12"/>
-        <stop offset="100%" stop-color="#7ab0a8" stop-opacity="0.52"/>
+        <stop offset="100%" stop-color="#00897B" stop-opacity="0.52"/>
       </linearGradient>
       <linearGradient id="tp_{bid}" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stop-color="#ccd8dc"/>
@@ -3383,7 +3450,7 @@ def _galao_svg_html(uid: str, nivel: float, capacidade: float, index: int) -> st
           fill="url(#pl_{bid})"/>
     {scale_lines}
     <path d="M22,55 L278,55 L278,195 Q278,206 268,206 L52,206 Q22,206 22,195 Z"
-          fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="1.5"/>
+          fill="none" stroke="rgba(17,17,17,0.18)" stroke-width="1.5"/>
     <path d="M22,55 L278,55 L264,44 L40,44 Z" fill="url(#tp_{bid})"/>
     <line x1="22" y1="55" x2="278" y2="55" stroke="#9aacb4" stroke-width="1.5"/>
     <path d="M40,44 L118,44 L118,22 L60,22 Z" fill="url(#tp_{bid})"/>
@@ -4672,9 +4739,9 @@ def carregar_mapa_produtos_camda() -> dict:
 
 
 _PA_PALETTE = [
-    "#4fcf8f", "#6fb0c0", "#FF6B35", "#e8c170", "#b9a2d6",
-    "#F472B6", "#5fc99a", "#e08a4a", "#8db5ca", "#E879F9",
-    "#e8b44f", "#2DD4BF",
+    "#2E7D32", "#3D63D8", "#E08A00", "#E08A00", "#7E57C2",
+    "#F472B6", "#2E7D32", "#E08A00", "#3D63D8", "#E879F9",
+    "#E08A00", "#00897B",
 ]
 
 
@@ -4850,12 +4917,12 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     st.markdown(f"""
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
       <div style="width:6px;height:36px;border-radius:3px;
-                  background:linear-gradient(180deg,#4fcf8f,#6fb0c0);flex-shrink:0"></div>
+                  background:linear-gradient(180deg,var(--c-ok),var(--c-info));flex-shrink:0"></div>
       <div>
-        <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#F9FAFB">
+        <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;color:var(--c-text)">
           Princípios Ativos em Estoque
         </div>
-        <div style="font-size:12px;color:#8f8679;margin-top:2px">
+        <div style="font-size:12px;color:var(--c-muted);margin-top:2px">
           {total_pa} princípios · {total_prods} produtos comerciais · {_fmt_volume(total_litros_geral if total_litros_geral > 0 else None, total_kg_geral if total_kg_geral > 0 else None, total_vol)} total
         </div>
       </div>
@@ -4865,24 +4932,24 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     # ── 5. KPI cards ─────────────────────────────────────────────────────────
     st.markdown(f"""
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
-      <div style="background:#1c1a17;border:1px solid #24211d;border-radius:12px;padding:14px 18px">
-        <div style="font-size:11px;color:#8f8679;margin-bottom:6px">Princípios Ativos</div>
-        <div style="font-size:22px;font-weight:800;color:#4fcf8f">{total_pa}</div>
+      <div style="background:var(--c-surface-2);border:none;border-radius:12px;padding:14px 18px">
+        <div style="font-size:11px;color:var(--c-muted);margin-bottom:6px">Princípios Ativos</div>
+        <div style="font-size:22px;font-weight:800;color:var(--c-ok)">{total_pa}</div>
       </div>
-      <div style="background:#1c1a17;border:1px solid #24211d;border-radius:12px;padding:14px 18px">
-        <div style="font-size:11px;color:#8f8679;margin-bottom:6px">Produtos Comerciais</div>
-        <div style="font-size:22px;font-weight:800;color:#6fb0c0">{total_prods}</div>
+      <div style="background:var(--c-surface-2);border:none;border-radius:12px;padding:14px 18px">
+        <div style="font-size:11px;color:var(--c-muted);margin-bottom:6px">Produtos Comerciais</div>
+        <div style="font-size:22px;font-weight:800;color:var(--c-info)">{total_prods}</div>
       </div>
-      <div style="background:#1c1a17;border:1px solid #24211d;border-radius:12px;padding:14px 18px">
-        <div style="font-size:11px;color:#8f8679;margin-bottom:6px">Maior Volume</div>
-        <div style="font-size:18px;font-weight:800;color:#e8c170">{maior_vol_txt}</div>
-        <div style="font-size:10px;color:#8f8679;margin-top:2px;overflow:hidden;
+      <div style="background:var(--c-surface-2);border:none;border-radius:12px;padding:14px 18px">
+        <div style="font-size:11px;color:var(--c-muted);margin-bottom:6px">Maior Volume</div>
+        <div style="font-size:18px;font-weight:800;color:var(--c-warn-ink)">{maior_vol_txt}</div>
+        <div style="font-size:10px;color:var(--c-muted);margin-top:2px;overflow:hidden;
                     text-overflow:ellipsis;white-space:nowrap" title="{maior_vol_pa}">{maior_vol_pa}</div>
       </div>
-      <div style="background:#1c1a17;border:1px solid #24211d;border-radius:12px;padding:14px 18px">
-        <div style="font-size:11px;color:#8f8679;margin-bottom:6px">Mais Marcas</div>
-        <div style="font-size:18px;font-weight:800;color:#b9a2d6">{mais_marcas_txt}</div>
-        <div style="font-size:10px;color:#8f8679;margin-top:2px;overflow:hidden;
+      <div style="background:var(--c-surface-2);border:none;border-radius:12px;padding:14px 18px">
+        <div style="font-size:11px;color:var(--c-muted);margin-bottom:6px">Mais Marcas</div>
+        <div style="font-size:18px;font-weight:800;color:var(--c-purple)">{mais_marcas_txt}</div>
+        <div style="font-size:10px;color:var(--c-muted);margin-top:2px;overflow:hidden;
                     text-overflow:ellipsis;white-space:nowrap" title="{mais_marcas_pa}">{mais_marcas_pa}</div>
       </div>
     </div>
@@ -4949,7 +5016,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
     if "Barras" in chart_type:
         bar_colors = [
-            "#e8c170" if pa == pa_sel else (c if pa_sel is None else _rgba(c, 0.35))
+            "#E08A00" if pa == pa_sel else (c if pa_sel is None else _rgba(c, 0.35))
             for pa, c in zip(pa_list, cores)
         ]
         _y_vals = [
@@ -4971,24 +5038,24 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             marker_line_width=0,
             text=_text_vals,
             textposition="outside",
-            textfont=dict(size=10, color="#F9FAFB"),
+            textfont=dict(size=10, color="#111111"),
             hovertemplate="<b>%{x}</b><br>Volume: %{customdata[1]}<br>Produtos: %{customdata[0]}<extra></extra>",
             customdata=_hover_custom,
         ))
         fig.update_layout(
-            paper_bgcolor="#1c1a17",
-            plot_bgcolor="#1c1a17",
-            font=dict(color="#F9FAFB", size=11),
+            paper_bgcolor="#F8F8F8",
+            plot_bgcolor="#F8F8F8",
+            font=dict(color="#111111", size=11),
             height=380,
             margin=dict(l=10, r=20, t=30, b=100),
             xaxis=dict(
-                gridcolor="#24211d", showgrid=False, showline=False,
-                tickangle=-35, tickfont=dict(size=10, color="#8f8679"),
+                gridcolor="#E2E2E2", showgrid=False, showline=False,
+                tickangle=-35, tickfont=dict(size=10, color="#6B6B6B"),
             ),
             yaxis=dict(
-                gridcolor="#24211d", showgrid=True, gridwidth=1,
-                tickfont=dict(size=11, color="#8f8679"),
-                title=dict(text="Volume (L / kg)", font=dict(size=11, color="#8f8679")),
+                gridcolor="#E2E2E2", showgrid=True, gridwidth=1,
+                tickfont=dict(size=11, color="#6B6B6B"),
+                title=dict(text="Volume (L / kg)", font=dict(size=11, color="#6B6B6B")),
             ),
             showlegend=False,
             bargap=0.3,
@@ -4996,7 +5063,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             dragmode=False,
         )
     else:  # Pizza / donut
-        pie_line_colors = ["#e8c170" if pa == pa_sel else "rgba(0,0,0,0)" for pa in pa_list]
+        pie_line_colors = ["#E08A00" if pa == pa_sel else "rgba(0,0,0,0)" for pa in pa_list]
         pie_line_widths = [3 if pa == pa_sel else 0 for pa in pa_list]
         pie_opacities   = [1.0 if pa_sel is None or pa == pa_sel else 0.3 for pa in pa_list]
         _pie_vals = [
@@ -5022,11 +5089,11 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
             sort=False,
         ))
         fig.update_layout(
-            paper_bgcolor="#1c1a17",
-            font=dict(color="#F9FAFB", size=11),
+            paper_bgcolor="#F8F8F8",
+            font=dict(color="#111111", size=11),
             height=420,
             margin=dict(l=10, r=10, t=30, b=30),
-            legend=dict(bgcolor="#1c1a17", bordercolor="#24211d", font=dict(size=10, color="#8f8679")),
+            legend=dict(bgcolor="#F8F8F8", bordercolor="#E2E2E2", font=dict(size=10, color="#6B6B6B")),
             clickmode="event+select",
             dragmode=False,
         )
@@ -5112,16 +5179,16 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 # Sem indentação: Markdown trata 4+ espaços como bloco de código
                 _cod = str(r.get("codigo", ""))
                 _cod_html = (
-                    f'<span style="color:#8f8679;font-size:10px;margin-left:6px">'
+                    f'<span style="color:var(--c-muted);font-size:10px;margin-left:6px">'
                     f'[{_cod}]</span>'
                 ) if _cod and not _cod.startswith("AUTO_") else ""
                 mini_bars += (
                     f'<div style="margin-bottom:10px">'
                     f'<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">'
-                    f'<span style="color:#F9FAFB">{r["produto"]}{_cod_html}</span>'
+                    f'<span style="color:var(--c-text)">{r["produto"]}{_cod_html}</span>'
                     f'<span style="color:{cor};font-weight:700">{_vol_str}</span>'
                     f'</div>'
-                    f'<div style="background:#24211d;border-radius:4px;height:8px;overflow:hidden">'
+                    f'<div style="background:var(--c-surface-2);border-radius:4px;height:8px;overflow:hidden">'
                     f'<div style="width:{pct:.1f}%;height:100%;background:{cor};'
                     f'border-radius:4px;transition:width 0.5s ease"></div>'
                     f'</div>'
@@ -5136,22 +5203,22 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
                 total_drill,
             )
             html_painel = (
-                '<div style="background:#1c1a17;border:1px solid #4fcf8f;border-radius:16px;'
+                '<div style="background:var(--c-surface-2);border:1px solid var(--c-ok);border-radius:16px;'
                 'padding:20px;margin-top:8px;animation:_paFadeIn 0.25s ease">'
                 '<div style="display:flex;align-items:flex-start;'
                 'justify-content:space-between;margin-bottom:16px">'
                 '<div>'
-                f'<div style="font-size:15px;font-weight:700;color:#4fcf8f">🧬 {pa_sel}</div>'
-                f'<div style="font-size:12px;color:#8f8679;margin-top:2px">'
+                f'<div style="font-size:15px;font-weight:700;color:var(--c-ok)">🧬 {pa_sel}</div>'
+                f'<div style="font-size:12px;color:var(--c-muted);margin-top:2px">'
                 f'{n_d} produto{plural} comerci{"ais" if n_d != 1 else "al"}'
                 '</div>'
                 '</div>'
                 '</div>'
                 + mini_bars +
                 '<div style="display:flex;justify-content:flex-end;padding-top:12px;'
-                'border-top:1px solid #24211d;font-size:14px;font-weight:700">'
-                '<span style="color:#8f8679;margin-right:8px">Total:</span>'
-                f'<span style="color:#e8c170">{_total_txt}</span>'
+                'border-top:1px solid var(--c-surface-2);font-size:14px;font-weight:700">'
+                '<span style="color:var(--c-muted);margin-right:8px">Total:</span>'
+                f'<span style="color:var(--c-warn-ink)">{_total_txt}</span>'
                 '</div>'
                 '</div>'
                 '<style>'
@@ -5202,41 +5269,41 @@ def _render_resumo_classes_vet(df_vet: pd.DataFrame):
     corpo = ""
     for x in linhas_resumo:
         med = "—" if pd.isna(x["mediana"]) else f'{x["mediana"]:.1f}'.rstrip("0").rstrip(".")
-        cor_classe = "#8f8679" if x["classe"] == _CLASSE_VET_SEM else "#F9FAFB"
+        cor_classe = "#6B6B6B" if x["classe"] == _CLASSE_VET_SEM else "#111111"
         crit_html = (f'<span style="color:{_FAIXAS_COBERTURA[_FAIXA_CRITICA]["cor"]};font-weight:700">'
-                     f'{x["crit"]}</span>') if x["crit"] else '<span style="color:#3a352d">0</span>'
+                     f'{x["crit"]}</span>') if x["crit"] else '<span style="color:var(--c-label)">0</span>'
         baixo_html = (f'<span style="color:{_FAIXAS_COBERTURA[_FAIXA_BAIXA]["cor"]};font-weight:700">'
-                      f'{x["baixo"]}</span>') if x["baixo"] else '<span style="color:#3a352d">0</span>'
+                      f'{x["baixo"]}</span>') if x["baixo"] else '<span style="color:var(--c-label)">0</span>'
         corpo += (
             f'<tr>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid #24211d;color:{cor_classe};font-size:12px">'
+            f'<td style="padding:6px 8px;border-bottom:1px solid var(--c-surface-2);color:{cor_classe};font-size:12px">'
             f'{x["classe"]}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid #24211d;text-align:right;'
-            f'color:#b3aa9c;font-family:\'IBM Plex Mono\',monospace;font-size:12px">{x["itens"]}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid #24211d;text-align:right;'
+            f'<td style="padding:6px 8px;border-bottom:1px solid var(--c-surface-2);text-align:right;'
+            f'color:var(--c-text-2);font-family:\'IBM Plex Mono\',monospace;font-size:12px">{x["itens"]}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid var(--c-surface-2);text-align:right;'
             f'font-family:\'IBM Plex Mono\',monospace;font-size:12px">{crit_html}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid #24211d;text-align:right;'
+            f'<td style="padding:6px 8px;border-bottom:1px solid var(--c-surface-2);text-align:right;'
             f'font-family:\'IBM Plex Mono\',monospace;font-size:12px">{baixo_html}</td>'
-            f'<td style="padding:6px 8px;border-bottom:1px solid #24211d;text-align:right;'
-            f'color:#b3aa9c;font-family:\'IBM Plex Mono\',monospace;font-size:12px">{med}</td>'
+            f'<td style="padding:6px 8px;border-bottom:1px solid var(--c-surface-2);text-align:right;'
+            f'color:var(--c-text-2);font-family:\'IBM Plex Mono\',monospace;font-size:12px">{med}</td>'
             f'</tr>'
         )
 
     cab = ''.join(
-        f'<th style="padding:6px 8px;text-align:{al};font-size:10px;color:#8f8679;'
+        f'<th style="padding:6px 8px;text-align:{al};font-size:10px;color:var(--c-muted);'
         f'text-transform:uppercase;letter-spacing:1px;font-weight:700;'
-        f'border-bottom:1px solid #24211d">{t}</th>'
+        f'border-bottom:1px solid var(--c-surface-2)">{t}</th>'
         for t, al in [("Classe", "left"), ("Itens", "right"),
                       (f'{_FAIXAS_COBERTURA[_FAIXA_CRITICA]["icone"]} Crítico', "right"),
                       (f'{_FAIXAS_COBERTURA[_FAIXA_BAIXA]["icone"]} Baixo', "right"),
                       ("Cob. mediana", "right")]
     )
     st.markdown(
-        f'<div style="background:#1c1a17;border:1px solid #24211d;border-radius:16px;'
+        f'<div style="background:var(--c-surface-2);border:none;border-radius:16px;'
         f'padding:16px 18px;margin-top:8px">'
-        f'<div style="font-size:14px;font-weight:700;color:#F9FAFB;margin-bottom:10px">'
+        f'<div style="font-size:14px;font-weight:700;color:var(--c-text);margin-bottom:10px">'
         f'🐄 Resumo por classe veterinária '
-        f'<span style="font-size:11px;color:#8f8679;font-weight:400">'
+        f'<span style="font-size:11px;color:var(--c-muted);font-weight:400">'
         f'· {len(linhas_resumo)} classe(s) · piores primeiro</span></div>'
         f'<table style="width:100%;border-collapse:collapse"><thead><tr>{cab}</tr></thead>'
         f'<tbody>{corpo}</tbody></table></div>',
@@ -5325,12 +5392,12 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
     st.markdown(f"""
     <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">
       <div style="width:6px;height:36px;border-radius:3px;
-                  background:linear-gradient(180deg,#e5533d,#6f9fb8);flex-shrink:0"></div>
+                  background:linear-gradient(180deg,var(--c-crit),var(--c-info));flex-shrink:0"></div>
       <div>
-        <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;color:#F9FAFB">
+        <div style="font-size:20px;font-weight:800;letter-spacing:-0.5px;color:var(--c-text)">
           Cobertura de Estoque
         </div>
-        <div style="font-size:12px;color:#8f8679;margin-top:2px">
+        <div style="font-size:12px;color:var(--c-muted);margin-top:2px">
           {n_analisados} produtos analisados · velocidade = vendas dos últimos 90 dias ÷ 3 · estoque físico disponível
         </div>
       </div>
@@ -5368,26 +5435,26 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
         linhas_urg = ""
         for u in urgentes[:30]:
             if u["dias"] < 0:
-                prazo = f'<span style="color:#e5533d;font-weight:700">VENCIDO há {-u["dias"]}d</span>'
+                prazo = f'<span style="color:var(--c-crit);font-weight:700">VENCIDO há {-u["dias"]}d</span>'
             else:
-                cor_d = "#e5533d" if u["dias"] <= 60 else "#e0a030"
+                cor_d = "#D32F2F" if u["dias"] <= 60 else "#E08A00"
                 prazo = f'<span style="color:{cor_d};font-weight:700">vence em {u["dias"]}d</span>'
             fx = _FAIXAS_COBERTURA[u["faixa"]]
             linhas_urg += (
                 f'<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;'
-                f'padding:6px 0;border-bottom:1px solid #24211d;font-size:12px">'
-                f'<span style="color:#F9FAFB;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
-                f'{u["produto"]} <span style="color:#8f8679;font-size:10px">[{u["codigo"]}]</span>'
+                f'padding:6px 0;border-bottom:1px solid var(--c-surface-2);font-size:12px">'
+                f'<span style="color:var(--c-text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+                f'{u["produto"]} <span style="color:var(--c-muted);font-size:10px">[{u["codigo"]}]</span>'
                 f'<span style="color:{fx["cor"]};font-size:10px;margin-left:6px">{fx["icone"]} {u["faixa"]}</span></span>'
                 f'<span style="white-space:nowrap;font-family:\'IBM Plex Mono\',monospace;font-size:11px">'
-                f'<span style="color:#b3aa9c">lote {u["lote"]} · {u["qtd_lote"]} un · {u["venc"].strftime("%d/%m/%Y")} · </span>{prazo}</span>'
+                f'<span style="color:var(--c-text-2)">lote {u["lote"]} · {u["qtd_lote"]} un · {u["venc"].strftime("%d/%m/%Y")} · </span>{prazo}</span>'
                 f'</div>'
             )
-        extra_urg = f'<div style="font-size:11px;color:#8f8679;margin-top:6px">+ {len(urgentes)-30} lote(s) — ver aba 📅 Validade</div>' if len(urgentes) > 30 else ""
+        extra_urg = f'<div style="font-size:11px;color:var(--c-muted);margin-top:6px">+ {len(urgentes)-30} lote(s) — ver aba 📅 Validade</div>' if len(urgentes) > 30 else ""
         st.markdown(
-            f'<div style="background:#1c1a17;border:1px solid #e5533d;border-radius:12px;'
+            f'<div style="background:var(--c-surface-2);border:1px solid var(--c-crit);border-radius:12px;'
             f'padding:14px 18px;margin-bottom:20px">'
-            f'<div style="font-size:14px;font-weight:800;color:#e5533d;margin-bottom:8px">'
+            f'<div style="font-size:14px;font-weight:800;color:var(--c-crit);margin-bottom:8px">'
             f'🔥 Escoar com urgência — {len(urgentes)} lote(s) de itens MORTO/EXCESSO vencendo em ≤ 180 dias</div>'
             f'{linhas_urg}{extra_urg}</div>',
             unsafe_allow_html=True,
@@ -5397,12 +5464,12 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
     cards = ""
     for f, meta in _FAIXAS_COBERTURA.items():
         cards += (
-            f'<div style="background:#1c1a17;border:1px solid #24211d;border-radius:12px;padding:12px 14px">'
-            f'<div style="font-size:10px;color:#8f8679;margin-bottom:4px;text-transform:uppercase;'
+            f'<div style="background:var(--c-surface-2);border:none;border-radius:12px;padding:12px 14px">'
+            f'<div style="font-size:10px;color:var(--c-muted);margin-bottom:4px;text-transform:uppercase;'
             f'letter-spacing:1px">{meta["icone"]} {f}</div>'
             f'<div style="font-size:22px;font-weight:700;color:{meta["cor"]};'
             f'font-family:\'IBM Plex Mono\',monospace">{contagens[f]}</div>'
-            f'<div style="font-size:10px;color:#8f8679;margin-top:2px">{meta["desc"]}</div>'
+            f'<div style="font-size:10px;color:var(--c-muted);margin-top:2px">{meta["desc"]}</div>'
             f'</div>'
         )
     st.markdown(
@@ -5496,7 +5563,7 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
         if r["faixa"] == "MORTO":
             # Sem velocidade: barra proporcional à quantidade parada
             pct = (disp / max_qtd_morto * 100) if max_qtd_morto > 0 else 0
-            badge = (' <span style="background:rgba(224,160,48,0.15);color:#e0a030;font-size:9px;'
+            badge = (' <span style="background:rgba(224,138,0,0.15);color:var(--c-warn-ink);font-size:9px;'
                      'padding:1px 6px;border-radius:8px;font-weight:700">esfriando</span>'
                      ) if r["esfriando"] else ""
             janela = "90" if r["esfriando"] else "180"
@@ -5509,21 +5576,21 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
             detalhe = f"{disp} un · vende {vel_txt}/mês · {cob_txt} meses de cobertura"
         _cod = str(r["codigo"])
         _cod_html = (
-            f'<span style="color:#8f8679;font-size:10px;margin-left:6px">[{_cod}]</span>'
+            f'<span style="color:var(--c-muted);font-size:10px;margin-left:6px">[{_cod}]</span>'
         ) if _cod and not _cod.startswith("AUTO_") else ""
         if is_vet:
-            _cor_cls = "#8f8679" if r["classe"] == _CLASSE_VET_SEM else "#b9a2d6"
+            _cor_cls = "#6B6B6B" if r["classe"] == _CLASSE_VET_SEM else "#7E57C2"
             _cod_html += (f'<span style="color:{_cor_cls};font-size:10px;margin-left:6px">'
                           f'· {r["classe"]}</span>')
         # Sem indentação: Markdown trata 4+ espaços como bloco de código
         linhas += (
             f'<div style="margin-bottom:10px">'
             f'<div style="display:flex;justify-content:space-between;gap:10px;font-size:12px;margin-bottom:4px">'
-            f'<span style="color:#F9FAFB;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
+            f'<span style="color:var(--c-text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'
             f'{meta["icone"]} {r["produto"]}{_cod_html}{badge}</span>'
             f'<span style="color:{cor};font-weight:700;white-space:nowrap">{detalhe}</span>'
             f'</div>'
-            f'<div style="background:#24211d;border-radius:4px;height:8px;overflow:hidden">'
+            f'<div style="background:var(--c-surface-2);border-radius:4px;height:8px;overflow:hidden">'
             f'<div style="width:{pct:.1f}%;height:100%;background:{cor};'
             f'border-radius:4px;transition:width 0.5s ease"></div>'
             f'</div>'
@@ -5532,11 +5599,11 @@ def build_cobertura_tab(df_cob: pd.DataFrame):
 
     titulo_lista = f'{_FAIXAS_COBERTURA[faixa_sel]["icone"]} {faixa_sel}' if faixa_sel else "Todas as faixas"
     st.markdown(
-        f'<div style="background:#1c1a17;border:1px solid #24211d;border-radius:16px;'
+        f'<div style="background:var(--c-surface-2);border:none;border-radius:16px;'
         f'padding:20px;margin-top:8px">'
         f'<div style="display:flex;justify-content:space-between;margin-bottom:14px">'
-        f'<span style="font-size:14px;font-weight:700;color:#F9FAFB">{titulo_lista}</span>'
-        f'<span style="font-size:12px;color:#8f8679">{len(df_view)} produto(s)</span>'
+        f'<span style="font-size:14px;font-weight:700;color:var(--c-text)">{titulo_lista}</span>'
+        f'<span style="font-size:12px;color:var(--c-muted)">{len(df_view)} produto(s)</span>'
         f'</div>{linhas}</div>',
         unsafe_allow_html=True,
     )
@@ -7047,14 +7114,14 @@ def _rack_html(paletes: dict, rua: str, face: str, highlight_keys: set = None) -
                 produto = info.get("produto", "")
                 qtd     = info.get("quantidade", "")
                 unidade = info.get("unidade", "")
-                cor     = info.get("cor", "#6fd39c")
-                bg      = "#e8b44f" if pk in hl else cor
+                cor     = info.get("cor", "#2E7D32")
+                bg      = "#E08A00" if pk in hl else cor
                 nome_c  = short_name(produto)          # nome comercial sem categoria
                 short   = (nome_c[:9] + "…") if len(nome_c) > 10 else nome_c
                 qty_str = f"{qtd} {unidade}".strip() if qtd is not None else ""
                 rows_html += (
                     f'<div class="mr-cell occ" draggable="true"'
-                    f' style="background:{bg};color:#171614;"'
+                    f' style="background:{bg};color:var(--c-text);"'
                     f' title="↕ Arraste · {produto} — {qty_str}"'
                     f' ondragstart="dStart(event,\'{pk_j}\')"'
                     f' ondragover="event.preventDefault()"'
@@ -7098,20 +7165,21 @@ function dDrop(e,tgt){
   }catch(err){console.warn('dnd signal:',err);}
 }
 </script>"""
+    # Roda em iframe: os tokens --c-* chegam via iframe_compat.html.
     css = """<style>
-body{margin:0;background:#171614;}
-.mr-wrap{background:#171614;border-radius:10px;padding:12px 14px;overflow-x:auto;font-family:monospace;}
+body{margin:0;background:var(--c-surface);}
+.mr-wrap{background:var(--c-surface);border-radius:var(--r-card);padding:12px 14px;overflow-x:auto;font-family:monospace;}
 .mr-row{display:flex;gap:3px;margin-bottom:3px;align-items:center;}
-.mr-lvl{width:22px;color:#6b6358;font-size:0.6rem;font-weight:700;text-align:right;flex-shrink:0;padding-right:4px;}
-.mr-chd{width:54px;color:#3a352d;font-size:0.55rem;text-align:center;flex-shrink:0;}
+.mr-lvl{width:22px;color:var(--c-faint);font-size:0.6rem;font-weight:700;text-align:right;flex-shrink:0;padding-right:4px;}
+.mr-chd{width:54px;color:var(--c-muted);font-size:0.55rem;text-align:center;flex-shrink:0;}
 .mr-cell{width:54px;height:48px;border-radius:5px;display:flex;flex-direction:column;
   align-items:center;justify-content:center;flex-shrink:0;
-  border:1px solid rgba(255,255,255,0.07);}
-.mr-cell.emp{background:#2e2a24;color:#3a352d;border-style:dashed;font-size:1rem;cursor:default;}
+  border:1px solid rgba(17,17,17,0.07);}
+.mr-cell.emp{background:var(--c-surface-2);color:var(--c-label);border-color:var(--c-line-2);border-style:dashed;font-size:1rem;cursor:default;}
 .mr-cell.occ{cursor:grab;transition:filter .15s,opacity .15s;}
-.mr-cell.occ:hover{filter:brightness(1.2);}
+.mr-cell.occ:hover{filter:brightness(0.95);}
 .mr-cell.occ:active{cursor:grabbing;}
-.mr-cell.dt{background:#4a7a94!important;color:#fff!important;border:2px dashed #8db5ca!important;}
+.mr-cell.dt{background:var(--c-info)!important;color:#fff!important;border:2px dashed var(--c-info)!important;}
 .mr-pname{font-size:0.48rem;font-weight:700;text-align:center;line-height:1.2;
   word-break:break-word;padding:0 2px;max-width:52px;overflow:hidden;}
 .mr-qty{font-size:0.42rem;opacity:.75;margin-top:1px;}
@@ -7165,12 +7233,12 @@ def render_mapa_visual(conn):
                 face_label_r = "Frente" if loc["face"] == "A" else "Fundo"
                 qty_str = f"{loc['quantidade']} {loc['unidade']}".strip() if loc["quantidade"] is not None else ""
                 st.markdown(
-                    f'<div style="background:#2e2a24;border:1px solid #4a7a94;border-radius:8px;'
+                    f'<div style="background:var(--c-line);border:1px solid var(--c-info);border-radius:8px;'
                     f'padding:8px 14px;margin-bottom:4px;display:flex;gap:16px;align-items:center;">'
-                    f'<span style="color:#8db5ca;font-weight:700;font-size:0.85rem;">🏷 {loc["rua"]}-{loc["face"]}</span>'
-                    f'<span style="color:#b3aa9c;font-size:0.75rem;">{face_label_r}</span>'
-                    f'<span style="color:#ece6dc;font-size:0.8rem;">📍 Coluna {loc["coluna"]}, Nível {loc["nivel"]}</span>'
-                    f'<span style="color:#8f8679;font-size:0.75rem;">{qty_str}</span>'
+                    f'<span style="color:var(--c-info);font-weight:700;font-size:0.85rem;">🏷 {loc["rua"]}-{loc["face"]}</span>'
+                    f'<span style="color:var(--c-text-2);font-size:0.75rem;">{face_label_r}</span>'
+                    f'<span style="color:var(--c-text);font-size:0.8rem;">📍 Coluna {loc["coluna"]}, Nível {loc["nivel"]}</span>'
+                    f'<span style="color:var(--c-muted);font-size:0.75rem;">{qty_str}</span>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -7549,8 +7617,8 @@ def render_mapa_visual(conn):
                                   format_func=lambda k: f"{k} — {paletes[k]['produto']}")
             info_del = paletes[pk_del]
             st.markdown(
-                f'<div style="background:#2e2a24;border:1px solid #ef444444;border-radius:8px;padding:10px 14px;">'
-                f'<b style="color:#ec7a66;">{pk_del}</b> · {info_del["produto"]} · '
+                f'<div style="background:var(--c-line);border:1px solid #D32F2F44;border-radius:8px;padding:10px 14px;">'
+                f'<b style="color:var(--c-crit);">{pk_del}</b> · {info_del["produto"]} · '
                 f'{info_del["quantidade"]} {info_del["unidade"]}</div>',
                 unsafe_allow_html=True,
             )
@@ -7584,8 +7652,8 @@ def render_mapa_visual(conn):
                 with pcol_name:
                     st.markdown(
                         f'<span style="display:inline-block;width:12px;height:12px;border-radius:3px;'
-                        f'background:{p["cor_hex"] or "#6fd39c"};margin-right:6px;vertical-align:middle;"></span>'
-                        f'<b>{_hx(p["nome"])}</b> <span style="color:#8f8679;font-size:0.8rem;">({_hx(p["unidade_pad"])})</span>',
+                        f'background:{p["cor_hex"] or "#2E7D32"};margin-right:6px;vertical-align:middle;"></span>'
+                        f'<b>{_hx(p["nome"])}</b> <span style="color:var(--c-muted);font-size:0.8rem;">({_hx(p["unidade_pad"])})</span>',
                         unsafe_allow_html=True,
                     )
                 with pcol_del:
@@ -7624,7 +7692,7 @@ def render_mapa_visual(conn):
         _hcols = st.columns([0.55] + [1.0] * 13)
         for _ci in range(1, 14):
             _hcols[_ci].markdown(
-                f"<div style='text-align:center;font-size:0.6rem;color:#8f8679;'>C{_ci}</div>",
+                f"<div style='text-align:center;font-size:0.6rem;color:var(--c-muted);'>C{_ci}</div>",
                 unsafe_allow_html=True,
             )
 
@@ -7632,7 +7700,7 @@ def render_mapa_visual(conn):
         for _nivel in range(4, 0, -1):
             _rcols = st.columns([0.55] + [1.0] * 13)
             _rcols[0].markdown(
-                f"<div style='text-align:right;font-size:0.65rem;color:#8f8679;"
+                f"<div style='text-align:right;font-size:0.65rem;color:var(--c-muted);"
                 f"padding-top:10px;padding-right:4px;'>N{_nivel}</div>",
                 unsafe_allow_html=True,
             )
@@ -7717,16 +7785,16 @@ def render_mapa_visual(conn):
             z=z_data,
             x=faces_hm,
             y=_all_hm,
-            colorscale=[[0, "#2e2a24"], [0.35, "#854d0e"], [0.70, "#e0a030"], [1, "#3fbf7f"]],
+            colorscale=[[0, "#E2E2E2"], [0.35, "#E08A00"], [0.70, "#E08A00"], [1, "#2E7D32"]],
             zmin=0, zmax=100,
             text=z_text,
             texttemplate="%{text}",
             showscale=True,
             colorbar=dict(
-                title=dict(text="% ocup.", font=dict(color="#b3aa9c")),
+                title=dict(text="% ocup.", font=dict(color="#444444")),
                 ticksuffix="%",
                 len=0.85,
-                tickfont=dict(color="#b3aa9c"),
+                tickfont=dict(color="#444444"),
             ),
         )
     )
@@ -7735,20 +7803,20 @@ def render_mapa_visual(conn):
         type="line",
         x0=-0.5, x1=1.5,
         y0=5.5,  y1=5.5,
-        line=dict(color="#3a352d", width=2, dash="dot"),
+        line=dict(color="#D0D0D0", width=2, dash="dot"),
     )
     fig_hm.update_layout(
-        paper_bgcolor="#171614",
-        plot_bgcolor="#171614",
-        font=dict(color="#b3aa9c", size=12),
+        paper_bgcolor="#F8F8F8",
+        plot_bgcolor="#F8F8F8",
+        font=dict(color="#444444", size=12),
         margin=dict(l=55, r=60, t=30, b=20),
         height=390,
         xaxis=dict(side="top"),
         annotations=[
             dict(x=-0.62, y=2.5,  text="Fileira 1", showarrow=False,
-                 font=dict(color="#6b6358", size=10), xref="x", yref="y"),
+                 font=dict(color="#8A8A8A", size=10), xref="x", yref="y"),
             dict(x=-0.62, y=8.5,  text="Fileira 2", showarrow=False,
-                 font=dict(color="#6b6358", size=10), xref="x", yref="y"),
+                 font=dict(color="#8A8A8A", size=10), xref="x", yref="y"),
         ],
     )
     st.plotly_chart(fig_hm, use_container_width=True)
@@ -7756,12 +7824,12 @@ def render_mapa_visual(conn):
 
 def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: dict = None, divergencias_map: dict = None, validade_map: dict = None, color_mode: str = "divergencia", sort_fn=None, ctx: str = "", observacoes_map: dict = None, ultima_contagem_map: dict = None) -> str:
     if df.empty:
-        return '<div style="color:#8f8679;text-align:center;padding:40px;">Nenhum produto para exibir</div>'
+        return '<div style="color:var(--c-muted);text-align:center;padding:40px;">Nenhum produto para exibir</div>'
 
     if filter_cat != "TODOS":
         df = df[df["categoria"] == filter_cat]
     if df.empty:
-        return '<div style="color:#8f8679;text-align:center;padding:40px;">Nenhum produto nesta categoria</div>'
+        return '<div style="color:var(--c-muted);text-align:center;padding:40px;">Nenhum produto nesta categoria</div>'
 
     if avarias_map is None:
         avarias_map = {}
@@ -7823,10 +7891,10 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 return "", ""
             if dias <= 30:
                 blink = " card-urgent"
-                color = "#e5533d"
+                color = "#D32F2F"
             elif dias <= 60:
                 blink = " card-expiring"
-                color = "#e0a030"
+                color = "#E08A00"
             else:
                 return "", ""
             fmt = f"{exp.day:02d}/{_MONTHS_PT[exp.month-1]}/{exp.year}"
@@ -7846,16 +7914,16 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
 
     # Category badge style map
     _CAT_STYLES = {
-        "HERBICIDA":    ("rgba(63,191,127,0.12)",   "#3fbf7f"),
-        "FUNGICIDA":    ("rgba(111,159,184,0.12)",   "#6f9fb8"),
-        "INSETICIDA":   ("rgba(169,139,201,0.12)",   "#a98bc9"),
-        "FERTILIZANTE": ("rgba(234,179,8,0.12)",    "#eab308"),
-        "SEMENTE":      ("rgba(249,115,22,0.12)",   "#d9772f"),
-        "ACARICIDA":    ("rgba(95,168,168,0.12)",    "#5fa8a8"),
-        "ADJUVANTE":    ("rgba(143,134,121,0.12)",  "#b3aa9c"),
-        "OUTROS":       ("rgba(143,134,121,0.12)",  "#b3aa9c"),
+        "HERBICIDA":    ("rgba(46,125,50,0.12)",   "#2E7D32"),
+        "FUNGICIDA":    ("rgba(61,99,216,0.12)",   "#3D63D8"),
+        "INSETICIDA":   ("rgba(126,87,194,0.12)",   "#7E57C2"),
+        "FERTILIZANTE": ("rgba(224,138,0,0.12)",    "#E08A00"),
+        "SEMENTE":      ("rgba(224,138,0,0.12)",   "#E08A00"),
+        "ACARICIDA":    ("rgba(0,137,123,0.12)",    "#00897B"),
+        "ADJUVANTE":    ("rgba(17,17,17,0.12)",  "#444444"),
+        "OUTROS":       ("rgba(17,17,17,0.12)",  "#444444"),
     }
-    _CAT_DEFAULT = ("rgba(143,134,121,0.12)", "#b3aa9c")
+    _CAT_DEFAULT = ("rgba(17,17,17,0.12)", "#444444")
 
     ctx_attr = f' data-ctx="{ctx}"' if ctx else ''
 
@@ -7912,41 +7980,41 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     # Divergência antiga sem quantidades registradas: mantém vermelho
                     if diff < 0 or (status_c == "divergencia" and diff == 0
                                     and not _tem_contagem):
-                        border_color = "#e5533d"
-                        card_bg = "rgba(229,83,61,0.72)"
+                        border_color = "#D32F2F"
+                        card_bg = "var(--c-crit-soft)"
                     elif diff > 0:
-                        border_color = "#5fa8a8"
-                        card_bg = "rgba(95,168,168,0.72)"
+                        border_color = "#00897B"
+                        card_bg = "#E0F2F1"
                     else:
-                        border_color = "#3fbf7f"
-                        card_bg = "rgba(63,191,127,0.72)"
-                    qty_color = "#ffffff"
+                        border_color = "#2E7D32"
+                        card_bg = "var(--c-ok-soft)"
+                    qty_color = border_color
                     card_border = f"border:2px solid {border_color};"
                 else:
-                    border_color = "#e0a030"
-                    card_bg = "linear-gradient(135deg, rgba(224,160,48,0.12), #1f1d1a)"
-                    qty_color = "#ece6dc"
-                    card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #e0a030;"
+                    border_color = "#E08A00"
+                    card_bg = "#FFFFFF"
+                    qty_color = "#111111"
+                    card_border = "border:1px solid rgba(17,17,17,0.06);border-left:3px solid var(--c-warn);"
             elif qtd_av > 0:
-                border_color = "#d9772f"
-                card_bg = "linear-gradient(135deg, rgba(249,115,22,0.08), #1f1d1a)"
-                qty_color = "#d9772f"
-                card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #d9772f;"
+                border_color = "#E08A00"
+                card_bg = "#FFFFFF"
+                qty_color = "#E08A00"
+                card_border = "border:1px solid rgba(17,17,17,0.06);border-left:3px solid var(--c-warn);"
             elif diff == 0:
-                border_color = "#3fbf7f"
-                card_bg = "#1f1d1a"
-                qty_color = "#ece6dc"
-                card_border = "border:1px solid rgba(255,255,255,0.06);border-left:3px solid #3fbf7f;"
+                border_color = "#2E7D32"
+                card_bg = "#FFFFFF"
+                qty_color = "#111111"
+                card_border = "border:1px solid rgba(17,17,17,0.06);border-left:3px solid var(--c-ok);"
             elif diff < 0:
-                border_color = "#e5533d"
-                card_bg = "linear-gradient(135deg, rgba(229,83,61,0.28), rgba(180,20,20,0.18))"
-                qty_color = "#ffffff"
-                card_border = "border:2px solid rgba(229,83,61,0.7);"
+                border_color = "#D32F2F"
+                card_bg = "var(--c-crit-soft)"
+                qty_color = "#D32F2F"
+                card_border = "border:2px solid rgba(211,47,47,0.55);"
             else:
-                border_color = "#5fa8a8"
-                card_bg = "linear-gradient(135deg, rgba(95,168,168,0.28), rgba(0,100,140,0.18))"
-                qty_color = "#ffffff"
-                card_border = "border:2px solid rgba(95,168,168,0.7);"
+                border_color = "#00897B"
+                card_bg = "#E0F2F1"
+                qty_color = "#00897B"
+                card_border = "border:2px solid rgba(0,137,123,0.55);"
 
             # Category badge (ou código do produto no modo cíclico)
             cat_upper = str(r["categoria"]).strip().upper()
@@ -7956,7 +8024,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     f'<div style="display:inline-flex;align-items:center;gap:5px;'
                     f'font-size:11px;font-family:\'IBM Plex Mono\',monospace;font-weight:600;'
                     f'padding:3px 8px;border-radius:6px;'
-                    f'background:rgba(255,255,255,0.07);color:#ece6dc;margin-bottom:10px;flex-shrink:0;">'
+                    f'background:rgba(17,17,17,0.07);color:var(--c-text);margin-bottom:10px;flex-shrink:0;">'
                     f'<span style="width:6px;height:6px;border-radius:50%;background:{border_color};flex-shrink:0;"></span>'
                     f'{cod_str}</div>'
                 )
@@ -7976,12 +8044,12 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     f'<div style="position:absolute;top:10px;right:10px;'
                     f'font-size:10px;font-weight:600;font-family:\'IBM Plex Mono\',monospace;'
                     f'padding:2px 7px;border-radius:6px;'
-                    f'background:rgba(249,115,22,0.12);color:#d9772f;">⚠ {qtd_av} av.</div>'
+                    f'background:rgba(224,138,0,0.12);color:var(--c-warn-ink);">⚠ {qtd_av} av.</div>'
                 )
             elif diff != 0:
                 sign = "▲" if diff > 0 else "▼"
-                bdg_bg = "rgba(255,255,255,0.18)"
-                bdg_fg = "#ffffff"
+                bdg_bg = "var(--c-ink)"
+                bdg_fg = "var(--c-on-ink)"
                 badge_html = (
                     f'<div style="position:absolute;top:10px;right:10px;'
                     f'font-size:10px;font-weight:600;font-family:\'IBM Plex Mono\',monospace;'
@@ -8013,7 +8081,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                         ciclo_date_html = (
                             f'<div style="margin-top:6px;font-size:10px;font-weight:600;'
                             f'font-family:\'IBM Plex Mono\',monospace;letter-spacing:0.3px;'
-                            f'color:rgba(255,255,255,0.92);">📅 {_data_fmt}</div>'
+                            f'color:var(--c-text);">📅 {_data_fmt}</div>'
                         )
                 else:
                     _ult = ultima_contagem_norm.get(cod_str)
@@ -8021,13 +8089,13 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     _ult_ts = str(_ult_ts or "").strip()
                     if _ult_ts and _ult_ts.lower() != "none" and len(_ult_ts) >= 10:
                         if _ult_dias is None:
-                            _idade_txt, _idade_cor = "", "rgba(255,255,255,0.45)"
+                            _idade_txt, _idade_cor = "", "rgba(17,17,17,0.45)"
                         elif _ult_dias > 60:
-                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#ff6b6b"
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#D32F2F"
                         elif _ult_dias > 30:
-                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#e0a030"
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "#E08A00"
                         else:
-                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "rgba(255,255,255,0.45)"
+                            _idade_txt, _idade_cor = f" · {_ult_dias}d", "rgba(17,17,17,0.45)"
                         ciclo_date_html = (
                             f'<div style="margin-top:6px;font-size:10px;font-weight:600;'
                             f'font-family:\'IBM Plex Mono\',monospace;letter-spacing:0.3px;'
@@ -8037,7 +8105,7 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                         ciclo_date_html = (
                             '<div style="margin-top:6px;font-size:10px;font-weight:600;'
                             'font-family:\'IBM Plex Mono\',monospace;letter-spacing:0.3px;'
-                            'color:#a98bc9;">📅 nunca contado</div>'
+                            'color:var(--c-purple);">📅 nunca contado</div>'
                         )
 
             # Cooperado(s) com divergência para exibir no popup CSS do card
@@ -8055,8 +8123,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 if _coops:
                     _coops_txt = ", ".join(f"{_n} ({_s}{_q})" for _n, _q, _s in _coops)
                     cooperado_popup_html = (
-                        f'<div style="font-size:0.82rem;font-weight:600;color:#e6dfd3;margin-top:6px;'
-                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
+                        f'<div style="font-size:0.82rem;font-weight:600;color:var(--c-text);margin-top:6px;'
+                        f'border-top:1px solid rgba(17,17,17,0.12);padding-top:6px;">'
                         f'&#x1F464; {_coops_txt}</div>'
                     )
 
@@ -8069,10 +8137,10 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                 _obs_dt_fmt = f"{_obs_dt[8:10]}/{_obs_dt[5:7]}" if len(_obs_dt) >= 10 else ""
                 if _obs_txt:
                     obs_popup_html = (
-                        f'<div style="font-size:0.78rem;font-weight:500;color:#d6cfc3;margin-top:6px;'
-                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
+                        f'<div style="font-size:0.78rem;font-weight:500;color:var(--c-text);margin-top:6px;'
+                        f'border-top:1px solid rgba(17,17,17,0.12);padding-top:6px;">'
                         f'&#x1F4AC; {_obs_txt}'
-                        + (f' <span style="color:#b3aa9c;">&middot; {_obs_dt_fmt}</span>' if _obs_dt_fmt else '')
+                        + (f' <span style="color:var(--c-text-2);">&middot; {_obs_dt_fmt}</span>' if _obs_dt_fmt else '')
                         + '</div>'
                     )
 
@@ -8094,11 +8162,11 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             )
 
         parts.append(
-            f'<div style="width:100%;background:#1c1a17;border-radius:8px;padding:8px;'
-            f'margin-bottom:8px;border:1px solid #2e2a24;">'
-            f'<div style="font-size:0.75rem;color:#8f8679;font-weight:700;text-transform:uppercase;'
-            f'margin-bottom:6px;border-bottom:1px solid #2e2a24;padding-bottom:4px;">'
-            f'{cat} <span style="font-size:0.6rem;color:#6b6358;font-weight:400;">({len(rows)})</span></div>'
+            f'<div style="width:100%;background:var(--c-surface);border-radius:var(--r-card);padding:12px;'
+            f'margin-bottom:10px;">'
+            f'<div style="font-size:0.7rem;color:var(--c-label);font-weight:700;text-transform:uppercase;'
+            f'letter-spacing:.08em;margin:2px 4px 10px;">'
+            f'{cat} <span style="font-size:0.6rem;color:var(--c-faint);font-weight:400;">({len(rows)})</span></div>'
             f'<div class="tm-wrap">{"".join(prods)}</div></div>'
         )
 
@@ -9086,11 +9154,11 @@ def get_produtos_parados(dias_min: int) -> pd.DataFrame:
 # janela de tempo é a SOMA direta dos registros dessa janela.
 
 _FAIXAS_COBERTURA = {
-    "RUPTURA":  {"cor": "#e5533d", "icone": "🚨", "desc": "< 1 mês"},
-    "ATENÇÃO":  {"cor": "#e0a030", "icone": "⚠️", "desc": "1–2 meses"},
-    "SAUDÁVEL": {"cor": "#3fbf7f", "icone": "✅", "desc": "2–6 meses"},
-    "EXCESSO":  {"cor": "#6f9fb8", "icone": "📦", "desc": "> 6 meses"},
-    "MORTO":    {"cor": "#8f8679", "icone": "💀", "desc": "0 vendas 180d"},
+    "RUPTURA":  {"cor": "#D32F2F", "icone": "🚨", "desc": "< 1 mês"},
+    "ATENÇÃO":  {"cor": "#E08A00", "icone": "⚠️", "desc": "1–2 meses"},
+    "SAUDÁVEL": {"cor": "#2E7D32", "icone": "✅", "desc": "2–6 meses"},
+    "EXCESSO":  {"cor": "#3D63D8", "icone": "📦", "desc": "> 6 meses"},
+    "MORTO":    {"cor": "#6B6B6B", "icone": "💀", "desc": "0 vendas 180d"},
 }
 
 # ── Dimensão CLASSE VETERINÁRIA (tabela classificacao_vet) ────────────────────
@@ -9458,30 +9526,30 @@ def _normalizar_qtd_filme(df: pd.DataFrame, col_produto: str = "produto", col_qt
 _PLOTLY_LAYOUT = dict(
     paper_bgcolor="rgba(0,0,0,0)",
     plot_bgcolor="rgba(0,0,0,0)",
-    font=dict(family="IBM Plex Sans, sans-serif", color="#ece6dc", size=11),
+    font=dict(family="IBM Plex Sans, sans-serif", color="#111111", size=11),
     margin=dict(l=10, r=10, t=40, b=10),
     transition=dict(duration=800, easing="cubic-in-out"),
 )
 
 _DEFAULT_LEGEND = dict(
-    bgcolor="rgba(17,24,39,0.8)", bordercolor="#2e2a24", borderwidth=1,
-    font=dict(size=10, color="#b3aa9c"),
+    bgcolor="rgba(248,248,248,0.8)", bordercolor="#E2E2E2", borderwidth=1,
+    font=dict(size=10, color="#444444"),
 )
 
 _GROUP_COLORS = {
-    "HERBICIDAS": "#6f9fb8", "INSETICIDAS": "#3fbf7f",
-    "ADUBOS FOLIARES": "#a98bc9", "ADUBOS QUÍMICOS": "#8b5cf6",
-    "FUNGICIDAS": "#e0a030", "MATURADORES": "#5fa8a8",
-    "BIOLOGICOS E INOCULANTES": "#10b981", "SEMENTES DE MILHO": "#e0a030",
-    "SUPLEMENTO MINERAL": "#ec4899", "LONAS": "#6366f1",
+    "HERBICIDAS": "#3D63D8", "INSETICIDAS": "#2E7D32",
+    "ADUBOS FOLIARES": "#7E57C2", "ADUBOS QUÍMICOS": "#7E57C2",
+    "FUNGICIDAS": "#E08A00", "MATURADORES": "#00897B",
+    "BIOLOGICOS E INOCULANTES": "#2E7D32", "SEMENTES DE MILHO": "#E08A00",
+    "SUPLEMENTO MINERAL": "#ec4899", "LONAS": "#7E57C2",
     "ANTIBIOTICOS/ANTI-INFLAMATORIO": "#f472b6",
-    "ACESSORIOS DE CERCA ELETRICA": "#818cf8",
-    "ADJUVANTES/ESPALHANTES ADESIVO": "#2dd4bf",
+    "ACESSORIOS DE CERCA ELETRICA": "#7E57C2",
+    "ADJUVANTES/ESPALHANTES ADESIVO": "#00897B",
 }
 
 
 def _get_color(grupo: str) -> str:
-    return _GROUP_COLORS.get(grupo, "#8f8679")
+    return _GROUP_COLORS.get(grupo, "#6B6B6B")
 
 
 def _build_df_zerados(df_vendas: pd.DataFrame) -> pd.DataFrame:
@@ -9599,15 +9667,15 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 cornerradius=4,
             ),
             text=df_top["qtd_vendida"].apply(lambda v: f"{v:,.0f}".replace(",", ".")),
-            textposition="outside", textfont=dict(size=10, color="#b3aa9c"),
+            textposition="outside", textfont=dict(size=10, color="#444444"),
             hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<extra></extra>",
         ))
         fig_bar.update_layout(
             **_PLOTLY_LAYOUT,
-            title=dict(text="Quantidade Vendida por Grupo", font=dict(size=14, color="#ece6dc")),
+            title=dict(text="Quantidade Vendida por Grupo", font=dict(size=14, color="#111111")),
             height=max(350, top_n * 32),
             yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
-            xaxis=dict(gridcolor="#2e2a24", title=None),
+            xaxis=dict(gridcolor="#E2E2E2", title=None),
             showlegend=False,
         )
         st.plotly_chart(fig_bar, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9623,12 +9691,12 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 hole=0.55,
                 marker=dict(colors=[_get_color(g) for g in df_top["grupo"].head(8)]),
                 textinfo="percent",
-                textfont=dict(size=10, color="#ece6dc"),
+                textfont=dict(size=10, color="#111111"),
                 hovertemplate="<b>%{label}</b><br>%{value:,.0f} un<br>%{percent}<extra></extra>",
             ))
             fig_pie.update_layout(
                 **_PLOTLY_LAYOUT,
-                title=dict(text="Distribuição % Vendas", font=dict(size=13, color="#b3aa9c")),
+                title=dict(text="Distribuição % Vendas", font=dict(size=13, color="#444444")),
                 height=320, showlegend=True,
                 legend=dict(font=dict(size=9), orientation="h", y=-0.15),
             )
@@ -9640,15 +9708,15 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             df8 = df_top.head(8)
             fig_vs.add_trace(go.Bar(
                 name="Vendido", x=df8["grupo"], y=df8["qtd_vendida"],
-                marker=dict(color="#3fbf7f", cornerradius=3, opacity=0.85),
+                marker=dict(color="#2E7D32", cornerradius=3, opacity=0.85),
             ))
             fig_vs.add_trace(go.Bar(
                 name="Estoque", x=df8["grupo"], y=df8["qtd_estoque"],
-                marker=dict(color="#6f9fb8", cornerradius=3, opacity=0.5),
+                marker=dict(color="#3D63D8", cornerradius=3, opacity=0.5),
             ))
             fig_vs.update_layout(
                 **_PLOTLY_LAYOUT, barmode="group",
-                title=dict(text="Vendido vs Estoque", font=dict(size=13, color="#b3aa9c")),
+                title=dict(text="Vendido vs Estoque", font=dict(size=13, color="#444444")),
                 height=320,
                 xaxis=dict(tickangle=-35, tickfont=dict(size=8), gridcolor="rgba(0,0,0,0)"),
                 legend=dict(orientation="h", y=1.12, font=dict(size=10)),
@@ -9694,7 +9762,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 
         if not df_alerta.empty:
             # Bar chart horizontal com cores de severidade
-            colors = ["#e5533d" if n == "ZERADO" else "#e0a030" for n in df_alerta["nivel"]]
+            colors = ["#D32F2F" if n == "ZERADO" else "#E08A00" for n in df_alerta["nivel"]]
             nomes = df_alerta["produto"].apply(lambda p: p[:35] + "…" if len(p) > 35 else p)
             estoque_x = df_alerta["qtd_estoque"].clip(lower=0)
 
@@ -9703,7 +9771,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 y=nomes, x=estoque_x, orientation="h",
                 marker=dict(color=colors, cornerradius=3),
                 text=df_alerta.apply(lambda r: f"Vendido: {int(r['qtd_vendida'])}", axis=1),
-                textposition="outside", textfont=dict(size=9, color="#b3aa9c"),
+                textposition="outside", textfont=dict(size=9, color="#444444"),
                 customdata=df_alerta[["qtd_vendida", "dias_cobertura"]].fillna(0).round(1).values,
                 hovertemplate="<b>%{y}</b><br>Estoque: %{x:,.0f}<br>Vendido: %{customdata[0]:,.0f}<br>Cobertura: %{customdata[1]}d<extra></extra>",
             ))
@@ -9712,7 +9780,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 title=dict(text="🚨 Produtos com Estoque Crítico — Qtd Restante em Estoque", font=dict(size=13)),
                 height=max(400, len(df_alerta) * 28),
                 yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
-                xaxis=dict(title="Qtd em Estoque", gridcolor="#2e2a24"),
+                xaxis=dict(title="Qtd em Estoque", gridcolor="#E2E2E2"),
                 showlegend=False,
             )
             st.plotly_chart(fig_alert, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9745,7 +9813,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
 
         if not df_burn.empty:
             colors_burn = [
-                "#e5533d" if d < 15 else "#e0a030" if d < 30 else "#3fbf7f"
+                "#D32F2F" if d < 15 else "#E08A00" if d < 30 else "#2E7D32"
                 for d in df_burn["dias_estoque"]
             ]
 
@@ -9754,28 +9822,28 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 y=df_burn["grupo"], x=df_burn["dias_estoque"], orientation="h",
                 marker=dict(color=colors_burn, cornerradius=4),
                 text=df_burn["dias_estoque"].apply(lambda d: f"{d}d"),
-                textposition="outside", textfont=dict(size=10, color="#b3aa9c"),
+                textposition="outside", textfont=dict(size=10, color="#444444"),
                 hovertemplate="<b>%{y}</b><br>Dias restantes: %{x}<br><extra></extra>",
             ))
             # Linhas de referência
             fig_burn.add_shape(
                 type="line", x0=15, x1=15, y0=-0.5, y1=len(df_burn)-0.5,
-                line=dict(dash="dash", color="#e5533d", width=1), yref="y",
+                line=dict(dash="dash", color="#D32F2F", width=1), yref="y",
             )
             fig_burn.add_annotation(x=15, y=-0.5, text="Urgente", showarrow=False,
-                font=dict(size=9, color="#e5533d"), yshift=-12)
+                font=dict(size=9, color="#D32F2F"), yshift=-12)
             fig_burn.add_shape(
                 type="line", x0=30, x1=30, y0=-0.5, y1=len(df_burn)-0.5,
-                line=dict(dash="dash", color="#e0a030", width=1), yref="y",
+                line=dict(dash="dash", color="#E08A00", width=1), yref="y",
             )
             fig_burn.add_annotation(x=30, y=-0.5, text="Atenção", showarrow=False,
-                font=dict(size=9, color="#e0a030"), yshift=-12)
+                font=dict(size=9, color="#E08A00"), yshift=-12)
             fig_burn.update_layout(
                 **_PLOTLY_LAYOUT,
                 title=dict(text="🔥 Dias de Estoque Restante por Grupo", font=dict(size=14)),
                 height=max(350, len(df_burn) * 35),
                 yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
-                xaxis=dict(title="Dias", gridcolor="#2e2a24"),
+                xaxis=dict(title="Dias", gridcolor="#E2E2E2"),
                 showlegend=False,
             )
             st.plotly_chart(fig_burn, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9814,7 +9882,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                     cornerradius=4,
                 ),
                 text=df_top_prod["qtd_vendida"].apply(lambda v: f"{v:,.0f}".replace(",", ".")),
-                textposition="outside", textfont=dict(size=9, color="#b3aa9c"),
+                textposition="outside", textfont=dict(size=9, color="#444444"),
                 hovertemplate="<b>%{y}</b><br>Vendido: %{x:,.0f}<br><extra></extra>",
             ))
             fig_top.update_layout(
@@ -9822,7 +9890,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                 title=dict(text=f"🏆 Top 15 Produtos — {grupo_sel}", font=dict(size=14)),
                 height=max(380, len(df_top_prod) * 30),
                 yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)),
-                xaxis=dict(title="Qtd Vendida", gridcolor="#2e2a24"),
+                xaxis=dict(title="Qtd Vendida", gridcolor="#E2E2E2"),
                 showlegend=False,
             )
             st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9836,7 +9904,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                     mode="markers", name=g[:15],
                     marker=dict(
                         color=_get_color(g), size=8, opacity=0.7,
-                        line=dict(width=1, color="#141311"),
+                        line=dict(width=1, color="#ECECEC"),
                     ),
                     hovertemplate="<b>%{text}</b><br>Vendido: %{x}<br>Estoque: %{y}<extra></extra>",
                     text=df_prod.loc[dg.index, "produto"].apply(lambda p: p[:30]),
@@ -9845,15 +9913,15 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
             max_val = max(df_prod["qtd_vendida"].max(), df_prod["qtd_estoque"].max(), 100)
             fig_scatter.add_trace(go.Scatter(
                 x=[0, max_val], y=[0, max_val],
-                mode="lines", line=dict(dash="dash", color="#8f8679", width=1),
+                mode="lines", line=dict(dash="dash", color="#6B6B6B", width=1),
                 name="Equilíbrio", showlegend=True,
             ))
             fig_scatter.update_layout(
                 **_PLOTLY_LAYOUT,
-                title=dict(text="Vendido × Estoque (abaixo da linha = estoque menor que vendas)", font=dict(size=12, color="#b3aa9c")),
+                title=dict(text="Vendido × Estoque (abaixo da linha = estoque menor que vendas)", font=dict(size=12, color="#444444")),
                 height=380,
-                xaxis=dict(title="Qtd Vendida", gridcolor="#2e2a24"),
-                yaxis=dict(title="Qtd Estoque", gridcolor="#2e2a24"),
+                xaxis=dict(title="Qtd Vendida", gridcolor="#E2E2E2"),
+                yaxis=dict(title="Qtd Estoque", gridcolor="#E2E2E2"),
                 legend=dict(font=dict(size=8), orientation="h", y=-0.2),
             )
             st.plotly_chart(fig_scatter, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -9943,7 +10011,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                             cornerradius=4,
                         ),
                         text=df_esq_grupo["qtd_produtos"],
-                        textposition="outside", textfont=dict(size=10, color="#b3aa9c"),
+                        textposition="outside", textfont=dict(size=10, color="#444444"),
                         hovertemplate="<b>%{y}</b><br>Produtos parados: %{x}<extra></extra>",
                     ))
                     fig_esq.update_layout(
@@ -9951,7 +10019,7 @@ def build_vendas_tab(df_vendas: pd.DataFrame):
                         title=dict(text="🌿 SKUs Parados por Grupo (sem vendas)", font=dict(size=14)),
                         height=max(280, len(df_esq_grupo) * 42),
                         yaxis=dict(autorange="reversed", gridcolor="rgba(0,0,0,0)"),
-                        xaxis=dict(title="Nº de SKUs parados", gridcolor="#2e2a24"),
+                        xaxis=dict(title="Nº de SKUs parados", gridcolor="#E2E2E2"),
                         showlegend=False,
                     )
                     st.plotly_chart(fig_esq, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -10031,7 +10099,7 @@ def build_infograficos_tab():
         )
 
     with col_atalhos:
-        st.markdown("<div style='padding-top:6px;font-size:0.75rem;color:#8f8679;margin-bottom:2px;'>Atalhos rápidos</div>", unsafe_allow_html=True)
+        st.markdown("<div style='padding-top:6px;font-size:0.75rem;color:var(--c-muted);margin-bottom:2px;'>Atalhos rápidos</div>", unsafe_allow_html=True)
         c1, c2, c3, c4 = st.columns(4)
 
         def _set_periodo(dias):
@@ -10060,7 +10128,7 @@ def build_infograficos_tab():
     infografico = st.session_state.get("inf_selector", _INF_OPTS[0])
 
     def _render_seletor_inf():
-        st.markdown("<hr style='margin:8px 0 4px;border-color:#2e2a24'>", unsafe_allow_html=True)
+        st.markdown("<hr style='margin:8px 0 4px;border-color:var(--c-line)'>", unsafe_allow_html=True)
         st.selectbox("Infográfico", _INF_OPTS, key="inf_selector", label_visibility="collapsed")
 
     def _render_lista_zerados_info():
@@ -10121,23 +10189,23 @@ def build_infograficos_tab():
             x=dias_labels,
             y=pivot.index.tolist(),
             colorscale=[
-                [0.0, "#0d1b2a"],
-                [0.25, "#3fbf7f"],
-                [0.65, "#e0a030"],
-                [1.0, "#e5533d"],
+                [0.0, "#EDF3FA"],
+                [0.25, "#2E7D32"],
+                [0.65, "#E08A00"],
+                [1.0, "#D32F2F"],
             ],
             hoverongaps=False,
             hovertemplate="<b>%{y}</b><br>%{x}: <b>%{z} un.</b><extra></extra>",
             colorbar=dict(
-                title=dict(text="Qtd", font=dict(color="#b3aa9c")),
-                tickfont=dict(color="#b3aa9c"),
+                title=dict(text="Qtd", font=dict(color="#444444")),
+                tickfont=dict(color="#444444"),
             ),
         ))
         fig.update_layout(**_PLOTLY_LAYOUT)
         fig.update_layout(
             height=max(420, len(pivot) * 30 + 90),
-            xaxis=dict(side="top", tickfont=dict(color="#ece6dc")),
-            yaxis=dict(autorange="reversed", tickfont=dict(size=10, color="#ece6dc")),
+            xaxis=dict(side="top", tickfont=dict(color="#111111")),
+            yaxis=dict(autorange="reversed", tickfont=dict(size=10, color="#111111")),
             margin=dict(l=20, r=20, t=60, b=20),
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -10185,11 +10253,11 @@ def build_infograficos_tab():
             x=top10_mais["total_vendido"],
             orientation="h",
             name="Mais vendidos",
-            marker_color="#3fbf7f",
+            marker_color="#2E7D32",
             hovertemplate="<b>%{y}</b><br>Vendido: <b>%{x} un.</b><extra></extra>",
             text=top10_mais["total_vendido"].astype(str),
             textposition="outside",
-            textfont=dict(color="#3fbf7f", size=10),
+            textfont=dict(color="#2E7D32", size=10),
         ))
 
         fig.add_trace(go.Bar(
@@ -10197,12 +10265,12 @@ def build_infograficos_tab():
             x=-top10_menos["total_vendido"],
             orientation="h",
             name="Menos vendidos",
-            marker_color="#e0a030",
+            marker_color="#E08A00",
             customdata=top10_menos["total_vendido"].values,
             hovertemplate="<b>%{y}</b><br>Vendido: <b>%{customdata} un.</b><extra></extra>",
             text=top10_menos["total_vendido"].astype(str),
             textposition="outside",
-            textfont=dict(color="#e0a030", size=10),
+            textfont=dict(color="#E08A00", size=10),
         ))
 
         _max_mais = int(top10_mais["total_vendido"].max()) if not top10_mais.empty else 1
@@ -10215,7 +10283,7 @@ def build_infograficos_tab():
             height=max(520, max(len(top10_mais), len(top10_menos)) * 32 + 130),
             xaxis=dict(
                 range=[-max_val, max_val],
-                gridcolor="#2e2a24",
+                gridcolor="#E2E2E2",
                 title="← Menos vendidos   |   Mais vendidos →",
                 tickvals=[int(-max_val * f) for f in [1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75, -1] if abs(f) <= 1],
                 ticktext=[str(abs(int(-max_val * f))) for f in [1, 0.75, 0.5, 0.25, 0, -0.25, -0.5, -0.75, -1] if abs(f) <= 1],
@@ -10225,7 +10293,7 @@ def build_infograficos_tab():
             shapes=[dict(
                 type="line", x0=0, x1=0,
                 y0=-0.5, y1=max(len(top10_mais), len(top10_menos)) - 0.5,
-                line=dict(color="#8f8679", width=1.5),
+                line=dict(color="#6B6B6B", width=1.5),
             )],
         )
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False, "editable": False, "scrollZoom": False})
@@ -10280,7 +10348,7 @@ def build_infograficos_tab():
         )
 
         def _style_parado(row):
-            bg = "background-color: rgba(229,83,61,0.15);" if row["Dias parado"] > 90 else ""
+            bg = "background-color: rgba(211,47,47,0.15);" if row["Dias parado"] > 90 else ""
             return [bg] * len(row)
 
         styled = df_display.style.apply(_style_parado, axis=1)
@@ -10325,11 +10393,11 @@ def build_infograficos_tab():
                     size=row["bubble_size"],
                     color=cor,
                     opacity=0.78,
-                    line=dict(width=1.5, color="rgba(255,255,255,0.25)"),
+                    line=dict(width=1.5, color="rgba(17,17,17,0.25)"),
                 ),
                 text=[row["grupo"][:22]],
                 textposition="top center",
-                textfont=dict(size=9, color="#ece6dc"),
+                textfont=dict(size=9, color="#111111"),
                 name=row["grupo"],
                 customdata=[[
                     row["grupo"], row["taxa_giro"],
@@ -10349,18 +10417,18 @@ def build_infograficos_tab():
 
         fig.add_shape(
             type="line", x0=med_giro, x1=med_giro, y0=0, y1=max_rupt,
-            line=dict(color="#6b6358", width=1.5, dash="dash"),
+            line=dict(color="#8A8A8A", width=1.5, dash="dash"),
         )
         fig.add_shape(
             type="line", x0=0, x1=max_giro, y0=med_ruptura, y1=med_ruptura,
-            line=dict(color="#6b6358", width=1.5, dash="dash"),
+            line=dict(color="#8A8A8A", width=1.5, dash="dash"),
         )
 
         for txt, x_f, y_f, color in [
-            ("⭐ Ideal",    (med_giro + max_giro) / 2, med_ruptura / 2,          "#3fbf7f"),
-            ("🚨 Problema", med_giro / 2,              (med_ruptura + max_rupt) / 2, "#e5533d"),
-            ("📦 Excesso",  (med_giro + max_giro) / 2, (med_ruptura + max_rupt) / 2, "#e0a030"),
-            ("💤 Parado",   med_giro / 2,              med_ruptura / 2,          "#b3aa9c"),
+            ("⭐ Ideal",    (med_giro + max_giro) / 2, med_ruptura / 2,          "#2E7D32"),
+            ("🚨 Problema", med_giro / 2,              (med_ruptura + max_rupt) / 2, "#D32F2F"),
+            ("📦 Excesso",  (med_giro + max_giro) / 2, (med_ruptura + max_rupt) / 2, "#E08A00"),
+            ("💤 Parado",   med_giro / 2,              med_ruptura / 2,          "#444444"),
         ]:
             fig.add_annotation(
                 x=x_f, y=y_f, text=txt,
@@ -10375,13 +10443,13 @@ def build_infograficos_tab():
             showlegend=False,
             xaxis=dict(
                 title="Taxa de Giro (vendas / estoque)",
-                gridcolor="#2e2a24",
+                gridcolor="#E2E2E2",
                 range=[0, max_giro],
                 zeroline=False,
             ),
             yaxis=dict(
                 title="% Ruptura (dias sem estoque)",
-                gridcolor="#2e2a24",
+                gridcolor="#E2E2E2",
                 range=[0, max_rupt],
                 zeroline=False,
             ),
@@ -10427,11 +10495,11 @@ if _wd_dash:
     elif _c in (95,96,99):           _wemoji_d, _wdesc_d = "⛈️", "Tempestade"
     elif _c in (71,73,75,77):        _wemoji_d, _wdesc_d = "❄️", "Neve"
     else:                            _wemoji_d, _wdesc_d = "🌡️", ""
-    _whtml = f"""<div class="wco" style="text-align:center;background:rgba(17,24,39,0.85);backdrop-filter:blur(8px);">
+    _whtml = f"""<div class="wco" style="text-align:center;background:rgba(248,248,248,0.85);backdrop-filter:blur(8px);">
   <div style="font-size:1.6rem;line-height:1;">{_wemoji_d}</div>
-  <div style="font-size:1.3rem;font-weight:700;line-height:1.2;letter-spacing:-0.5px;color:#fff;margin-top:3px;">{_wtemp_d}°</div>
-  <div style="font-size:0.6rem;color:rgba(255,255,255,0.6);margin-top:2px;">{_wdesc_d}</div>
-  <div style="font-size:0.55rem;color:rgba(255,255,255,0.4);margin-top:1px;">Quirinópolis</div>
+  <div style="font-size:1.3rem;font-weight:700;line-height:1.2;letter-spacing:-0.5px;color:var(--c-text);margin-top:3px;">{_wtemp_d}°</div>
+  <div style="font-size:0.6rem;color:var(--c-text-2);margin-top:2px;">{_wdesc_d}</div>
+  <div style="font-size:0.55rem;color:var(--c-muted);margin-top:1px;">Quirinópolis</div>
 </div>"""
 else:
     _whtml = ""
@@ -10487,19 +10555,18 @@ def apply_header_css() -> None:
     """
     st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap');
 :root {
     /* Topbar herda os tokens globais (--c-*); nomes --ch-* mantidos
-       para não mexer nas regras abaixo. --ch-cyan agora é o ocre. */
-    --ch-grad-a: #181613;
-    --ch-grad-b: #141311;
-    --ch-border: #2e2a24;
-    --ch-text: #ece6dc;
-    --ch-muted: #9a9184;
-    --ch-cyan: #d9a441;
-    --ch-cyan-soft: #c9b48e;
-    --ch-green: #3fbf7f;
-    --ch-red: #e5533d;
+       para não mexer nas regras abaixo. */
+    --ch-grad-a: var(--c-bg);
+    --ch-grad-b: var(--c-bg);
+    --ch-border: var(--c-line);
+    --ch-text: var(--c-text);
+    --ch-muted: var(--c-muted);
+    --ch-cyan: var(--c-text);
+    --ch-cyan-soft: var(--c-text-2);
+    --ch-green: var(--c-ok);
+    --ch-red: var(--c-crit);
 }
 /* Injetores invisíveis (iframes utilitários colapsados e blocos só-CSS)
    ainda geram um gap de 1rem cada no flex principal, empurrando o header
@@ -10525,17 +10592,23 @@ div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.
     display: flex;
     align-items: center;
     gap: 16px;
-    background: linear-gradient(180deg, var(--ch-grad-a), var(--ch-grad-b));
-    border-bottom: 1px solid var(--ch-border);
+    background: var(--c-bg);
+    border-bottom: none;
     color: var(--ch-text);
-    font-family: 'IBM Plex Sans', sans-serif;
+    font-family: var(--f-sans);
 }
 /* ── Zona esquerda: marca ── */
 .ct-brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
-.ct-hex { flex: 0 0 auto; }
+/* Logo: "C" limão dentro de um círculo preto */
+.ct-logo {
+    flex: 0 0 auto; width: 36px; height: 36px; border-radius: 50%;
+    background: var(--c-ink); color: var(--c-accent);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--f-sans); font-weight: 800; font-size: 19px; line-height: 1;
+}
 .ct-title {
-    font-family: 'IBM Plex Sans', sans-serif; font-weight: 600; font-size: 16px;
-    letter-spacing: 3px; line-height: 1.15; color: var(--ch-text);
+    font-family: var(--f-sans); font-weight: 800; font-size: 16px;
+    letter-spacing: 2px; line-height: 1.15; color: var(--ch-text);
 }
 .ct-sub { font-size: 10.5px; color: var(--ch-muted); line-height: 1.2; letter-spacing: .3px; }
 /* ── Zona central: espaço onde o st.text_input real é sobreposto ── */
@@ -10545,23 +10618,30 @@ div[data-testid="stVerticalBlock"] > div[data-testid="stElementContainer"]:has(.
 .ct-nums { display: flex; align-items: baseline; gap: 14px; }
 .ct-num { display: inline-flex; align-items: baseline; }
 .ct-num-val {
-    font-family: 'IBM Plex Mono', monospace; font-weight: 600;
-    font-size: 14px; color: var(--ch-text);
+    font-family: var(--f-sans); font-weight: 700;
+    font-size: 14px; color: var(--ch-text); font-variant-numeric: tabular-nums;
 }
-.ct-num-val.ct-red { color: var(--ch-red); }
 .ct-num-lbl {
-    font-family: 'IBM Plex Mono', monospace;
-    font-size: 9.5px; color: var(--ch-muted); margin-left: 5px;
-    letter-spacing: .6px; text-transform: uppercase;
+    font-family: var(--f-sans); font-weight: 600;
+    font-size: 9.5px; color: var(--c-label); margin-left: 5px;
+    letter-spacing: .08em; text-transform: uppercase;
 }
+/* Contador de divergências do dia: pílula preta, texto branco */
+.ct-num.ct-pill {
+    background: var(--c-ink); border-radius: var(--r-pill);
+    padding: 5px 12px; align-items: center;
+}
+.ct-num.ct-pill .ct-num-val, .ct-num.ct-pill .ct-num-lbl { color: var(--c-on-ink); }
+.ct-num.ct-pill .ct-num-lbl { opacity: .8; }
 .ct-sep { width: 1px; height: 26px; background: var(--ch-border); flex: 0 0 auto; }
 .ct-fil { display: flex; flex-direction: column; gap: 2px; }
-.ct-fil-name { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--ch-cyan-soft); }
+.ct-fil-name { font-size: 11px; font-weight: 600; letter-spacing: 1px; color: var(--c-text-2); }
 /* ── Responsivo ── */
 @media (max-width: 720px) {
     .camda-topbar { gap: 10px; padding: 0 12px; }
     /* fica só o essencial: marca e números */
-    .ct-sub, .ct-num-lbl, .ct-fil-name, .ct-sep { display: none; }
+    .ct-sub, .ct-num:not(.ct-pill) .ct-num-lbl, .ct-fil-name, .ct-sep { display: none; }
+    .ct-num.ct-pill { padding: 4px 10px; }
     .ct-title { letter-spacing: 2px; font-size: 15px; }
     .ct-nums { gap: 8px; }
     .ct-ops { gap: 8px; }
@@ -10601,16 +10681,16 @@ div.st-key-search_mestre [data-testid="stTextInput"] {
     min-width: 0;
     pointer-events: auto;
 }
-/* Campo em glass escuro com lupa à esquerda
+/* Busca em pílula branca com lupa à esquerda
    (1.59 usa react-aria: stTextInputRootElement é o wrapper com a borda) */
 div.st-key-search_mestre [data-testid="stTextInputRootElement"],
 div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"] {
-    background: rgba(20,19,17,0.7) !important;
-    border: 1px solid var(--ch-border) !important;
-    border-radius: 10px !important;
-    backdrop-filter: blur(6px);
+    background-color: var(--c-surface-2) !important;
+    border: 1px solid transparent !important;
+    border-radius: var(--r-pill) !important;
+    box-shadow: 0 1px 2px rgba(17,17,17,0.04);
     transition: border-color .15s ease, box-shadow .15s ease;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%238aa0b4' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.2' y2='16.2'/%3E%3C/svg%3E") !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%236B6B6B' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cline x1='21' y1='21' x2='16.2' y2='16.2'/%3E%3C/svg%3E") !important;
     background-repeat: no-repeat !important;
     background-position: 11px center !important;
 }
@@ -10623,9 +10703,9 @@ div.st-key-search_mestre [data-testid="stTextInput"] input {
     background: transparent !important;
     border: none !important;
     color: var(--ch-text) !important;
-    font-family: 'IBM Plex Sans', sans-serif !important;
+    font-family: var(--f-sans) !important;
     font-size: 0.875rem !important;
-    padding: 9px 12px 9px 34px !important;
+    padding: 9px 14px 9px 36px !important;
     caret-color: var(--ch-cyan) !important;
 }
 div.st-key-search_mestre [data-testid="stTextInput"] input::placeholder {
@@ -10634,8 +10714,8 @@ div.st-key-search_mestre [data-testid="stTextInput"] input::placeholder {
 }
 div.st-key-search_mestre [data-testid="stTextInputRootElement"]:focus-within,
 div.st-key-search_mestre [data-testid="stTextInput"] [data-baseweb="input"]:focus-within {
-    border-color: rgba(217,164,65,0.35) !important;
-    box-shadow: 0 0 0 3px rgba(217,164,65,0.08) !important;
+    border-color: var(--c-text) !important;
+    box-shadow: 0 0 0 3px rgba(17,17,17,0.06) !important;
 }
 /* Neutraliza o glow verde global (.stTextInput input:focus) apenas na busca */
 div.st-key-search_mestre [data-testid="stTextInput"] input:focus {
@@ -10659,6 +10739,19 @@ div.st-key-search_mestre [data-testid="stTextInput"] input:focus {
     div.st-key-search_mestre [data-testid="stTextInput"] {
         max-width: 280px;
     }
+    /* Só a pílula de divergências fica à direita: reserva o espaço dela */
+    .ct-num:not(.ct-pill) { display: none; }
+    div[data-testid="stVerticalBlock"] > div.st-key-search_mestre {
+        padding-right: 140px;
+    }
+}
+@media (max-width: 480px) {
+    /* Celular: marca só com o logo, sobra largura para a busca */
+    .ct-brand > div:not(.ct-logo) { display: none; }
+    div[data-testid="stVerticalBlock"] > div.st-key-search_mestre {
+        padding-left: 58px;
+        padding-right: 136px;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
@@ -10671,12 +10764,7 @@ def render_camda_header(total_itens=None, n_diverg_dia=None) -> None:
     st.markdown(f"""
 <div class="camda-topbar">
   <div class="ct-brand">
-    <svg class="ct-hex" width="34" height="34" viewBox="0 0 100 100" aria-hidden="true">
-      <polygon points="50,8 84,28 84,72 50,92 16,72 16,28"
-               fill="#d9a441" stroke="#d9a441" stroke-width="5" stroke-linejoin="round"/>
-      <text x="50" y="63" text-anchor="middle" fill="#141311" font-size="40"
-            font-weight="700" font-family="IBM Plex Sans, Arial, sans-serif">C</text>
-    </svg>
+    <div class="ct-logo" aria-hidden="true">C</div>
     <div>
       <div class="ct-title">CAMDA</div>
       <div class="ct-sub">Controle de Estoque</div>
@@ -10686,7 +10774,7 @@ def render_camda_header(total_itens=None, n_diverg_dia=None) -> None:
   <div class="ct-ops">
     <div class="ct-nums">
       <span class="ct-num"><span class="ct-num-val">{total_txt}</span><span class="ct-num-lbl">itens</span></span>
-      <span class="ct-num"><span class="ct-num-val ct-red">{div_txt}</span><span class="ct-num-lbl">diverg. hoje</span></span>
+      <span class="ct-num ct-pill"><span class="ct-num-val">{div_txt}</span><span class="ct-num-lbl">diverg. hoje</span></span>
     </div>
     <div class="ct-sep"></div>
     <div class="ct-fil">
@@ -10816,6 +10904,16 @@ if has_mestre:
     if (_al_val or _al_pend or _al_reconc or _al_aumento or _al_transf
             or _al_sep_pendentes or _al_retiradas):
         _pills = []
+
+        def _al_item(_ic, _cls, _titulo, _detalhe=""):
+            """Linha do card de avisos: ícone em círculo colorido, título em
+            negrito e detalhe em cinza embaixo."""
+            _det = f'<div class="al-det">{_detalhe}</div>' if _detalhe else ""
+            return (
+                f'<div class="al-row {_cls}"><div class="al-ic">{_ic}</div>'
+                f'<div class="al-txt"><div class="al-tit">{_titulo}</div>{_det}</div></div>'
+            )
+
         if _al_retiradas:
             _n_coop_ret = len(_al_retiradas)
             _tot_ret = sum(a["qtd"] for a in _al_retiradas)
@@ -10826,8 +10924,8 @@ if has_mestre:
             if _n_coop_ret == 1:
                 _a_ret = _al_retiradas[0]
                 _n_prod_ret = _a_ret["produtos"]
-                _corpo_ret = (
-                    f'<b>Retirada de estocado — {_a_ret["cooperado"]}:</b> '
+                _tit_ret = f'Retirada de estocado — {_a_ret["cooperado"]}'
+                _det_ret = (
                     f'{_tot_ret_txt} un. em {_n_prod_ret} produto'
                     f'{"s" if _n_prod_ret > 1 else ""}'
                 )
@@ -10838,25 +10936,25 @@ if has_mestre:
                 )
                 if _n_coop_ret > 3:
                     _nomes_ret += f" +{_n_coop_ret - 3}"
-                _corpo_ret = (
-                    f'<b>Retirada de estocado — {_n_coop_ret} cooperados '
-                    f'({_tot_ret_txt} un.):</b> {_nomes_ret}'
+                _tit_ret = (
+                    f'Retirada de estocado — {_n_coop_ret} cooperados '
+                    f'({_tot_ret_txt} un.)'
                 )
-            _pills.append(
-                f'<div class="al-pill al-retirada">📤 {_corpo_ret}</div>'
-            )
+                _det_ret = _nomes_ret
+            _pills.append(_al_item("📤", "al-retirada", _tit_ret, _det_ret))
         if _al_sep_pendentes:
             _n_sep = len(_al_sep_pendentes)
-            _pills.append(
-                f'<div class="al-pill al-sep">📦 <b>{_n_sep} cliente{"s" if _n_sep > 1 else ""}'
-                f' com produtos para separar</b></div>'
-            )
+            _pills.append(_al_item(
+                "📦", "al-sep",
+                f'{_n_sep} cliente{"s" if _n_sep > 1 else ""} com produtos para separar',
+                "Separação de estocados pendente",
+            ))
         if _al_pend:
             n = len(_al_pend)
-            _pills.append(
-                f'<div class="al-pill al-pend">🔴 <b>{n} pendência{"s" if n > 1 else ""}</b>'
-                f' sem entrega há mais de 5 dias</div>'
-            )
+            _pills.append(_al_item(
+                "⏳", "al-pend", f'{n} pendência{"s" if n > 1 else ""}',
+                "Sem entrega há mais de 5 dias",
+            ))
         if _al_val:
             _urgentes = [a for a in _al_val if a["dias_restantes"] <= 7]
             _normais  = [a for a in _al_val if a["dias_restantes"] > 7]
@@ -10864,15 +10962,17 @@ if has_mestre:
                 _nomes = ", ".join(dict.fromkeys(a["produto"] for a in _urgentes[:3]))
                 if len(_urgentes) > 3:
                     _nomes += f" +{len(_urgentes) - 3}"
-                _pills.append(
-                    f'<div class="al-pill al-urgente">🟠 <b>{len(_urgentes)} lote{"s" if len(_urgentes) > 1 else ""}'
-                    f' ≤7 dias:</b> {_nomes}</div>'
-                )
+                _pills.append(_al_item(
+                    "⏰", "al-urgente",
+                    f'{len(_urgentes)} lote{"s" if len(_urgentes) > 1 else ""} vencendo em ≤7 dias',
+                    _nomes,
+                ))
             if _normais:
-                _pills.append(
-                    f'<div class="al-pill al-aviso">🟡 <b>{len(_normais)} lote{"s" if len(_normais) > 1 else ""}'
-                    f'</b> vence em até 30 dias</div>'
-                )
+                _pills.append(_al_item(
+                    "📅", "al-aviso",
+                    f'{len(_normais)} lote{"s" if len(_normais) > 1 else ""} vence em até 30 dias',
+                    "Confira a aba Validade",
+                ))
         if _al_reconc:
             # Separa alertas de "possível faturamento" dos de divergência GV
             _al_poss_fat = [a for a in _al_reconc if a.get("status") == "possivel_faturamento"]
@@ -10881,44 +10981,50 @@ if has_mestre:
                 _nomes_pf = ", ".join(a["cooperado"] for a in _al_poss_fat[:4])
                 if len(_al_poss_fat) > 4:
                     _nomes_pf += f" +{len(_al_poss_fat) - 4}"
-                _pills.append(
-                    f'<div class="al-pill al-gv">🔵 <b>Possível faturamento:</b> {_nomes_pf}</div>'
-                )
+                _pills.append(_al_item("🧾", "al-gv", "Possível faturamento", _nomes_pf))
             if _al_gv_div:
                 _n_gv = len(_al_gv_div)
                 _nomes_gv = ", ".join(a["cooperado"] for a in _al_gv_div[:3])
                 if _n_gv > 3:
                     _nomes_gv += f" +{_n_gv - 3}"
-                _pills.append(
-                    f'<div class="al-pill al-gv">🔵 <b>Divergência GV — {_n_gv} cooperado{"s" if _n_gv > 1 else ""}:</b> {_nomes_gv}</div>'
-                )
+                _pills.append(_al_item(
+                    "🔎", "al-gv",
+                    f'Divergência GV — {_n_gv} cooperado{"s" if _n_gv > 1 else ""}',
+                    _nomes_gv,
+                ))
         if _al_aumento:
             _nomes_au = ", ".join(
                 f"{a['produto']} +{a['delta']}" for a in _al_aumento
             )
-            _pills.append(
-                f'<div class="al-pill al-aumento">🟢 <b>Aumento de estoque:</b> {_nomes_au}</div>'
-            )
+            _pills.append(_al_item("📈", "al-aumento", "Aumento de estoque", _nomes_au))
         if _al_transf:
             _nomes_tr = ", ".join(
                 f"{a['produto']} {a['delta']}" for a in _al_transf
             )
-            _pills.append(
-                f'<div class="al-pill al-transferencia">🔄 <b>Possível transferência:</b> {_nomes_tr}</div>'
-            )
+            _pills.append(_al_item("🔄", "al-transferencia", "Possível transferência", _nomes_tr))
         st.markdown(
             """
             <style>
-            .al-wrap{display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 4px 0;}
-            .al-pill{padding:4px 12px;border-radius:20px;font-size:0.78rem;font-family:'IBM Plex Sans',sans-serif;line-height:1.4;}
-            .al-pend{background:rgba(229,83,61,0.12);color:#e5533d;border:1px solid rgba(229,83,61,0.35);}
-            .al-urgente{background:rgba(255,140,0,0.12);color:#ff8c00;border:1px solid rgba(255,140,0,0.4);}
-            .al-aviso{background:rgba(255,193,7,0.12);color:#ffc107;border:1px solid rgba(255,193,7,0.35);}
-            .al-gv{background:rgba(111,159,184,0.12);color:#8db5ca;border:1px solid rgba(111,159,184,0.35);}
-            .al-aumento{background:rgba(63,191,127,0.12);color:#3fbf7f;border:1px solid rgba(63,191,127,0.35);}
-            .al-transferencia{background:rgba(169,139,201,0.12);color:#a98bc9;border:1px solid rgba(169,139,201,0.35);}
-            .al-sep{background:rgba(249,115,22,0.12);color:#e08a4a;border:1px solid rgba(249,115,22,0.4);}
-            .al-retirada{background:rgba(236,72,153,0.12);color:#f472b6;border:1px solid rgba(236,72,153,0.4);}
+            .al-wrap{background:var(--c-surface);border-radius:var(--r-card);padding:6px;
+                margin:6px 0 10px 0;display:flex;flex-direction:column;gap:2px;}
+            .al-row{display:flex;align-items:center;gap:12px;padding:8px 10px;border-radius:14px;}
+            .al-row + .al-row{border-top:1px solid var(--c-line);border-radius:0 0 14px 14px;}
+            .al-ic{flex:0 0 36px;width:36px;height:36px;border-radius:50%;display:flex;
+                align-items:center;justify-content:center;font-size:1rem;background:var(--c-info-soft);}
+            .al-txt{min-width:0;font-family:var(--f-sans);line-height:1.3;}
+            .al-tit{font-weight:700;font-size:0.84rem;color:var(--c-text);}
+            .al-det{font-size:0.76rem;color:var(--c-muted);margin-top:1px;
+                overflow-wrap:anywhere;}
+            .al-retirada .al-ic{background:var(--c-crit-soft);}
+            .al-pend .al-ic{background:var(--c-crit-soft);}
+            .al-sep .al-ic, .al-urgente .al-ic, .al-aviso .al-ic{background:var(--c-warn-soft);}
+            .al-aumento .al-ic{background:var(--c-ok-soft);}
+            .al-gv .al-ic{background:var(--c-info-soft);}
+            .al-transferencia .al-ic{background:var(--c-purple-soft);}
+            @media (min-width: 900px){
+                .al-wrap{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:2px 8px;}
+                .al-row + .al-row{border-top:none;border-radius:14px;}
+            }
             </style>
             """ + f'<div class="al-wrap">{"".join(_pills)}</div>',
             unsafe_allow_html=True,
@@ -10990,7 +11096,7 @@ if has_mestre:
 
     st.markdown(f"""
     <div class="stat-row">
-        <div class="stat-card"><div class="stat-value">{len(df_view)}</div><div class="stat-label">Total</div></div>
+        <div class="stat-card stat-hero"><span class="stat-hero-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg></span><span class="stat-hero-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17L17 7"/><path d="M8 7h9v9"/></svg></span><div class="stat-value">{len(df_view)}</div><div class="stat-label">Total</div></div>
         <div class="stat-card"><div class="stat-value green">{n_ok}</div><div class="stat-label">OK</div></div>
         <div class="stat-card"><div class="stat-value red">{n_falta}</div><div class="stat-label">Faltas</div></div>
         <div class="stat-card"><div class="stat-value amber">{n_sobra}</div><div class="stat-label">Sobras</div></div>
@@ -11083,7 +11189,7 @@ if has_mestre:
           <div class="stat-card"><div class="stat-value-lg red">{len(_df_falta_i)}</div><div class="stat-label">Faltando</div></div>
           <div class="stat-card"><div class="stat-value-lg amber">{len(_df_sobra_i)}</div><div class="stat-label">Sobrando</div></div>
           <div class="stat-card"><div class="stat-value-lg amber">{len(_df_venc_i)}</div><div class="stat-label">Vencendo 30d</div></div>
-          <div class="stat-card"><div class="stat-value-lg" style="color:#8f8679">{_n_morto_i}</div><div class="stat-label">Morto</div></div>
+          <div class="stat-card"><div class="stat-value-lg" style="color:var(--c-muted)">{_n_morto_i}</div><div class="stat-label">Morto</div></div>
           <div class="stat-card"><div class="stat-value-lg red">{_n_ruptura_i}</div><div class="stat-label">Ruptura</div></div>
         </div>
         """, unsafe_allow_html=True)
@@ -11113,30 +11219,30 @@ if has_mestre:
                         _tot = int(_bloco["delta"].abs().sum())
                         st.markdown(
                             f'<div style="margin:8px 0 4px 0;padding:4px 10px;border-radius:6px;'
-                            f'background:#0b1220;border-left:3px solid {_accent};'
+                            f'background:#EEF2F9;border-left:3px solid {_accent};'
                             f'display:flex;justify-content:space-between;align-items:center;">'
-                            f'<span style="color:#6f9fb8;font-weight:700;font-size:0.78rem;'
+                            f'<span style="color:var(--c-info);font-weight:700;font-size:0.78rem;'
                             f'text-transform:uppercase;letter-spacing:0.3px;">{_coop_nome}</span>'
-                            f'<span style="color:#b3aa9c;font-size:0.7rem;">'
+                            f'<span style="color:var(--c-text-2);font-size:0.7rem;">'
                             f'{len(_bloco)} item(ns) · Σ {_tot}</span></div>',
                             unsafe_allow_html=True,
                         )
                         for _, _r in _bloco.iterrows():
                             _delta = int(_r["delta"])
                             st.markdown(
-                                f'<div style="background:#1c1a17;border:1px solid {_accent}{_border_alpha};border-left:3px solid {_accent};border-radius:8px;'
+                                f'<div style="background:var(--c-surface-2);border:none;border-left:3px solid {_accent};border-radius:12px;'
                                 f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
-                                f'<span><span style="color:#ece6dc;font-weight:600;">{_r["produto"]}</span></span>'
+                                f'<span><span style="color:var(--c-text);font-weight:600;">{_r["produto"]}</span></span>'
                                 f'<span style="color:{_accent};font-family:monospace;font-weight:700;font-size:1.1rem;white-space:nowrap;">{_delta:+d}</span>'
                                 f'</div>', unsafe_allow_html=True)
 
                 _col_f, _col_s = st.columns(2)
                 with _col_f:
                     st.markdown("**🔴 Faltando**")
-                    _render_grouped(_df_falta_i, "#e5533d", "50", "Sem cooperado")
+                    _render_grouped(_df_falta_i, "#D32F2F", "50", "Sem cooperado")
                 with _col_s:
                     st.markdown("**🟡 Sobrando**")
-                    _render_grouped(_df_sobra_i, "#e0a030", "50", "Sem cooperado")
+                    _render_grouped(_df_sobra_i, "#E08A00", "50", "Sem cooperado")
 
         # ── Produtos Vencendo ────────────────────────────────────────────────
         with st.expander(f"📅 Vencendo em 30 dias  —  {len(_df_venc_i)} lote(s)", expanded=True):
@@ -11145,12 +11251,12 @@ if has_mestre:
             else:
                 for _, _r in _df_venc_i.head(10).iterrows():
                     _dias_v = (_r["VENCIMENTO"].date() - _hoje_i).days
-                    _cor_v = "#e5533d" if _dias_v <= 7 else "#e0a030" if _dias_v <= 15 else "#e0a030"
+                    _cor_v = "#D32F2F" if _dias_v <= 7 else "#E08A00" if _dias_v <= 15 else "#E08A00"
                     st.markdown(
-                        f'<div style="background:#1c1a17;border:1px solid #ffa50250;border-left:3px solid {_cor_v};border-radius:8px;'
+                        f'<div style="background:var(--c-surface-2);border:none;border-left:3px solid {_cor_v};border-radius:12px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span><span style="color:#ece6dc;font-weight:600;">{_r["PRODUTO"]}</span>'
-                        f'<br><span style="color:#8f8679;font-size:0.67rem;">Lote: {_r["LOTE"]}  ·  {_r["GRUPO"]}</span></span>'
+                        f'<span><span style="color:var(--c-text);font-weight:600;">{_r["PRODUTO"]}</span>'
+                        f'<br><span style="color:var(--c-muted);font-size:0.67rem;">Lote: {_r["LOTE"]}  ·  {_r["GRUPO"]}</span></span>'
                         f'<span style="color:{_cor_v};font-family:monospace;font-weight:700;font-size:0.9rem;">{_dias_v}d</span>'
                         f'</div>', unsafe_allow_html=True)
                 if len(_df_venc_i) > 10:
@@ -11167,7 +11273,7 @@ if has_mestre:
                     _qe_e = int(_r.get("qtd_estoque", 0))
                     _gr_e = str(_r.get("grupo", ""))
                     _dp_e_disp = "Nunca vendido" if _dp_e >= 9999 else f"{_dp_e}d"
-                    _cor_e = "#e5533d" if _dp_e >= 365 else "#e0a030" if _dp_e >= 180 else "#e0a030"
+                    _cor_e = "#D32F2F" if _dp_e >= 365 else "#E08A00" if _dp_e >= 180 else "#E08A00"
                     _venc_e = _r.get("vencimento")
                     _venc_str = ""
                     if pd.notna(_venc_e):
@@ -11176,10 +11282,10 @@ if has_mestre:
                         except Exception:
                             pass
                     st.markdown(
-                        f'<div style="background:#1c1a17;border:1px solid #22c55e30;border-left:3px solid {_cor_e};border-radius:8px;'
+                        f'<div style="background:var(--c-surface-2);border:none;border-left:3px solid {_cor_e};border-radius:12px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span><span style="color:#ece6dc;font-weight:600;">{_r["produto"]}</span>'
-                        f'<br><span style="color:#8f8679;font-size:0.67rem;">{_gr_e}  ·  Última venda: {_uv_e}{_venc_str}</span></span>'
+                        f'<span><span style="color:var(--c-text);font-weight:600;">{_r["produto"]}</span>'
+                        f'<br><span style="color:var(--c-muted);font-size:0.67rem;">{_gr_e}  ·  Última venda: {_uv_e}{_venc_str}</span></span>'
                         f'<span style="color:{_cor_e};font-family:monospace;font-weight:700;font-size:0.85rem;">{_dp_e_disp}&nbsp;|&nbsp;{_qe_e}</span>'
                         f'</div>', unsafe_allow_html=True)
 
@@ -11199,11 +11305,11 @@ if has_mestre:
                     _uv = str(_r.get("ultima_venda_fmt", "Nunca"))
                     _qe = int(_r.get("qtd_estoque", 0))
                     st.markdown(
-                        f'<div style="background:#1c1a17;border:1px solid #3a352d;border-left:3px solid #8f8679;border-radius:8px;'
+                        f'<div style="background:var(--c-surface-2);border:1px solid var(--c-line-2);border-left:3px solid var(--c-muted);border-radius:12px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span><span style="color:#ece6dc;font-weight:600;">{_r["produto"]}</span>'
-                        f'<br><span style="color:#8f8679;font-size:0.67rem;">{_r.get("grupo","")}  ·  Última venda: {_uv}</span></span>'
-                        f'<span style="color:#b3aa9c;font-family:monospace;font-weight:700;font-size:0.85rem;">{_dp}d&nbsp;|&nbsp;{_qe}</span>'
+                        f'<span><span style="color:var(--c-text);font-weight:600;">{_r["produto"]}</span>'
+                        f'<br><span style="color:var(--c-muted);font-size:0.67rem;">{_r.get("grupo","")}  ·  Última venda: {_uv}</span></span>'
+                        f'<span style="color:var(--c-text-2);font-family:monospace;font-weight:700;font-size:0.85rem;">{_dp}d&nbsp;|&nbsp;{_qe}</span>'
                         f'</div>', unsafe_allow_html=True)
                 if _n_par > 10:
                     _pc1, _pc2 = st.columns([4, 1])
@@ -11221,12 +11327,12 @@ if has_mestre:
             else:
                 for _, _r in _df_crit_i.head(10).iterrows():
                     _qc = int(_r["qtd"])
-                    _cor_c = "#e5533d" if _qc <= 3 else "#e0a030" if _qc <= 7 else "#6f9fb8"
+                    _cor_c = "#D32F2F" if _qc <= 3 else "#E08A00" if _qc <= 7 else "#3D63D8"
                     st.markdown(
-                        f'<div style="background:#1c1a17;border:1px solid #2c3a40;border-left:3px solid {_cor_c};border-radius:8px;'
+                        f'<div style="background:var(--c-surface-2);border:1px solid var(--c-line-2);border-left:3px solid {_cor_c};border-radius:12px;'
                         f'padding:5px 10px;margin-bottom:3px;font-size:0.77rem;display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span><span style="color:#ece6dc;font-weight:600;">{_r["produto"]}</span>'
-                        f'<br><span style="color:#8f8679;font-size:0.67rem;">{_r.get("categoria","")}  ·  Cód: {_r["codigo"]}</span></span>'
+                        f'<span><span style="color:var(--c-text);font-weight:600;">{_r["produto"]}</span>'
+                        f'<br><span style="color:var(--c-muted);font-size:0.67rem;">{_r.get("categoria","")}  ·  Cód: {_r["codigo"]}</span></span>'
                         f'<span style="color:{_cor_c};font-family:monospace;font-weight:700;font-size:1rem;">{_qc}</span>'
                         f'</div>', unsafe_allow_html=True)
                 if len(_df_crit_i) > 10:
@@ -11281,16 +11387,16 @@ if has_mestre:
 
   var overlay = doc.createElement('div');
   overlay.id = 'tm-div-overlay';
-  overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,0.65);z-index:99999;align-items:center;justify-content:center;';
+  overlay.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(17,17,17,0.45);z-index:99999;align-items:center;justify-content:center;';
   overlay.innerHTML = [
-    '<div id="tm-div-modal" style="background:#1f1d1a;border:1px solid #2d3748;border-radius:16px;',
+    '<div id="tm-div-modal" style="background:var(--c-surface-2);border:1px solid var(--c-line-2);border-radius:16px;',
     'padding:24px;min-width:320px;max-width:480px;width:90%;',
-    'box-shadow:0 20px 60px rgba(0,0,0,0.6);position:relative;">',
+    'box-shadow:0 20px 60px rgba(17,17,17,0.2);position:relative;">',
       '<button id="tm-div-close" style="position:absolute;top:12px;right:14px;background:none;border:none;',
-      'color:#8f8679;font-size:1.2rem;cursor:pointer;line-height:1;">&#x2715;</button>',
-      '<div style="font-size:0.65rem;color:#8f8679;font-family:monospace;letter-spacing:1px;',
+      'color:var(--c-muted);font-size:1.2rem;cursor:pointer;line-height:1;">&#x2715;</button>',
+      '<div style="font-size:0.65rem;color:var(--c-muted);font-family:monospace;letter-spacing:1px;',
       'text-transform:uppercase;margin-bottom:4px;">Divergências</div>',
-      '<div id="tm-div-produto" style="font-size:1rem;font-weight:700;color:#ece6dc;margin-bottom:16px;"></div>',
+      '<div id="tm-div-produto" style="font-size:1rem;font-weight:700;color:var(--c-text);margin-bottom:16px;"></div>',
       '<div id="tm-div-body"></div>',
     '</div>'
   ].join('');
@@ -11319,18 +11425,18 @@ if has_mestre:
     var entries = DIVS[normCode(cod)] || DIVS[cod];
     if (!entries || entries.length === 0) return;
     doc.getElementById('tm-div-produto').innerHTML =
-      esc(nome) + ' <span style="font-size:0.65rem;color:#8f8679;font-family:monospace;">' + esc(cod) + '</span>';
+      esc(nome) + ' <span style="font-size:0.65rem;color:var(--c-muted);font-family:monospace;">' + esc(cod) + '</span>';
     var html = '<div style="display:flex;flex-direction:column;gap:8px;">';
     entries.forEach(function(e) {{
-      var clr  = e.delta < 0 ? '#e5533d' : '#5fa8a8';
+      var clr  = e.delta < 0 ? '#D32F2F' : '#00897B';
       var sign = e.delta < 0 ? '&#9660;' : '&#9650;';
       var lbl  = e.status === 'falta' ? 'Falta' : 'Sobra';
-      html += '<div style="background:#1c1a17;border-radius:10px;padding:12px 14px;' +
+      html += '<div style="background:var(--c-surface-2);border-radius:12px;padding:12px 14px;' +
               'display:flex;align-items:center;justify-content:space-between;gap:12px;">';
-      html += '<div><div style="font-size:0.75rem;color:#b3aa9c;margin-bottom:2px;">Cooperado</div>' +
-              '<div style="font-size:0.9rem;font-weight:600;color:#ece6dc;">' + esc(e.cooperado) + '</div></div>';
+      html += '<div><div style="font-size:0.75rem;color:var(--c-text-2);margin-bottom:2px;">Cooperado</div>' +
+              '<div style="font-size:0.9rem;font-weight:600;color:var(--c-text);">' + esc(e.cooperado) + '</div></div>';
       html += '<div style="text-align:right;flex-shrink:0;">' +
-              '<div style="font-size:0.65rem;color:#8f8679;margin-bottom:2px;">' + lbl + '</div>' +
+              '<div style="font-size:0.65rem;color:var(--c-muted);margin-bottom:2px;">' + lbl + '</div>' +
               '<div style="font-size:1rem;font-weight:700;color:' + clr + ';font-family:monospace;">' +
               sign + Math.abs(e.delta) + '</div></div>';
       html += '</div>';
@@ -11403,35 +11509,35 @@ if has_mestre:
 <style>
 *{box-sizing:border-box;margin:0;padding:0;font-family:'IBM Plex Sans',system-ui,sans-serif;}
 body{background:transparent;padding:0;}
-.card{background:#0E1117;border:0.5px solid rgba(255,255,255,0.08);border-radius:12px;padding:1.25rem 1.5rem 1rem;}
+.card{background:var(--c-bg);border:0.5px solid rgba(17,17,17,0.08);border-radius:12px;padding:1.25rem 1.5rem 1rem;}
 .card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:0.75rem;}
-.card-title{font-size:11px;font-weight:500;letter-spacing:0.08em;color:rgba(255,255,255,0.5);margin:0 0 4px;text-transform:uppercase;}
-.card-subtitle{font-size:13px;color:rgba(255,255,255,0.75);margin:0;opacity:0.7;}
-.legend{display:flex;gap:14px;font-size:12px;color:rgba(255,255,255,0.75);flex-shrink:0;}
+.card-title{font-size:11px;font-weight:500;letter-spacing:0.08em;color:var(--c-muted);margin:0 0 4px;text-transform:uppercase;}
+.card-subtitle{font-size:13px;color:var(--c-text-2);margin:0;opacity:0.7;}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--c-text-2);flex-shrink:0;}
 .legend span{display:flex;align-items:center;gap:6px;}
 .ldot{width:8px;height:8px;border-radius:2px;display:inline-block;}
 .panel-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:50;align-items:center;justify-content:center;}
 .panel-overlay.open{display:flex;}
-.panel-box{background:#1a1d24;border-radius:14px;width:90%;max-width:420px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:0.5px solid rgba(255,255,255,0.08);}
-.phead{padding:14px 16px 10px;border-bottom:0.5px solid rgba(255,255,255,0.08);flex-shrink:0;}
-.pclose{float:right;background:none;border:none;font-size:18px;color:rgba(255,255,255,0.4);cursor:pointer;}
+.panel-box{background:var(--c-surface);border-radius:14px;width:90%;max-width:420px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;border:0.5px solid rgba(17,17,17,0.08);}
+.phead{padding:14px 16px 10px;border-bottom:0.5px solid rgba(17,17,17,0.08);flex-shrink:0;}
+.pclose{float:right;background:none;border:none;font-size:18px;color:var(--c-muted);cursor:pointer;}
 .pcolorbar{height:3px;border-radius:2px;width:36px;margin-bottom:6px;}
-.pname{font-size:16px;font-weight:500;color:rgba(255,255,255,0.9);margin-bottom:8px;}
+.pname{font-size:16px;font-weight:500;color:var(--c-text);margin-bottom:8px;}
 .pstats{display:flex;gap:6px;}
-.pstat{flex:1;background:rgba(255,255,255,0.05);border-radius:8px;padding:8px 6px;text-align:center;}
-.pstatv{font-size:22px;font-weight:600;color:#6f9fb8;}
-.pstatl{font-size:10px;color:rgba(255,255,255,0.4);margin-top:2px;}
+.pstat{flex:1;background:rgba(17,17,17,0.05);border-radius:8px;padding:8px 6px;text-align:center;}
+.pstatv{font-size:22px;font-weight:600;color:var(--c-info);}
+.pstatl{font-size:10px;color:var(--c-muted);margin-top:2px;}
 .pitems{flex:1;overflow-y:auto;padding:10px 14px;display:flex;flex-direction:column;gap:7px;}
-.icard{background:rgba(255,255,255,0.04);border-radius:9px;padding:10px 12px;border-left:3px solid #e5533d;}
-.icard.sobra{border-left-color:#6f9fb8;}
-.icard-name{font-size:12px;font-weight:500;color:rgba(255,255,255,0.85);line-height:1.35;margin-bottom:3px;}
-.icard-meta{font-size:10px;color:rgba(255,255,255,0.4);margin-bottom:6px;}
+.icard{background:rgba(17,17,17,0.04);border-radius:9px;padding:10px 12px;border-left:3px solid var(--c-crit);}
+.icard.sobra{border-left-color:var(--c-info);}
+.icard-name{font-size:12px;font-weight:500;color:var(--c-text);line-height:1.35;margin-bottom:3px;}
+.icard-meta{font-size:10px;color:var(--c-muted);margin-bottom:6px;}
 .icard-bar{display:flex;align-items:center;gap:7px;}
-.ibar-track{flex:1;height:5px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden;}
+.ibar-track{flex:1;height:5px;background:rgba(17,17,17,0.08);border-radius:3px;overflow:hidden;}
 .ibar-fill{height:100%;border-radius:3px;transition:width .6s ease;}
-.icard-nums{font-size:10px;color:rgba(255,255,255,0.5);white-space:nowrap;}
-.icard-diff{font-size:13px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(229,83,61,0.15);color:#e5533d;min-width:40px;text-align:center;}
-.icard-diff.pos{background:rgba(111,159,184,0.15);color:#6f9fb8;}
+.icard-nums{font-size:10px;color:var(--c-muted);white-space:nowrap;}
+.icard-diff{font-size:13px;font-weight:700;padding:3px 10px;border-radius:20px;background:rgba(211,47,47,0.15);color:var(--c-crit);min-width:40px;text-align:center;}
+.icard-diff.pos{background:rgba(61,99,216,0.15);color:var(--c-info);}
 </style>
 </head>
 <body>
@@ -11442,8 +11548,8 @@ body{background:transparent;padding:0;}
       <p class="card-subtitle">__TOTAL__ divergências \u00b7 clique para ver produtos</p>
     </div>
     <div class="legend">
-      <span><span class="ldot" style="background:#e5533d;"></span>Faltas</span>
-      <span><span class="ldot" style="background:#6f9fb8;"></span>Sobras</span>
+      <span><span class="ldot" style="background:var(--c-crit);"></span>Faltas</span>
+      <span><span class="ldot" style="background:var(--c-info);"></span>Sobras</span>
     </div>
   </div>
   <div style="position:relative;width:100%;height:__CHART_H__px;">
@@ -11465,10 +11571,10 @@ body{background:transparent;padding:0;}
 <script>
 const dados=__DADOS__;
 const SEM_COOP='SEM COOPERADO';
-const CLR_FALTA='#e5533d';
-const CLR_SOBRA='#6f9fb8';
-const CLR_EXCEP='#F2A93B';
-const CLR_LABEL='rgba(255,255,255,0.75)';
+const CLR_FALTA='#D32F2F';
+const CLR_SOBRA='#3D63D8';
+const CLR_EXCEP='#E08A00';
+const CLR_LABEL='rgba(17,17,17,0.75)';
 const coopMap={};
 dados.forEach((d,i)=>{
   const totF=d.itens.filter(it=>it.diff<0).reduce((s,it)=>s+Math.abs(it.diff),0);
@@ -11493,7 +11599,7 @@ function openPanel(dataIdx){
   document.getElementById('pname').textContent=d.coop;
   let statsHtml=`<div class="pstat"><div class="pstatv" style="color:${CLR_FALTA}">${totF}</div><div class="pstatl">unid. faltando</div></div>`;
   if(totS>0) statsHtml+=`<div class="pstat"><div class="pstatv">${totS}</div><div class="pstatl">unid. sobrando</div></div>`;
-  statsHtml+=`<div class="pstat"><div class="pstatv" style="color:rgba(255,255,255,0.55)">${faltas.length+sobras.length}</div><div class="pstatl">produtos</div></div>`;
+  statsHtml+=`<div class="pstat"><div class="pstatv" style="color:var(--c-text-2)">${faltas.length+sobras.length}</div><div class="pstatl">produtos</div></div>`;
   document.getElementById('pstats').innerHTML=statsHtml;
   const pi=document.getElementById('pitems');
   pi.innerHTML='';
@@ -11531,7 +11637,7 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Faltas',
         data:valsF,
-        backgroundColor:'rgba(229,83,61,0.82)',
+        backgroundColor:'rgba(211,47,47,0.82)',
         hoverBackgroundColor:CLR_FALTA,
         borderRadius:{topLeft:4,bottomLeft:4,topRight:0,bottomRight:0},
         borderSkipped:false,
@@ -11540,7 +11646,7 @@ new Chart(document.getElementById('coop-chart'),{
       {
         label:'Sobras',
         data:valsS,
-        backgroundColor:'rgba(111,159,184,0.78)',
+        backgroundColor:'rgba(61,99,216,0.78)',
         hoverBackgroundColor:CLR_SOBRA,
         borderRadius:{topLeft:0,bottomLeft:0,topRight:4,bottomRight:4},
         borderSkipped:false,
@@ -11555,11 +11661,11 @@ new Chart(document.getElementById('coop-chart'),{
     plugins:{
       legend:{display:false},
       tooltip:{
-        backgroundColor:'#1a1d24',
-        borderColor:'rgba(255,255,255,0.08)',
+        backgroundColor:'#F8F8F8',
+        borderColor:'rgba(17,17,17,0.08)',
         borderWidth:1,
-        titleColor:'rgba(255,255,255,0.85)',
-        bodyColor:'rgba(255,255,255,0.6)',
+        titleColor:'rgba(17,17,17,0.85)',
+        bodyColor:'rgba(17,17,17,0.6)',
         padding:10,
         callbacks:{
           label:ctx=>{
@@ -11573,9 +11679,9 @@ new Chart(document.getElementById('coop-chart'),{
     scales:{
       x:{
         stacked:true,
-        grid:{color:'rgba(255,255,255,0.05)',drawBorder:false},
+        grid:{color:'rgba(17,17,17,0.05)',drawBorder:false},
         border:{display:false},
-        ticks:{font:{size:11},color:'rgba(255,255,255,0.5)'}
+        ticks:{font:{size:11},color:'rgba(17,17,17,0.5)'}
       },
       y:{
         stacked:true,
@@ -11660,16 +11766,16 @@ new Chart(document.getElementById('coop-chart'),{
                 df_div = df_div.sort_values(["_group_newest", "criado_em"], ascending=[False, False])
                 df_div = df_div.drop(columns=["_group_newest"])
 
-            # Paleta de cores discretas por pessoa (tema escuro)
+            # Paleta de cores discretas por pessoa (tema claro)
             _PERSON_PALETTE = [
-                {"h_bg": "#2c3a40", "h_bd": "#6f9fb8", "h_tx": "#a9c6d6", "c_bg": "#0f1d2e"},  # azul
-                {"h_bg": "#1a3a20", "h_bd": "#3fbf7f", "h_tx": "#86efac", "c_bg": "#0d2010"},  # verde
-                {"h_bg": "#3a1e2e", "h_bd": "#ec4899", "h_tx": "#f9a8d4", "c_bg": "#200d18"},  # rosa
-                {"h_bg": "#3a2e1a", "h_bd": "#d9772f", "h_tx": "#fdba74", "c_bg": "#201808"},  # laranja
-                {"h_bg": "#2a1e3a", "h_bd": "#a98bc9", "h_tx": "#d8b4fe", "c_bg": "#160d21"},  # roxo
-                {"h_bg": "#1e3a3a", "h_bd": "#5fa8a8", "h_tx": "#67e8f9", "c_bg": "#0d2020"},  # ciano
-                {"h_bg": "#3a2a1e", "h_bd": "#e08a4a", "h_tx": "#fed7aa", "c_bg": "#211508"},  # âmbar
-                {"h_bg": "#2e3a1e", "h_bd": "#84cc16", "h_tx": "#bef264", "c_bg": "#182008"},  # lima
+                {"h_bg": "#EDF1FC", "h_bd": "#3D63D8", "h_tx": "#3D63D8", "c_bg": "#F5F7FD"},  # azul
+                {"h_bg": "#EFF8F1", "h_bd": "#2E7D32", "h_tx": "#2E7D32", "c_bg": "#EFF8F0"},  # verde
+                {"h_bg": "#F7F0F4", "h_bd": "#ec4899", "h_tx": "#C2185B", "c_bg": "#F8EFF4"},  # rosa
+                {"h_bg": "#F8F5EF", "h_bd": "#E08A00", "h_tx": "#9A5B00", "c_bg": "#FAF6ED"},  # laranja
+                {"h_bg": "#F3F0F7", "h_bd": "#7E57C2", "h_tx": "#7E57C2", "c_bg": "#F3EFF9"},  # roxo
+                {"h_bg": "#F0F7F7", "h_bd": "#00897B", "h_tx": "#00897B", "c_bg": "#EFF8F8"},  # ciano
+                {"h_bg": "#F7F3F0", "h_bd": "#E08A00", "h_tx": "#B26B00", "c_bg": "#FAF4ED"},  # âmbar
+                {"h_bg": "#F4F7F0", "h_bd": "#689F38", "h_tx": "#558B2F", "c_bg": "#F6FAED"},  # lima
             ]
             # Mapeia cada grupo para uma cor fixa
             _group_color_map = {}
@@ -11721,7 +11827,7 @@ new Chart(document.getElementById('coop-chart'),{
 
             _prev_obs_group = None
             for _, item in df_div_agg.iterrows():
-                status_cor = "#e5533d" if item["status"] == "falta" else "#e0a030"
+                status_cor = "#D32F2F" if item["status"] == "falta" else "#E08A00"
                 status_label = "⬇️ FALTA" if item["status"] == "falta" else "⬆️ SOBRA"
                 delta = int(item["delta"]) if pd.notnull(item["delta"]) else 0
                 qtd_s = int(item["qtd_sistema"]) if pd.notnull(item["qtd_sistema"]) else 0
@@ -11740,7 +11846,7 @@ new Chart(document.getElementById('coop-chart'),{
                         st.markdown(
                             f'<div style="margin:14px 0 6px;padding:6px 12px;background:{_grp_color["h_bg"]};border-left:4px solid {_grp_color["h_bd"]};border-radius:4px;">'
                             f'<span style="color:{_grp_color["h_tx"]};font-weight:700;font-size:0.82rem;">👤 {_hx(_obs_group)}</span>'
-                            f'<span style="color:#8f8679;font-size:0.72rem;margin-left:8px;">{_count_group} item(s)</span>'
+                            f'<span style="color:var(--c-muted);font-size:0.72rem;margin-left:8px;">{_count_group} item(s)</span>'
                             f'</div>',
                             unsafe_allow_html=True,
                         )
@@ -11748,17 +11854,17 @@ new Chart(document.getElementById('coop-chart'),{
 
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
-                    _merged_badge = (f'<span style="color:#8f8679;font-size:0.65rem;margin-left:4px;">({len(_item_ids)} registros)</span>' if len(_item_ids) > 1 else '')
+                    _merged_badge = (f'<span style="color:var(--c-muted);font-size:0.65rem;margin-left:4px;">({len(_item_ids)} registros)</span>' if len(_item_ids) > 1 else '')
                     st.markdown(
                         f'<div style="background:{_grp_color["c_bg"]};border:1px solid {_grp_color["h_bd"]}33;border-left:3px solid {_grp_color["h_bd"]}88;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span style="color:#ece6dc;font-weight:700;font-size:0.85rem;">{_hx(item["produto"])}{_merged_badge}</span>'
+                        f'<span style="color:var(--c-text);font-weight:700;font-size:0.85rem;">{_hx(item["produto"])}{_merged_badge}</span>'
                         f'<span style="color:{status_cor};font-size:0.7rem;font-weight:700;">{status_label} {abs(delta)}</span></div>'
                         f'<div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap;">'
-                        f'<span style="color:#8f8679;font-size:0.78rem;">Cod: <b style="color:#b3aa9c;">{_hx(item["codigo"])}</b></span>'
-                        f'<span style="color:#8f8679;font-size:0.65rem;">{_hx(item["categoria"])}</span>'
-                        f'<span style="color:#8f8679;font-size:0.65rem;">Sistema: <b style="color:#b3aa9c;">{qtd_s}</b> · Físico: <b style="color:#b3aa9c;">{qtd_f}</b></span>'
-                        + (f'<span style="color:#8f8679;font-size:0.75rem;">Cooperado: <i style="color:{_grp_color["h_tx"]};">{_hx(cooperado)}</i></span>' if cooperado else '')
+                        f'<span style="color:var(--c-muted);font-size:0.78rem;">Cod: <b style="color:var(--c-text-2);">{_hx(item["codigo"])}</b></span>'
+                        f'<span style="color:var(--c-muted);font-size:0.65rem;">{_hx(item["categoria"])}</span>'
+                        f'<span style="color:var(--c-muted);font-size:0.65rem;">Sistema: <b style="color:var(--c-text-2);">{qtd_s}</b> · Físico: <b style="color:var(--c-text-2);">{qtd_f}</b></span>'
+                        + (f'<span style="color:var(--c-muted);font-size:0.75rem;">Cooperado: <i style="color:{_grp_color["h_tx"]};">{_hx(cooperado)}</i></span>' if cooperado else '')
                         + f'</div></div>',
                         unsafe_allow_html=True,
                     )
@@ -11800,14 +11906,14 @@ new Chart(document.getElementById('coop-chart'),{
                 col_info, col_btn = st.columns([5, 1])
                 with col_info:
                     st.markdown(
-                        f'<div class="repor-item" style="background:#1c1a17;border:1px solid #2e2a24;border-radius:8px;padding:10px 14px;margin-bottom:4px;">'
+                        f'<div class="repor-item" style="background:var(--c-surface-2);border:1px solid var(--c-line);border-radius:12px;padding:10px 14px;margin-bottom:4px;">'
                         f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                        f'<span style="color:#ece6dc;font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
-                        f'<span style="color:#6f9fb8;font-size:0.6rem;font-family:monospace;">{tempo}</span></div>'
+                        f'<span style="color:var(--c-text);font-weight:700;font-size:0.85rem;">{item["produto"]}</span>'
+                        f'<span style="color:var(--c-info);font-size:0.6rem;font-family:monospace;">{tempo}</span></div>'
                         f'<div style="margin-top:4px;display:flex;gap:12px;">'
-                        f'<span style="color:#8f8679;font-size:0.78rem;">Cod: <b style="color:#b3aa9c;">{item["codigo"]}</b></span>'
-                        f'<span style="color:#8f8679;font-size:0.65rem;">{item["categoria"]}</span>'
-                        f'<span style="color:#e0a030;font-size:0.65rem;font-weight:700;">Estoque: {qtd_e} → Repor: {qtd_v}</span>'
+                        f'<span style="color:var(--c-muted);font-size:0.78rem;">Cod: <b style="color:var(--c-text-2);">{item["codigo"]}</b></span>'
+                        f'<span style="color:var(--c-muted);font-size:0.65rem;">{item["categoria"]}</span>'
+                        f'<span style="color:var(--c-warn-ink);font-size:0.65rem;font-weight:700;">Estoque: {qtd_e} → Repor: {qtd_v}</span>'
                         f'</div></div>',
                         unsafe_allow_html=True,
                     )
@@ -11868,12 +11974,12 @@ new Chart(document.getElementById('coop-chart'),{
                                 _divs_resumo = " · ".join(_partes)
 
                             st.markdown(
-                                f'<div style="background:#1c1a17;border:1px solid #2e2a24;'
+                                f'<div style="background:var(--c-surface-2);border:1px solid var(--c-line);'
                                 f'border-radius:8px;padding:10px 14px;margin:6px 0;">'
-                                f'<span style="color:#b3aa9c;font-size:0.75rem;">Sistema: </span>'
-                                f'<span style="color:#ece6dc;font-weight:700;">{qtd_atual} un.</span>'
-                                f'&nbsp;&nbsp;<span style="color:#8f8679;font-size:0.7rem;">{cat_corr}</span>'
-                                + (f'<br><span style="color:#e0a030;font-size:0.7rem;">⚠️ {_n_divs} divergência(s) registrada(s): {_divs_resumo}</span>' if _n_divs > 0 else '')
+                                f'<span style="color:var(--c-text-2);font-size:0.75rem;">Sistema: </span>'
+                                f'<span style="color:var(--c-text);font-weight:700;">{qtd_atual} un.</span>'
+                                f'&nbsp;&nbsp;<span style="color:var(--c-muted);font-size:0.7rem;">{cat_corr}</span>'
+                                + (f'<br><span style="color:var(--c-warn-ink);font-size:0.7rem;">⚠️ {_n_divs} divergência(s) registrada(s): {_divs_resumo}</span>' if _n_divs > 0 else '')
                                 + f'</div>',
                                 unsafe_allow_html=True,
                             )
@@ -11897,7 +12003,7 @@ new Chart(document.getElementById('coop-chart'),{
                             )
 
                             if delta_corr != 0:
-                                cor = "#3fbf7f" if delta_corr > 0 else "#ec7a66"
+                                cor = "#2E7D32" if delta_corr > 0 else "#D32F2F"
                                 tipo = "sobra" if delta_corr > 0 else "falta"
                                 sinal = "+" if delta_corr > 0 else ""
                                 st.markdown(
@@ -11955,10 +12061,10 @@ new Chart(document.getElementById('coop-chart'),{
                     _prods += f" +{len(_itens) - 3}"
                 _linhas_pf.append(
                     f'<div style="padding:8px 14px;border-radius:8px;'
-                    f'background:rgba(111,159,184,0.08);border:1px solid rgba(111,159,184,0.3);'
+                    f'background:rgba(61,99,216,0.08);border:1px solid rgba(61,99,216,0.3);'
                     f'margin-bottom:6px;font-size:0.83rem;">'
-                    f'🔵 <b>Possível faturamento:</b> <b style="color:#a9c6d6">{_a["cooperado"]}</b>'
-                    f'<span style="color:#8f8679;font-size:0.75rem;margin-left:8px;">'
+                    f'🔵 <b>Possível faturamento:</b> <b style="color:var(--c-info)">{_a["cooperado"]}</b>'
+                    f'<span style="color:var(--c-muted);font-size:0.75rem;margin-left:8px;">'
                     f'{len(_itens)} produto(s) com qtd similar à divergência: {_prods}</span></div>'
                 )
             st.markdown(
@@ -12066,7 +12172,7 @@ new Chart(document.getElementById('coop-chart'),{
 
                 def _style_gv(row):
                     if row["Divergência %"] > _GV_THRESHOLD_PCT:
-                        color = "rgba(229,83,61,0.12)" if row["Diferença"] < 0 else "rgba(255,193,7,0.10)"
+                        color = "rgba(211,47,47,0.12)" if row["Diferença"] < 0 else "rgba(224,138,0,0.10)"
                         return [f"background-color:{color}"] * len(row)
                     return [""] * len(row)
 
@@ -12234,17 +12340,17 @@ new Chart(document.getElementById('coop-chart'),{
                         x=[_uv_fmt_dia(d) for d in _df_uv_cron["dia"]],
                         y=pd.to_numeric(_df_uv_cron["qtd"], errors="coerce").fillna(0),
                         mode="lines+markers",
-                        line=dict(color="#6f9fb8", width=2),
-                        marker=dict(size=6, color="#6f9fb8"),
+                        line=dict(color="#3D63D8", width=2),
+                        marker=dict(size=6, color="#3D63D8"),
                         fill="tozeroy",
-                        fillcolor="rgba(111,159,184,0.10)",
+                        fillcolor="rgba(61,99,216,0.10)",
                         hovertemplate="<b>%{x}</b><br>%{y} un.<extra></extra>",
                     ))
                     _fig_uv.update_layout(
                         **_PLOTLY_LAYOUT,
                         height=260,
-                        xaxis=dict(gridcolor="#2e2a24", tickangle=-45, tickfont=dict(size=9)),
-                        yaxis=dict(gridcolor="#2e2a24", title="Unidades"),
+                        xaxis=dict(gridcolor="#E2E2E2", tickangle=-45, tickfont=dict(size=9)),
+                        yaxis=dict(gridcolor="#E2E2E2", title="Unidades"),
                         showlegend=False,
                     )
                     st.plotly_chart(_fig_uv, use_container_width=True,
@@ -12272,16 +12378,16 @@ new Chart(document.getElementById('coop-chart'),{
         # ── CSS da aba ──
         st.markdown("""
         <style>
-        .pend-card{background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:16px;padding:16px;margin-bottom:16px;}
-        .pend-card.alerta-amarelo{border-color:rgba(255,193,7,0.5);background:rgba(255,193,7,0.06);}
-        .pend-card.alerta-vermelho{border-color:rgba(229,83,61,0.6);background:rgba(229,83,61,0.08);animation:pulse-red 2s infinite;}
-        @keyframes pulse-red{0%{box-shadow:0 0 0 0 rgba(229,83,61,0.3)}70%{box-shadow:0 0 0 8px rgba(229,83,61,0)}100%{box-shadow:0 0 0 0 rgba(229,83,61,0)}}
+        .pend-card{background:rgba(17,17,17,0.04);border:1px solid rgba(17,17,17,0.08);border-radius:16px;padding:16px;margin-bottom:16px;}
+        .pend-card.alerta-amarelo{border-color:rgba(224,138,0,0.5);background:rgba(224,138,0,0.06);}
+        .pend-card.alerta-vermelho{border-color:rgba(211,47,47,0.6);background:rgba(211,47,47,0.08);animation:pulse-red 2s infinite;}
+        @keyframes pulse-red{0%{box-shadow:0 0 0 0 rgba(211,47,47,0.3)}70%{box-shadow:0 0 0 8px rgba(211,47,47,0)}100%{box-shadow:0 0 0 0 rgba(211,47,47,0)}}
         .badge-dias{display:inline-block;padding:4px 14px;border-radius:20px;font-size:0.8rem;font-weight:700;letter-spacing:.5px;margin-bottom:10px;}
-        .badge-verde{background:rgba(63,191,127,0.15);color:#3fbf7f;border:1px solid #00d68f44;}
-        .badge-amarelo{background:rgba(255,193,7,0.15);color:#ffc107;border:1px solid #ffc10744;}
-        .badge-vermelho{background:rgba(229,83,61,0.15);color:#e5533d;border:1px solid #ff475744;}
-        .pend-data{font-size:0.7rem;color:rgba(255,255,255,0.4);font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
-        .pend-obs{background:rgba(255,255,255,0.06);border-left:3px solid rgba(111,159,184,0.5);border-radius:0 8px 8px 0;padding:8px 12px;margin:10px 0 4px 0;font-size:0.85rem;color:rgba(255,255,255,0.75);white-space:pre-wrap;}
+        .badge-verde{background:rgba(46,125,50,0.15);color:var(--c-ok);border:1px solid #2E7D3244;}
+        .badge-amarelo{background:rgba(224,138,0,0.15);color:var(--c-warn-ink);border:1px solid #E08A0044;}
+        .badge-vermelho{background:rgba(211,47,47,0.15);color:var(--c-crit);border:1px solid #D32F2F44;}
+        .pend-data{font-size:0.7rem;color:var(--c-muted);font-family:'IBM Plex Mono',monospace;margin-bottom:8px;}
+        .pend-obs{background:rgba(17,17,17,0.06);border-left:3px solid rgba(61,99,216,0.5);border-radius:0 8px 8px 0;padding:8px 12px;margin:10px 0 4px 0;font-size:0.85rem;color:var(--c-text-2);white-space:pre-wrap;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -12326,7 +12432,7 @@ new Chart(document.getElementById('coop-chart'),{
 
         if not pendencias:
             st.markdown("""
-            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.3);">
+            <div style="text-align:center;padding:40px 20px;color:var(--c-muted);">
                 <div style="font-size:2.5rem;">✅</div>
                 <div>Nenhuma pendência no momento</div>
             </div>
@@ -12379,39 +12485,39 @@ new Chart(document.getElementById('coop-chart'),{
     if _dash_tab == _TAB_AVARIAS:
         st.markdown("""
         <style>
-        .av-card{background:linear-gradient(145deg,#0d1824,#111e2e);
-                 border:1px solid #2a3338;border-left:3px solid #e05c3a;
+        .av-card{background:linear-gradient(145deg,#EEF3F9,#EEF3F9);
+                 border:1px solid var(--c-line-2);border-left:3px solid var(--c-crit);
                  border-radius:14px;padding:14px 14px 10px;margin-bottom:2px;}
-        .av-card.fechada{border-left:3px solid #1e3a5a;opacity:0.6;}
+        .av-card.fechada{border-left:3px solid var(--c-line-2);opacity:0.6;}
         .av-badge{display:inline-flex;align-items:center;gap:4px;
                   padding:3px 9px;border-radius:20px;font-size:10px;
                   font-weight:700;letter-spacing:.5px;
                   font-family:'IBM Plex Mono',monospace;}
-        .av-aberto{background:rgba(224,92,58,0.13);color:#e05c3a;
-                   border:1px solid rgba(224,92,58,0.28);}
-        .av-resolvido{background:rgba(46,42,36,0.3);color:#4a7a9b;
-                      border:1px solid rgba(46,42,36,0.5);}
-        .av-tempo{font-size:10px;color:#5a7f8f;
+        .av-aberto{background:rgba(211,47,47,0.13);color:var(--c-crit);
+                   border:1px solid rgba(211,47,47,0.28);}
+        .av-resolvido{background:var(--c-info-soft);color:var(--c-info);
+                      border:1px solid rgba(61,99,216,0.3);}
+        .av-tempo{font-size:10px;color:var(--c-info);
                   font-family:'IBM Plex Mono',monospace;margin-left:auto;}
-        .av-produto-nome{color:#c8dff0;font-size:12px;font-weight:700;
+        .av-produto-nome{color:var(--c-text-2);font-size:12px;font-weight:700;
                          text-transform:uppercase;letter-spacing:.4px;
                          margin:6px 0 10px;line-height:1.35;
                          font-family:'IBM Plex Sans',sans-serif;}
         .av-stats-bar{display:grid;grid-template-columns:1fr 1fr 1fr;
-                      gap:6px;border-top:1px solid #2a3338;
+                      gap:6px;border-top:1px solid var(--c-line-2);
                       padding-top:10px;margin-top:4px;}
         .av-stat-item{display:flex;flex-direction:column;gap:2px;}
-        .av-stat-lbl{font-size:9px;color:#5a7f8f;text-transform:uppercase;
+        .av-stat-lbl{font-size:9px;color:var(--c-info);text-transform:uppercase;
                      letter-spacing:.8px;font-family:'IBM Plex Mono',monospace;}
-        .av-stat-val{font-size:13px;font-weight:700;color:#c8dff0;
+        .av-stat-val{font-size:13px;font-weight:700;color:var(--c-text-2);
                      font-family:'IBM Plex Mono',monospace;}
-        .av-stat-val.perdido{color:#e05c3a;}
-        .av-stat-val.baldes{color:#3a9fd6;}
-        .av-grid-open-label{font-size:11px;color:#5a7f8f;
+        .av-stat-val.perdido{color:var(--c-crit);}
+        .av-stat-val.baldes{color:var(--c-info);}
+        .av-grid-open-label{font-size:11px;color:var(--c-info);
                              font-family:'IBM Plex Mono',monospace;
                              margin-bottom:12px;display:flex;
                              align-items:center;gap:8px;}
-        .av-count-badge{background:#e05c3a;color:white;font-size:10px;
+        .av-count-badge{background:var(--c-crit);color:white;font-size:10px;
                         font-weight:700;border-radius:50%;width:20px;height:20px;
                         display:inline-flex;align-items:center;justify-content:center;
                         font-family:'IBM Plex Mono',monospace;}
@@ -12490,7 +12596,7 @@ new Chart(document.getElementById('coop-chart'),{
 
         if df_av.empty:
             st.markdown("""
-            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.3);">
+            <div style="text-align:center;padding:40px 20px;color:var(--c-muted);">
                 <div style="font-size:2.5rem;">✅</div>
                 <div>Nenhuma avaria registrada</div>
             </div>
@@ -12575,11 +12681,11 @@ new Chart(document.getElementById('coop-chart'),{
                             f'<div onclick="openAvLightbox(this)" '
                             f'style="display:flex;flex-direction:column;align-items:center;'
                             f'min-width:80px;max-width:80px;height:100px;border-radius:10px;'
-                            f'overflow:hidden;border:1px solid rgba(111,159,184,0.2);'
+                            f'overflow:hidden;border:1px solid rgba(61,99,216,0.2);'
                             f'flex-shrink:0;background:rgba(0,0,0,0.25);cursor:zoom-in;">'
                             f'<img src="data:image/jpeg;base64,{f["foto_base64"]}" '
                             f'style="width:80px;height:80px;object-fit:cover;pointer-events:none;">'
-                            f'<div style="font-size:8px;color:rgba(111,159,184,0.5);padding:3px 0;'
+                            f'<div style="font-size:8px;color:rgba(61,99,216,0.5);padding:3px 0;'
                             f'letter-spacing:0.5px;font-family:monospace;pointer-events:none;">'
                             f'Foto {i+1}</div>'
                             f'</div>'
@@ -12604,8 +12710,8 @@ new Chart(document.getElementById('coop-chart'),{
                             _cv1.html(_galoes_container, height=160 if _has_foto else 140, scrolling=False)
                         else:
                             st.markdown(
-                                '<div style="font-size:10px;color:#2a5a7a;text-align:center;'
-                                'border:1px dashed #2a3338;border-radius:8px;padding:12px;'
+                                '<div style="font-size:10px;color:var(--c-info);text-align:center;'
+                                'border:1px dashed var(--c-line-2);border-radius:8px;padding:12px;'
                                 'margin:4px 0 8px;">Sem registros visuais</div>',
                                 unsafe_allow_html=True
                             )
@@ -12652,7 +12758,7 @@ new Chart(document.getElementById('coop-chart'),{
 
                         if not is_aberta and av.get("resolvido_em"):
                             st.markdown(
-                                f'<div style="color:#6fd39c;font-size:0.65rem;margin-top:6px;">'
+                                f'<div style="color:var(--c-ok);font-size:0.65rem;margin-top:6px;">'
                                 f'✅ Resolvido em: {av["resolvido_em"]}</div>',
                                 unsafe_allow_html=True
                             )
@@ -12667,7 +12773,7 @@ new Chart(document.getElementById('coop-chart'),{
 
                         if _is_editing:
                             st.markdown(
-                                '<div style="font-size:11px;color:#6fd39c;margin-bottom:4px;">'
+                                '<div style="font-size:11px;color:var(--c-ok);margin-bottom:4px;">'
                                 '🔓 Modo de edição ativo</div>',
                                 unsafe_allow_html=True
                             )
@@ -12705,7 +12811,7 @@ new Chart(document.getElementById('coop-chart'),{
 
                             if fotos_av:
                                 st.markdown(
-                                    '<div style="font-size:10px;color:rgba(255,255,255,0.35);'
+                                    '<div style="font-size:10px;color:var(--c-muted);'
                                     'margin:8px 0 4px;">🗑️ Remover fotos</div>',
                                     unsafe_allow_html=True
                                 )
@@ -12854,7 +12960,7 @@ new Chart(document.getElementById('coop-chart'),{
   body {{
     background: transparent;
     font-family: 'IBM Plex Sans', sans-serif;
-    color: #ece6dc;
+    color: var(--c-text);
   }}
   .wrap {{
     display: flex;
@@ -12865,14 +12971,13 @@ new Chart(document.getElementById('coop-chart'),{
   }}
   /* ── Calendário ── */
   .cal-glass {{
-    background: rgba(46,42,36,0.55);
-    backdrop-filter: blur(18px);
-    border: 1px solid rgba(255,255,255,0.08);
+    background: var(--c-surface);
+    border: none;
     border-radius: 18px;
     padding: 20px 18px 16px 18px;
     min-width: 290px;
     max-width: 320px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    box-shadow: 0 8px 32px rgba(17,17,17,0.10);
   }}
   .cal-header {{
     display: flex;
@@ -12883,7 +12988,7 @@ new Chart(document.getElementById('coop-chart'),{
   .cal-month {{
     font-weight: 700;
     font-size: 1.05rem;
-    color: #ece6dc;
+    color: var(--c-text);
     letter-spacing: .5px;
   }}
   .cal-grid {{
@@ -12895,16 +13000,16 @@ new Chart(document.getElementById('coop-chart'),{
   .cal-dow {{
     font-family: 'IBM Plex Mono', monospace;
     font-size: 0.52rem;
-    color: rgba(179,170,156,0.55);
+    color: var(--c-text-2);
     text-transform: uppercase;
     letter-spacing: 1px;
     padding-bottom: 7px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
+    border-bottom: 1px solid rgba(17,17,17,0.05);
     margin-bottom: 3px;
   }}
   .cal-day {{
     font-size: 0.82rem;
-    color: #d6cfc3;
+    color: var(--c-text);
     padding: 5px 2px;
     border-radius: 50%;
     cursor: pointer;
@@ -12921,33 +13026,33 @@ new Chart(document.getElementById('coop-chart'),{
     margin: 0 auto;
   }}
   .cal-day:not(.empty):hover {{
-    background: rgba(63,191,127,0.15);
-    color: #3fbf7f;
+    background: rgba(46,125,50,0.15);
+    color: var(--c-ok);
     transform: scale(1.12);
   }}
   .cal-day.empty {{ color: transparent; cursor: default; pointer-events: none; }}
   .cal-day.today {{
-    background: #ece6dc;
-    color: #141311;
+    background: var(--c-text);
+    color: var(--c-bg);
     font-weight: 900;
   }}
   .cal-day.today:hover {{
-    background: #c8d5e2;
-    color: #141311;
+    background: var(--c-text-2);
+    color: var(--c-bg);
   }}
   .cal-day.selected {{
-    background: rgba(63,191,127,0.25);
-    color: #3fbf7f;
-    border: 1.5px solid #3fbf7f;
+    background: rgba(46,125,50,0.25);
+    color: var(--c-ok);
+    border: 1.5px solid var(--c-ok);
     font-weight: 700;
   }}
   .cal-day.today.selected {{
-    background: #3fbf7f;
-    color: #141311;
+    background: var(--c-ok);
+    color: var(--c-bg);
     border: none;
   }}
-  .cal-day.weekend {{ color: rgba(179,170,156,0.4); }}
-  .cal-day.weekend:hover {{ color: #3fbf7f; }}
+  .cal-day.weekend {{ color: var(--c-muted); }}
+  .cal-day.weekend:hover {{ color: var(--c-ok); }}
   /* pontos de evento */
   .dot {{
     width: 4px;
@@ -12955,10 +13060,10 @@ new Chart(document.getElementById('coop-chart'),{
     border-radius: 50%;
     margin-top: 2px;
   }}
-  .dot-ok    {{ background: #3fbf7f; }}
-  .dot-aviso {{ background: #e0a030; }}
-  .dot-alerta{{ background: #e5533d; }}
-  .dot-info  {{ background: #6f9fb8; }}
+  .dot-ok    {{ background: var(--c-ok); }}
+  .dot-aviso {{ background: var(--c-warn); }}
+  .dot-alerta{{ background: var(--c-crit); }}
+  .dot-info  {{ background: var(--c-info); }}
 
   /* ── Lista de Eventos ── */
   .ev-list {{
@@ -12971,7 +13076,7 @@ new Chart(document.getElementById('coop-chart'),{
   .ev-title {{
     font-weight: 700;
     font-size: 0.8rem;
-    color: #b3aa9c;
+    color: var(--c-text-2);
     text-transform: uppercase;
     letter-spacing: 1.5px;
     margin-bottom: 10px;
@@ -12982,19 +13087,19 @@ new Chart(document.getElementById('coop-chart'),{
     max-height: 340px;
     padding-right: 6px;
     scrollbar-width: thin;
-    scrollbar-color: rgba(63,191,127,0.3) transparent;
+    scrollbar-color: rgba(46,125,50,0.3) transparent;
   }}
   .ev-scroll::-webkit-scrollbar {{ width: 4px; }}
   .ev-scroll::-webkit-scrollbar-track {{ background: transparent; }}
-  .ev-scroll::-webkit-scrollbar-thumb {{ background: rgba(63,191,127,0.35); border-radius: 4px; }}
+  .ev-scroll::-webkit-scrollbar-thumb {{ background: rgba(46,125,50,0.35); border-radius: 4px; }}
   .ev-empty {{
-    color: #6b6358;
+    color: var(--c-faint);
     font-size: 0.78rem;
     padding: 10px 0;
   }}
   .ev-item {{
-    background: rgba(46,42,36,0.6);
-    border-left: 3px solid #3fbf7f;
+    background: var(--c-surface-2);
+    border-left: 3px solid var(--c-ok);
     border-radius: 0 10px 10px 0;
     padding: 8px 12px;
     margin-bottom: 7px;
@@ -13004,11 +13109,11 @@ new Chart(document.getElementById('coop-chart'),{
     animation: fadeIn .2s ease;
   }}
   @keyframes fadeIn {{ from {{ opacity:0; transform:translateY(4px) }} to {{ opacity:1; transform:translateY(0) }} }}
-  .ev-item.alerta {{ border-left-color: #e5533d; }}
-  .ev-item.aviso  {{ border-left-color: #e0a030; }}
-  .ev-item.info   {{ border-left-color: #6f9fb8; }}
-  .ev-item-title  {{ font-size: 0.78rem; color: #ece6dc; font-weight: 600; white-space: normal; word-break: break-word; }}
-  .ev-item-sub    {{ font-size: 0.62rem; color: #8f8679; font-family: 'IBM Plex Mono', monospace; }}
+  .ev-item.alerta {{ border-left-color: var(--c-crit); }}
+  .ev-item.aviso  {{ border-left-color: var(--c-warn); }}
+  .ev-item.info   {{ border-left-color: var(--c-info); }}
+  .ev-item-title  {{ font-size: 0.78rem; color: var(--c-text); font-weight: 600; white-space: normal; word-break: break-word; }}
+  .ev-item-sub    {{ font-size: 0.62rem; color: var(--c-muted); font-family: 'IBM Plex Mono', monospace; }}
 </style>
 </head>
 <body>
@@ -13161,7 +13266,7 @@ new Chart(document.getElementById('coop-chart'),{
         # ── Legenda ──────────────────────────────────────────────────────────
         st.markdown(
             '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:6px;padding-left:2px;">'
-            '<span style="font-size:0.65rem;color:#8f8679;">🟢 Upload &nbsp; 🟡 Reposição &nbsp; 🔴 Avaria &nbsp; 🔵 Info</span>'
+            '<span style="font-size:0.65rem;color:var(--c-muted);">🟢 Upload &nbsp; 🟡 Reposição &nbsp; 🔴 Avaria &nbsp; 🔵 Info</span>'
             '</div>',
             unsafe_allow_html=True
         )
@@ -13179,18 +13284,18 @@ new Chart(document.getElementById('coop-chart'),{
             st.markdown("""
             <style>
             .hdiv-table{width:100%;border-collapse:collapse;font-size:0.82rem;}
-            .hdiv-table th{background:#1c1a17;color:#8f8679;font-size:0.65rem;font-weight:700;
+            .hdiv-table th{background:var(--c-surface);color:var(--c-muted);font-size:0.65rem;font-weight:700;
                 text-transform:uppercase;letter-spacing:1px;padding:8px 12px;text-align:left;
-                border-bottom:2px solid #2e2a24;}
-            .hdiv-table td{padding:8px 12px;border-bottom:1px solid #2e2a24;color:#d6cfc3;vertical-align:middle;}
-            .hdiv-table tr:hover td{background:rgba(255,255,255,0.02);}
-            .hdiv-falta{color:#e5533d;font-weight:700;font-family:monospace;}
-            .hdiv-sobra{color:#5fa8a8;font-weight:700;font-family:monospace;}
+                border-bottom:2px solid var(--c-line);}
+            .hdiv-table td{padding:8px 12px;border-bottom:1px solid var(--c-line);color:var(--c-text);vertical-align:middle;}
+            .hdiv-table tr:hover td{background:rgba(17,17,17,0.02);}
+            .hdiv-falta{color:var(--c-crit);font-weight:700;font-family:monospace;}
+            .hdiv-sobra{color:var(--c-teal);font-weight:700;font-family:monospace;}
             .hdiv-badge-falta{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.65rem;font-weight:700;
-                background:rgba(229,83,61,0.12);color:#e5533d;border:1px solid rgba(229,83,61,0.3);}
+                background:rgba(211,47,47,0.12);color:var(--c-crit);border:1px solid rgba(211,47,47,0.3);}
             .hdiv-badge-sobra{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.65rem;font-weight:700;
-                background:rgba(95,168,168,0.12);color:#5fa8a8;border:1px solid rgba(95,168,168,0.3);}
-            .hdiv-cod{font-family:monospace;font-size:0.75rem;color:#b3aa9c;}
+                background:rgba(0,137,123,0.12);color:var(--c-teal);border:1px solid rgba(0,137,123,0.3);}
+            .hdiv-cod{font-family:monospace;font-size:0.75rem;color:var(--c-text-2);}
             </style>
             """, unsafe_allow_html=True)
 
@@ -13240,16 +13345,16 @@ new Chart(document.getElementById('coop-chart'),{
                     f'<tr>'
                     f'<td><span class="hdiv-cod">{hr["codigo"]}</span></td>'
                     f'<td>{hr["produto"]}</td>'
-                    f'<td style="color:#8f8679;">{hr["categoria"]}</td>'
+                    f'<td style="color:var(--c-muted);">{hr["categoria"]}</td>'
                     f'<td>{coop}</td>'
                     f'<td><span class="{cls_delta}">{sinal}{abs(int(hr["delta"]))}</span></td>'
                     f'<td><span class="{cls_badge}">{status_label}</span></td>'
-                    f'<td style="color:#6b6358;font-size:0.75rem;font-family:monospace;">{data_fmt}</td>'
+                    f'<td style="color:var(--c-faint);font-size:0.75rem;font-family:monospace;">{data_fmt}</td>'
                     f'</tr>'
                 )
 
             st.markdown(
-                f'<div style="overflow-x:auto;border-radius:12px;border:1px solid #2e2a24;">'
+                f'<div style="overflow-x:auto;border-radius:12px;border:1px solid var(--c-line);">'
                 f'<table class="hdiv-table">'
                 f'<thead><tr>'
                 f'<th>Código</th><th>Produto</th><th>Categoria</th>'
@@ -13264,17 +13369,17 @@ new Chart(document.getElementById('coop-chart'),{
     def _aba_contagem():
         st.markdown("""
         <style>
-        .ct-card{background:rgba(111,159,184,0.06);border:1px solid rgba(111,159,184,0.18);border-radius:12px;padding:10px 14px;margin-bottom:6px;}
-        .ct-card.certa{background:rgba(63,191,127,0.06);border-color:rgba(63,191,127,0.25);}
-        .ct-card.divergencia{background:rgba(229,83,61,0.06);border-color:rgba(229,83,61,0.25);}
+        .ct-card{background:rgba(61,99,216,0.06);border:1px solid rgba(61,99,216,0.18);border-radius:12px;padding:10px 14px;margin-bottom:6px;}
+        .ct-card.certa{background:rgba(46,125,50,0.06);border-color:rgba(46,125,50,0.25);}
+        .ct-card.divergencia{background:rgba(211,47,47,0.06);border-color:rgba(211,47,47,0.25);}
         .ct-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;letter-spacing:.5px;}
-        .ct-certa{background:rgba(63,191,127,0.15);color:#3fbf7f;border:1px solid #00d68f44;}
-        .ct-divergencia{background:rgba(229,83,61,0.15);color:#e5533d;border:1px solid #ef444444;}
-        .ct-pendente{background:rgba(143,134,121,0.15);color:#b3aa9c;border:1px solid #64748b44;}
-        .ct-cat-header{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:#8f8679;margin:12px 0 4px;padding:0 2px;}
-        .ct-nome{font-weight:600;font-size:0.88rem;color:#ece6dc;}
-        .ct-qty{font-family:'IBM Plex Mono',monospace;font-size:0.82rem;color:#6f9fb8;margin-left:8px;}
-        .ct-motivo{font-size:0.7rem;color:#b3aa9c;margin-top:3px;}
+        .ct-certa{background:rgba(46,125,50,0.15);color:var(--c-ok);border:1px solid #2E7D3244;}
+        .ct-divergencia{background:rgba(211,47,47,0.15);color:var(--c-crit);border:1px solid #D32F2F44;}
+        .ct-pendente{background:rgba(17,17,17,0.15);color:var(--c-text-2);border:1px solid #8A8A8A44;}
+        .ct-cat-header{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--c-muted);margin:12px 0 4px;padding:0 2px;}
+        .ct-nome{font-weight:600;font-size:0.88rem;color:var(--c-text);}
+        .ct-qty{font-family:'IBM Plex Mono',monospace;font-size:0.82rem;color:var(--c-info);margin-left:8px;}
+        .ct-motivo{font-size:0.7rem;color:var(--c-text-2);margin-top:3px;}
         </style>
         """, unsafe_allow_html=True)
 
@@ -13354,9 +13459,9 @@ new Chart(document.getElementById('coop-chart'),{
                     with col_info:
                         info_html = (
                             f'<span class="ct-nome">{prod}</span>'
-                            f'<span class="ct-cod" style="color:#b3aa9c;font-size:0.78em;margin-left:8px;font-weight:400;">#{_cod}</span>'
+                            f'<span class="ct-cod" style="color:var(--c-text-2);font-size:0.78em;margin-left:8px;font-weight:400;">#{_cod}</span>'
                             f'<span class="ct-qty">{qty} un</span>'
-                            + (f'<div class="ct-motivo" style="color:#a98bc9;">{_hx(_motivo_pend)}</div>' if _motivo_pend else '')
+                            + (f'<div class="ct-motivo" style="color:var(--c-purple);">{_hx(_motivo_pend)}</div>' if _motivo_pend else '')
                             + (f'<div class="ct-motivo">{_hx(_obs_existente)}</div>' if _obs_existente else '')
                         )
                         st.markdown(f'<div class="ct-card pendente">{info_html}</div>', unsafe_allow_html=True)
@@ -13448,24 +13553,24 @@ new Chart(document.getElementById('coop-chart'),{
         st.markdown("""
         <style>
         .val-kpi-row{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
-        .val-kpi{flex:1;min-width:80px;background:linear-gradient(135deg,#1c1a17,#24211d);
-                 border:1px solid #2e2a24;border-radius:10px;padding:8px 10px;text-align:center;}
-        .val-kpi-v{font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:#3fbf7f;}
-        .val-kpi-v.red{color:#e5533d;} .val-kpi-v.amber{color:#e0a030;} .val-kpi-v.yellow{color:#ffd32a;}
-        .val-kpi-l{font-size:0.58rem;color:#8f8679;text-transform:uppercase;letter-spacing:1px;}
+        .val-kpi{flex:1;min-width:80px;background:linear-gradient(135deg,var(--c-surface),var(--c-surface-2));
+                 border:1px solid var(--c-line);border-radius:10px;padding:8px 10px;text-align:center;}
+        .val-kpi-v{font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:var(--c-ok);}
+        .val-kpi-v.red{color:var(--c-crit);} .val-kpi-v.amber{color:var(--c-warn-ink);} .val-kpi-v.yellow{color:var(--c-warn-ink);}
+        .val-kpi-l{font-size:0.58rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;}
         .val-badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:0.68rem;font-weight:700;}
-        .val-vencido{background:rgba(229,83,61,.15);color:#e5533d;border:1px solid #ef444455;}
-        .val-30{background:rgba(229,83,61,.12);color:#e5533d;border:1px solid #ff475755;}
-        .val-60{background:rgba(224,160,48,.12);color:#e0a030;border:1px solid #ffa50255;}
-        .val-90{background:rgba(255,211,42,.10);color:#ffd32a;border:1px solid #ffd32a55;}
-        .val-ok{background:rgba(63,191,127,.10);color:#3fbf7f;border:1px solid #00d68f55;}
+        .val-vencido{background:rgba(211,47,47,.15);color:var(--c-crit);border:1px solid #D32F2F55;}
+        .val-30{background:rgba(211,47,47,.12);color:var(--c-crit);border:1px solid #D32F2F55;}
+        .val-60{background:rgba(224,138,0,.12);color:var(--c-warn-ink);border:1px solid #E08A0055;}
+        .val-90{background:rgba(224,138,0,.10);color:var(--c-warn-ink);border:1px solid #E08A0055;}
+        .val-ok{background:rgba(46,125,50,.10);color:var(--c-ok);border:1px solid #2E7D3255;}
         .val-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
-                     color:#8f8679;margin:14px 0 4px;padding:0 2px;}
-        .val-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.06);
+                     color:var(--c-muted);margin:14px 0 4px;padding:0 2px;}
+        .val-row{background:rgba(17,17,17,.02);border:1px solid rgba(17,17,17,.06);
                  border-radius:8px;padding:8px 10px;margin-bottom:4px;}
-        .val-prod{font-weight:600;font-size:0.85rem;color:#ece6dc;}
-        .val-meta{font-size:0.68rem;color:#8f8679;margin-top:2px;}
-        .val-lote{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:#6f9fb8;}
+        .val-prod{font-weight:600;font-size:0.85rem;color:var(--c-text);}
+        .val-meta{font-size:0.68rem;color:var(--c-muted);margin-top:2px;}
+        .val-lote{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-info);}
         </style>
         """, unsafe_allow_html=True)
 
@@ -13527,7 +13632,7 @@ new Chart(document.getElementById('coop-chart'),{
 
         if df_val_db.empty:
             st.markdown("""
-            <div style="text-align:center;padding:40px 20px;color:#8f8679;">
+            <div style="text-align:center;padding:40px 20px;color:var(--c-muted);">
                 <div style="font-size:2.5rem;margin-bottom:12px;">📋</div>
                 <div style="font-size:0.9rem;margin-bottom:6px;">Nenhuma planilha carregada ainda</div>
                 <div style="font-size:0.75rem;">Use o botão acima para enviar a planilha SIG de validade</div>
@@ -13672,7 +13777,7 @@ new Chart(document.getElementById('coop-chart'),{
 
         if df_dia.empty:
             st.markdown("""
-            <div style="text-align:center;padding:40px 20px;color:rgba(255,255,255,0.3);">
+            <div style="text-align:center;padding:40px 20px;color:var(--c-muted);">
                 <div style="font-size:2.5rem;">📊</div>
                 <div>Nenhum histórico ainda. Comece a enviar as planilhas diárias de vendas.</div>
             </div>
@@ -13700,21 +13805,21 @@ new Chart(document.getElementById('coop-chart'),{
                 x=dias_label,
                 y=df_dia["total_vendido"],
                 mode="lines+markers",
-                line=dict(color="#3fbf7f", width=2),
-                marker=dict(size=5, color="#3fbf7f"),
+                line=dict(color="#2E7D32", width=2),
+                marker=dict(size=5, color="#2E7D32"),
                 fill="tozeroy",
-                fillcolor="rgba(63,191,127,0.08)",
+                fillcolor="rgba(46,125,50,0.08)",
                 hovertemplate="<b>%{x}</b><br>%{y} unidades<extra></extra>",
             ))
             fig_linha.update_layout(
                 **_PLOTLY_LAYOUT,
                 height=280,
                 xaxis=dict(
-                    gridcolor="#2e2a24",
+                    gridcolor="#E2E2E2",
                     tickangle=-45,
                     tickfont=dict(size=9),
                 ),
-                yaxis=dict(gridcolor="#2e2a24", title="Unidades"),
+                yaxis=dict(gridcolor="#E2E2E2", title="Unidades"),
                 showlegend=False,
             )
             st.plotly_chart(fig_linha, use_container_width=True,
@@ -13738,13 +13843,13 @@ new Chart(document.getElementById('coop-chart'),{
                     marker=dict(color=cores_top[::-1], cornerradius=4),
                     text=df_top["total"][::-1].apply(lambda v: f"{int(v):,}".replace(",", ".")),
                     textposition="outside",
-                    textfont=dict(size=9, color="#b3aa9c"),
+                    textfont=dict(size=9, color="#444444"),
                     hovertemplate="<b>%{y}</b><br>%{x} unidades<extra></extra>",
                 ))
                 fig_top_h.update_layout(
                     **_PLOTLY_LAYOUT,
                     height=max(400, len(df_top) * 28),
-                    xaxis=dict(gridcolor="#2e2a24", title="Unidades vendidas"),
+                    xaxis=dict(gridcolor="#E2E2E2", title="Unidades vendidas"),
                     yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9),
                                categoryorder="total ascending"),
                     showlegend=False,
@@ -13787,11 +13892,11 @@ new Chart(document.getElementById('coop-chart'),{
 
         # ── Variações de Quantidade Detectadas ───────────────────────────────
         _var_count = get_variacoes_pendentes_count()
-        _badge_color = "#e0a030" if _var_count > 0 else "#4b5563"
+        _badge_color = "#E08A00" if _var_count > 0 else "#6B6B6B"
         _badge_txt = f"{_var_count} pendentes"
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:10px;margin:24px 0 12px 0;">'
-            f'<span style="font-size:1.05rem;font-weight:700;color:#ece6dc;">⚠️ Variações de Quantidade Detectadas</span>'
+            f'<span style="font-size:1.05rem;font-weight:700;color:var(--c-text);">⚠️ Variações de Quantidade Detectadas</span>'
             f'<span style="background:{_badge_color};color:#fff;font-family:\'IBM Plex Mono\',monospace;'
             f'font-size:0.72rem;font-weight:700;padding:2px 10px;border-radius:20px;">{_badge_txt}</span>'
             f'</div>',
@@ -13827,33 +13932,33 @@ new Chart(document.getElementById('coop-chart'),{
 
         if _df_var.empty:
             st.markdown(
-                '<div style="text-align:center;padding:20px;color:rgba(255,255,255,0.35);">'
+                '<div style="text-align:center;padding:20px;color:var(--c-muted);">'
                 '✅ Nenhuma variação pendente</div>',
                 unsafe_allow_html=True,
             )
         else:
             for _, _vr in _df_var.iterrows():
-                _delta_color = "#3fbf7f" if _vr["delta"] > 0 else "#e5533d"
+                _delta_color = "#2E7D32" if _vr["delta"] > 0 else "#D32F2F"
                 _delta_sign = "+" if _vr["delta"] > 0 else ""
                 _delta_arrow = "▲" if _vr["delta"] > 0 else "▼"
                 _card_html = (
-                    f'<div style="background:linear-gradient(135deg,#1c1a17,#24211d);'
-                    f'border:1px solid rgba(255,255,255,0.07);border-radius:10px;'
+                    f'<div style="background:linear-gradient(135deg,var(--c-surface),var(--c-surface-2));'
+                    f'border:1px solid rgba(17,17,17,0.07);border-radius:10px;'
                     f'padding:12px 16px;margin-bottom:8px;display:flex;'
                     f'align-items:center;justify-content:space-between;gap:12px;">'
                     f'<div style="flex:1;min-width:0;">'
                     f'<div style="font-family:\'IBM Plex Sans\',sans-serif;font-weight:600;'
-                    f'color:#ece6dc;font-size:0.9rem;white-space:nowrap;overflow:hidden;'
+                    f'color:var(--c-text);font-size:0.9rem;white-space:nowrap;overflow:hidden;'
                     f'text-overflow:ellipsis;" title="{_vr["produto"]}">{_vr["produto"]}</div>'
                     f'<div style="font-family:\'IBM Plex Mono\',monospace;font-size:0.82rem;'
-                    f'color:#b3aa9c;margin-top:2px;">'
+                    f'color:var(--c-text-2);margin-top:2px;">'
                     f'{int(_vr["qtd_anterior"])} → {int(_vr["qtd_atual"])} '
                     f'<span style="color:{_delta_color};font-weight:700;">'
                     f'{_delta_arrow} {_delta_sign}{int(_vr["delta"])}</span>'
                     f'</div>'
                     f'</div>'
                     f'<div style="font-family:\'IBM Plex Mono\',monospace;font-size:0.72rem;'
-                    f'color:#8f8679;white-space:nowrap;">{str(_vr["detectado_em"])[:16]}</div>'
+                    f'color:var(--c-muted);white-space:nowrap;">{str(_vr["detectado_em"])[:16]}</div>'
                     f'</div>'
                 )
                 _btn_col, _card_col = st.columns([1, 5])
@@ -13877,7 +13982,7 @@ new Chart(document.getElementById('coop-chart'),{
     # ══════════════════════════════════════════════════════════════════════════
     if _dash_tab == _TAB_ESTOCADOS:
         st.markdown(
-            '<div style="font-size:1.05rem;font-weight:700;color:#ece6dc;'
+            '<div style="font-size:1.05rem;font-weight:700;color:var(--c-text);'
             'margin-bottom:12px;">🏪 Produtos armazenados dos Cooperados</div>',
             unsafe_allow_html=True,
         )
@@ -14009,11 +14114,11 @@ new Chart(document.getElementById('coop-chart'),{
                             _tot_cr = float(_df_cr["qtd_retirada"].sum())
                             st.markdown(
                                 f'<div style="margin:16px 0 6px;padding:8px 14px;'
-                                f'background:#2e2a24;border-left:4px solid #d9772f;border-radius:4px;">'
-                                f'<span style="color:#a9c6d6;font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
-                                f'<span style="color:#8f8679;font-size:0.73rem;margin-left:10px;">'
+                                f'background:var(--c-line);border-left:4px solid var(--c-warn);border-radius:4px;">'
+                                f'<span style="color:var(--c-info);font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
+                                f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
                                 f'{len(_df_cr)} produto(s) · Retirado no mês: '
-                                f'<b style="color:#e08a4a">{_fmt_qtd(_tot_cr)}</b> un.'
+                                f'<b style="color:var(--c-warn-ink)">{_fmt_qtd(_tot_cr)}</b> un.'
                                 f'</span></div>',
                                 unsafe_allow_html=True,
                             )
@@ -14023,21 +14128,21 @@ new Chart(document.getElementById('coop-chart'),{
                                 _dias_label = f"{_ocorr} dia{'s' if _ocorr != 1 else ''}"
                                 _rows_mes += (
                                     f'<tr>'
-                                    f'<td style="padding:7px 10px;color:#ece6dc;">{_rr["descricao"]}</td>'
-                                    f'<td style="padding:7px 10px;color:#8f8679;font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
-                                    f'<td style="padding:7px 10px;color:#b3aa9c;font-size:0.78rem;text-align:center;">{_dias_label}</td>'
-                                    f'<td style="padding:7px 10px;color:#e08a4a;font-weight:700;text-align:right;">'
+                                    f'<td style="padding:7px 10px;color:var(--c-text);">{_rr["descricao"]}</td>'
+                                    f'<td style="padding:7px 10px;color:var(--c-muted);font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
+                                    f'<td style="padding:7px 10px;color:var(--c-text-2);font-size:0.78rem;text-align:center;">{_dias_label}</td>'
+                                    f'<td style="padding:7px 10px;color:var(--c-warn-ink);font-weight:700;text-align:right;">'
                                     f'−{_fmt_qtd(float(_rr["qtd_retirada"]))} un.</td>'
                                     f'</tr>'
                                 )
                             st.markdown(
                                 f'<table style="width:100%;border-collapse:collapse;'
-                                f'background:#171614;border-radius:6px;overflow:hidden;margin-bottom:4px;">'
-                                f'<thead><tr style="background:#2e2a24;">'
-                                f'<th style="padding:8px 10px;text-align:left;color:#8f8679;font-size:0.75rem;font-weight:600;">PRODUTO</th>'
-                                f'<th style="padding:8px 10px;text-align:left;color:#8f8679;font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
-                                f'<th style="padding:8px 10px;text-align:center;color:#8f8679;font-size:0.75rem;font-weight:600;">OCORRÊNCIAS</th>'
-                                f'<th style="padding:8px 10px;text-align:right;color:#8f8679;font-size:0.75rem;font-weight:600;">TOTAL RETIRADO</th>'
+                                f'background:var(--c-surface-2);border-radius:12px;overflow:hidden;margin-bottom:4px;">'
+                                f'<thead><tr style="background:var(--c-line);">'
+                                f'<th style="padding:8px 10px;text-align:left;color:var(--c-muted);font-size:0.75rem;font-weight:600;">PRODUTO</th>'
+                                f'<th style="padding:8px 10px;text-align:left;color:var(--c-muted);font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
+                                f'<th style="padding:8px 10px;text-align:center;color:var(--c-muted);font-size:0.75rem;font-weight:600;">OCORRÊNCIAS</th>'
+                                f'<th style="padding:8px 10px;text-align:right;color:var(--c-muted);font-size:0.75rem;font-weight:600;">TOTAL RETIRADO</th>'
                                 f'</tr></thead>'
                                 f'<tbody>{_rows_mes}</tbody>'
                                 f'</table>',
@@ -14133,11 +14238,11 @@ new Chart(document.getElementById('coop-chart'),{
                             _tot_cr = float(_df_cr["qtd_retirada"].sum())
                             st.markdown(
                                 f'<div style="margin:16px 0 6px;padding:8px 14px;'
-                                f'background:#2e2a24;border-left:4px solid #d9772f;border-radius:4px;">'
-                                f'<span style="color:#a9c6d6;font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
-                                f'<span style="color:#8f8679;font-size:0.73rem;margin-left:10px;">'
+                                f'background:var(--c-line);border-left:4px solid var(--c-warn);border-radius:4px;">'
+                                f'<span style="color:var(--c-info);font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
+                                f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
                                 f'{len(_df_cr)} produto(s) · Retirado: '
-                                f'<b style="color:#e08a4a">{_fmt_qtd(_tot_cr)}</b> un.'
+                                f'<b style="color:var(--c-warn-ink)">{_fmt_qtd(_tot_cr)}</b> un.'
                                 f'</span></div>',
                                 unsafe_allow_html=True,
                             )
@@ -14145,22 +14250,22 @@ new Chart(document.getElementById('coop-chart'),{
                             for _, _rr in _df_cr.iterrows():
                                 _rows_ret += (
                                     f'<tr>'
-                                    f'<td style="padding:7px 10px;color:#ece6dc;">{_rr["descricao"]}</td>'
-                                    f'<td style="padding:7px 10px;color:#8f8679;font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
-                                    f'<td style="padding:7px 10px;color:#b3aa9c;font-size:0.78rem;text-align:right;">'
+                                    f'<td style="padding:7px 10px;color:var(--c-text);">{_rr["descricao"]}</td>'
+                                    f'<td style="padding:7px 10px;color:var(--c-muted);font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
+                                    f'<td style="padding:7px 10px;color:var(--c-text-2);font-size:0.78rem;text-align:right;">'
                                     f'{_fmt_qtd(float(_rr["qtd_anterior"]))} → {_fmt_qtd(float(_rr["qtd_atual"]))}</td>'
-                                    f'<td style="padding:7px 10px;color:#e08a4a;font-weight:700;text-align:right;">'
+                                    f'<td style="padding:7px 10px;color:var(--c-warn-ink);font-weight:700;text-align:right;">'
                                     f'−{_fmt_qtd(float(_rr["qtd_retirada"]))} un.</td>'
                                     f'</tr>'
                                 )
                             st.markdown(
                                 f'<table style="width:100%;border-collapse:collapse;'
-                                f'background:#171614;border-radius:6px;overflow:hidden;margin-bottom:4px;">'
-                                f'<thead><tr style="background:#2e2a24;">'
-                                f'<th style="padding:8px 10px;text-align:left;color:#8f8679;font-size:0.75rem;font-weight:600;">PRODUTO</th>'
-                                f'<th style="padding:8px 10px;text-align:left;color:#8f8679;font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
-                                f'<th style="padding:8px 10px;text-align:right;color:#8f8679;font-size:0.75rem;font-weight:600;">ANTES → DEPOIS</th>'
-                                f'<th style="padding:8px 10px;text-align:right;color:#8f8679;font-size:0.75rem;font-weight:600;">RETIRADO</th>'
+                                f'background:var(--c-surface-2);border-radius:12px;overflow:hidden;margin-bottom:4px;">'
+                                f'<thead><tr style="background:var(--c-line);">'
+                                f'<th style="padding:8px 10px;text-align:left;color:var(--c-muted);font-size:0.75rem;font-weight:600;">PRODUTO</th>'
+                                f'<th style="padding:8px 10px;text-align:left;color:var(--c-muted);font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
+                                f'<th style="padding:8px 10px;text-align:right;color:var(--c-muted);font-size:0.75rem;font-weight:600;">ANTES → DEPOIS</th>'
+                                f'<th style="padding:8px 10px;text-align:right;color:var(--c-muted);font-size:0.75rem;font-weight:600;">RETIRADO</th>'
                                 f'</tr></thead>'
                                 f'<tbody>{_rows_ret}</tbody>'
                                 f'</table>',
@@ -14228,9 +14333,9 @@ new Chart(document.getElementById('coop-chart'),{
                 st.success(f"✅ Todos os {len(_parceiros_todos)} clientes já tiveram os produtos separados!")
 
         # Os nomes dos filtros (Armazém, Tipo, Cooperado, Produto, Visualização)
-        # saíam ilegíveis: o app pinta o próprio fundo escuro (#141311), mas o
-        # tema do Streamlit continua o claro, então o label fica no #31333F
-        # padrão — contraste de ~1.4:1 sobre o fundo escuro.
+        # saíam ilegíveis quando o app tinha fundo escuro e o tema do
+        # Streamlit era o claro (label branco sobre escuro, ~1.4:1). Hoje o
+        # tema é claro nas duas camadas; a regra só reforça o cinza escuro.
         #
         # A tentativa anterior mirava [data-baseweb="select"], que não existe
         # mais: o selectbox do Streamlit 1.59 é react-aria (.react-aria-ComboBox),
@@ -14238,7 +14343,7 @@ new Chart(document.getElementById('coop-chart'),{
         # <p> dentro de label[data-testid="stWidgetLabel"].
         #
         # Só o label muda de cor. O valor selecionado fica como está: ele é
-        # escuro sobre a caixa clara (#f0f2f6) e já se lê bem — pintá-lo de
+        # escuro sobre a caixa clara e já se lê bem — pintá-lo de
         # azul pioraria o contraste (cairia para ~2.6:1).
         st.markdown("""<style>
 .st-key-mat_armazem_sel [data-testid="stWidgetLabel"] p,
@@ -14246,7 +14351,7 @@ new Chart(document.getElementById('coop-chart'),{
 .st-key-mat_cooperado_sel [data-testid="stWidgetLabel"] p,
 .st-key-mat_busca_produto [data-testid="stWidgetLabel"] p,
 .st-key-mat_modo_view [data-testid="stWidgetLabel"] p {
-    color: #c9b48e !important;
+    color: var(--c-text-2) !important;
     font-weight: 600;
 }
 </style>""", unsafe_allow_html=True)
@@ -14359,21 +14464,21 @@ new Chart(document.getElementById('coop-chart'),{
                     )
                     _ja_separado = bool(_produtos_p) and _n_sep_p == len(_produtos_p)
                     _cor_borda = (
-                        "#3fbf7f" if _ja_separado
-                        else ("#eab308" if _n_sep_p else "#d9772f")
+                        "#2E7D32" if _ja_separado
+                        else ("#E08A00" if _n_sep_p else "#E08A00")
                     )
                     if _ja_separado:
                         _status_txt = (
-                            '<span style="color:#6fd39c;font-weight:700;">✅ Separado</span>'
+                            '<span style="color:var(--c-ok);font-weight:700;">✅ Separado</span>'
                         )
                     elif _n_sep_p:
                         _status_txt = (
-                            f'<span style="color:#facc15;font-weight:700;">'
+                            f'<span style="color:var(--c-warn-ink);font-weight:700;">'
                             f'🟡 Parcial — {_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
                         )
                     else:
                         _status_txt = (
-                            '<span style="color:#e08a4a;font-weight:700;">⚠️ Falta separar</span>'
+                            '<span style="color:var(--c-warn-ink);font-weight:700;">⚠️ Falta separar</span>'
                         )
 
                     # cabeçalho do parceiro com checkbox de separação e botão de download
@@ -14381,11 +14486,11 @@ new Chart(document.getElementById('coop-chart'),{
                     with _col_header:
                         st.markdown(
                             f'<div style="margin:18px 0 6px;padding:8px 14px;'
-                            f'background:#2e2a24;border-left:4px solid {_cor_borda};border-radius:4px;">'
-                            f'<span style="color:#a9c6d6;font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
-                            f'<span style="color:#8f8679;font-size:0.73rem;margin-left:10px;">'
+                            f'background:var(--c-line);border-left:4px solid {_cor_borda};border-radius:4px;">'
+                            f'<span style="color:var(--c-info);font-weight:700;font-size:0.9rem;">🏢 {_parceiro}</span>'
+                            f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
                             f'{len(_resumo)} produto(s) · '
-                            f'Saldo total: <b style="color:#ece6dc">{_tot_saldo:,.0f}</b> un. · '
+                            f'Saldo total: <b style="color:var(--c-text)">{_tot_saldo:,.0f}</b> un. · '
                             f'{_status_txt}'
                             f'</span></div>',
                             unsafe_allow_html=True,
@@ -14408,8 +14513,8 @@ new Chart(document.getElementById('coop-chart'),{
                                 f'<div style="margin-top:22px;text-align:right;">'
                                 f'<a href="data:image/png;base64,{_b64}" download="{_nome_arquivo}" '
                                 f'title="Baixar resumo (imagem)" '
-                                f'style="color:#6b6358;font-size:0.75rem;text-decoration:none;'
-                                f'border:1px solid #3a352d;border-radius:4px;padding:2px 6px;'
+                                f'style="color:var(--c-faint);font-size:0.75rem;text-decoration:none;'
+                                f'border:1px solid var(--c-line-2);border-radius:4px;padding:2px 6px;'
                                 f'background:transparent;">📥</a></div>',
                                 unsafe_allow_html=True,
                             )
@@ -14417,16 +14522,16 @@ new Chart(document.getElementById('coop-chart'),{
                     # tabela: uma linha por produto, com checkbox de separação
                     _hc1, _hc2, _hc3, _hc4 = st.columns([0.7, 5, 2, 1.8])
                     _hc1.markdown(
-                        '<div style="color:#8f8679;font-size:0.72rem;font-weight:600;'
+                        '<div style="color:var(--c-muted);font-size:0.72rem;font-weight:600;'
                         'padding:6px 0 0 2px;">SEP.</div>', unsafe_allow_html=True)
                     _hc2.markdown(
-                        '<div style="color:#8f8679;font-size:0.72rem;font-weight:600;'
+                        '<div style="color:var(--c-muted);font-size:0.72rem;font-weight:600;'
                         'padding:6px 0 0;">PRODUTO</div>', unsafe_allow_html=True)
                     _hc3.markdown(
-                        '<div style="color:#8f8679;font-size:0.72rem;font-weight:600;'
+                        '<div style="color:var(--c-muted);font-size:0.72rem;font-weight:600;'
                         'padding:6px 0 0;">LINHAS (SALDO)</div>', unsafe_allow_html=True)
                     _hc4.markdown(
-                        '<div style="color:#8f8679;font-size:0.72rem;font-weight:600;'
+                        '<div style="color:var(--c-muted);font-size:0.72rem;font-weight:600;'
                         'padding:6px 0 0;text-align:right;">TOTAL</div>',
                         unsafe_allow_html=True)
 
@@ -14447,18 +14552,18 @@ new Chart(document.getElementById('coop-chart'),{
                                 ),
                                 label_visibility="collapsed",
                             )
-                        _cor_prod = "#6fd39c" if _item_sep else "#ece6dc"
+                        _cor_prod = "#2E7D32" if _item_sep else "#111111"
                         _rc2.markdown(
                             f'<div style="color:{_cor_prod};font-size:0.84rem;">'
                             f'{"✅ " if _item_sep else ""}{_prod_nome_r}</div>',
                             unsafe_allow_html=True,
                         )
                         _rc3.markdown(
-                            f'<div style="color:#b3aa9c;font-size:0.78rem;">{_r["linhas"]}</div>',
+                            f'<div style="color:var(--c-text-2);font-size:0.78rem;">{_r["linhas"]}</div>',
                             unsafe_allow_html=True,
                         )
                         _rc4.markdown(
-                            f'<div style="color:{"#6fd39c" if _item_sep else "#ec7a66"};'
+                            f'<div style="color:{"#2E7D32" if _item_sep else "#D32F2F"};'
                             f'font-weight:700;font-size:0.84rem;text-align:right;">'
                             f'{int(_r["total"]):,} un.</div>',
                             unsafe_allow_html=True,
@@ -14477,32 +14582,32 @@ new Chart(document.getElementById('coop-chart'),{
                     )
                     _ja_separado = bool(_produtos_p) and _n_sep_p == len(_produtos_p)
                     _cor_borda = (
-                        "#3fbf7f" if _ja_separado
-                        else ("#eab308" if _n_sep_p else "#d9772f")
+                        "#2E7D32" if _ja_separado
+                        else ("#E08A00" if _n_sep_p else "#E08A00")
                     )
                     if _ja_separado:
                         _status_txt = (
-                            '<span style="color:#6fd39c;font-weight:700;">✅ Separado</span>'
+                            '<span style="color:var(--c-ok);font-weight:700;">✅ Separado</span>'
                         )
                     elif _n_sep_p:
                         _status_txt = (
-                            f'<span style="color:#facc15;font-weight:700;">'
+                            f'<span style="color:var(--c-warn-ink);font-weight:700;">'
                             f'🟡 Parcial — {_n_sep_p}/{len(_produtos_p)} separado(s)</span>'
                         )
                     else:
                         _status_txt = (
-                            '<span style="color:#e08a4a;font-weight:700;">⚠️ Falta separar</span>'
+                            '<span style="color:var(--c-warn-ink);font-weight:700;">⚠️ Falta separar</span>'
                         )
 
                     _col_header_d, _col_chk_d = st.columns([8, 2])
                     with _col_header_d:
                         st.markdown(
                             f'<div style="margin:14px 0 4px;padding:8px 14px;'
-                            f'background:#2e2a24;border-left:4px solid {_cor_borda};border-radius:4px;">'
-                            f'<span style="color:#a9c6d6;font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
-                            f'<span style="color:#8f8679;font-size:0.72rem;margin-left:10px;">'
+                            f'background:var(--c-line);border-left:4px solid {_cor_borda};border-radius:4px;">'
+                            f'<span style="color:var(--c-info);font-weight:700;font-size:0.88rem;">🏢 {_parceiro}</span>'
+                            f'<span style="color:var(--c-muted);font-size:0.72rem;margin-left:10px;">'
                             f'{_n_itens} item(s) · '
-                            f'Saldo: <b style="color:#ece6dc">{_tot_saldo:,.0f}</b> un. · '
+                            f'Saldo: <b style="color:var(--c-text)">{_tot_saldo:,.0f}</b> un. · '
                             f'{_status_txt}'
                             f'</span></div>',
                             unsafe_allow_html=True,
@@ -14522,34 +14627,34 @@ new Chart(document.getElementById('coop-chart'),{
                         )
 
                     for _, _mrow in _df_p.iterrows():
-                        _saldo_cor = "#e5533d" if _mrow["saldo"] > 0 else "#3fbf7f"
+                        _saldo_cor = "#D32F2F" if _mrow["saldo"] > 0 else "#2E7D32"
                         _tm_label = "📤 Saída" if _mrow["tm"] == "D" else "📥 Entrada"
                         _item_sep_d = (_parceiro, _mrow["descricao"]) in _sep_itens
                         _sel_prod_d = (
-                            '<span style="color:#6fd39c;font-size:0.72rem;'
+                            '<span style="color:var(--c-ok);font-size:0.72rem;'
                             'margin-left:8px;">✅ separado</span>'
                             if _item_sep_d else
-                            '<span style="color:#e08a4a;font-size:0.72rem;'
+                            '<span style="color:var(--c-warn-ink);font-size:0.72rem;'
                             'margin-left:8px;">⚠️ falta separar</span>'
                         )
                         st.markdown(
-                            f'<div style="background:#171614;border:1px solid #2e2a24;'
-                            f'border-left:3px solid {"#22c55e88" if _item_sep_d else "#3b82f688"};'
+                            f'<div style="background:var(--c-surface-2);border:1px solid var(--c-line);'
+                            f'border-left:3px solid {"#2E7D3288" if _item_sep_d else "#3D63D888"};'
                             f'border-radius:6px;'
                             f'padding:8px 12px;margin-bottom:3px;font-size:0.8rem;">'
                             f'<div style="display:flex;justify-content:space-between;align-items:center;">'
-                            f'<span style="color:#ece6dc;font-weight:600;">{_mrow["descricao"]}'
+                            f'<span style="color:var(--c-text);font-weight:600;">{_mrow["descricao"]}'
                             f'{_sel_prod_d}</span>'
                             f'<span style="color:{_saldo_cor};font-weight:700;">'
                             f'Saldo: {_mrow["saldo"]:,.0f} un.</span></div>'
-                            f'<div style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;color:#8f8679;">'
-                            f'<span>Cod: <b style="color:#b3aa9c">{_mrow["codigo_produto"]}</b></span>'
-                            f'<span>Arm: <b style="color:#b3aa9c">{_mrow["armazem"]}</b></span>'
-                            f'<span>Doc: <b style="color:#b3aa9c">{_mrow["doc_origin"]}</b></span>'
-                            f'<span>Emissão: <b style="color:#b3aa9c">{_mrow["dt_emissao"]}</b></span>'
-                            f'<span>Orig: <b style="color:#b3aa9c">{_mrow["qtd_original"]:,.0f}</b> '
-                            f'→ Entregue: <b style="color:#b3aa9c">{_mrow["qtd_entregue"]:,.0f}</b></span>'
-                            f'<span style="color:#8f8679">{_tm_label}</span>'
+                            f'<div style="margin-top:4px;display:flex;gap:14px;flex-wrap:wrap;color:var(--c-muted);">'
+                            f'<span>Cod: <b style="color:var(--c-text-2)">{_mrow["codigo_produto"]}</b></span>'
+                            f'<span>Arm: <b style="color:var(--c-text-2)">{_mrow["armazem"]}</b></span>'
+                            f'<span>Doc: <b style="color:var(--c-text-2)">{_mrow["doc_origin"]}</b></span>'
+                            f'<span>Emissão: <b style="color:var(--c-text-2)">{_mrow["dt_emissao"]}</b></span>'
+                            f'<span>Orig: <b style="color:var(--c-text-2)">{_mrow["qtd_original"]:,.0f}</b> '
+                            f'→ Entregue: <b style="color:var(--c-text-2)">{_mrow["qtd_entregue"]:,.0f}</b></span>'
+                            f'<span style="color:var(--c-muted)">{_tm_label}</span>'
                             f'</div></div>',
                             unsafe_allow_html=True,
                         )
@@ -14704,32 +14809,32 @@ new Chart(document.getElementById('coop-chart'),{
         st.markdown("""
         <style>
         .ent-kpi-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
-        .ent-kpi{flex:1;min-width:90px;background:linear-gradient(135deg,#1c1a17,#24211d);
-                 border:1px solid #2e2a24;border-radius:10px;padding:8px 10px;text-align:center;}
-        .ent-kpi-v{font-family:'IBM Plex Mono',monospace;font-size:1.15rem;font-weight:700;color:#3fbf7f;}
-        .ent-kpi-v.amber{color:#e0a030;}
-        .ent-kpi-l{font-size:0.58rem;color:#8f8679;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+        .ent-kpi{flex:1;min-width:90px;background:linear-gradient(135deg,var(--c-surface),var(--c-surface-2));
+                 border:1px solid var(--c-line);border-radius:10px;padding:8px 10px;text-align:center;}
+        .ent-kpi-v{font-family:'IBM Plex Mono',monospace;font-size:1.15rem;font-weight:700;color:var(--c-ok);}
+        .ent-kpi-v.amber{color:var(--c-warn-ink);}
+        .ent-kpi-l{font-size:0.58rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
         .ent-section{font-size:0.72rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
-                     color:#8f8679;margin:14px 0 5px;padding:0 2px;border-bottom:1px solid #2e2a24;padding-bottom:4px;}
-        .ent-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
+                     color:var(--c-muted);margin:14px 0 5px;padding:0 2px;border-bottom:1px solid var(--c-line);padding-bottom:4px;}
+        .ent-row{background:rgba(17,17,17,.02);border:1px solid rgba(17,17,17,.05);
                  border-radius:8px;padding:7px 10px;margin-bottom:3px;
                  display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-        .ent-prod{font-weight:600;font-size:0.83rem;color:#ece6dc;flex:1;min-width:160px;}
-        .ent-cod{font-family:'IBM Plex Mono',monospace;font-size:0.70rem;color:#6f9fb8;min-width:75px;}
+        .ent-prod{font-weight:600;font-size:0.83rem;color:var(--c-text);flex:1;min-width:160px;}
+        .ent-cod{font-family:'IBM Plex Mono',monospace;font-size:0.70rem;color:var(--c-info);min-width:75px;}
         .ent-delta{font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;
-                   color:#3fbf7f;min-width:55px;text-align:right;}
-        .ent-qty{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:#b3aa9c;min-width:100px;text-align:right;}
-        .ent-date{font-size:0.67rem;color:#8f8679;min-width:88px;text-align:right;}
+                   color:var(--c-ok);min-width:55px;text-align:right;}
+        .ent-qty{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-text-2);min-width:100px;text-align:right;}
+        .ent-date{font-size:0.67rem;color:var(--c-muted);min-width:88px;text-align:right;}
         .ent-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;}
-        .ent-pend{background:rgba(224,160,48,.12);color:#e0a030;border:1px solid rgba(224,160,48,.3);}
-        .ent-verif{background:rgba(63,191,127,.10);color:#3fbf7f;border:1px solid rgba(63,191,127,.25);}
-        .ent-manual{background:rgba(111,159,184,.10);color:#8db5ca;border:1px solid rgba(111,159,184,.25);}
-        .ent-delta.ent-neg{color:#a98bc9;}
+        .ent-pend{background:rgba(224,138,0,.12);color:var(--c-warn-ink);border:1px solid rgba(224,138,0,.3);}
+        .ent-verif{background:rgba(46,125,50,.10);color:var(--c-ok);border:1px solid rgba(46,125,50,.25);}
+        .ent-manual{background:rgba(61,99,216,.10);color:var(--c-info);border:1px solid rgba(61,99,216,.25);}
+        .ent-delta.ent-neg{color:var(--c-purple);}
         </style>
         """, unsafe_allow_html=True)
 
         st.markdown(
-            '<div style="font-size:1.05rem;font-weight:700;color:#ece6dc;margin-bottom:10px;">'
+            '<div style="font-size:1.05rem;font-weight:700;color:var(--c-text);margin-bottom:10px;">'
             '📥📤 Movimentações de Estoque</div>',
             unsafe_allow_html=True,
         )
@@ -14854,7 +14959,7 @@ new Chart(document.getElementById('coop-chart'),{
 
         if _df_var.empty:
             st.markdown(
-                '<div style="color:#8f8679;font-size:0.82rem;padding:8px 0;">Nenhuma entrada detectada no período.</div>',
+                '<div style="color:var(--c-muted);font-size:0.82rem;padding:8px 0;">Nenhuma entrada detectada no período.</div>',
                 unsafe_allow_html=True,
             )
         else:
@@ -14898,7 +15003,7 @@ new Chart(document.getElementById('coop-chart'),{
 
         if not _grupos_saida:
             st.markdown(
-                '<div style="color:#8f8679;font-size:0.82rem;padding:8px 0;">Nenhuma saída sem venda no período.</div>',
+                '<div style="color:var(--c-muted);font-size:0.82rem;padding:8px 0;">Nenhuma saída sem venda no período.</div>',
                 unsafe_allow_html=True,
             )
         else:
@@ -14930,7 +15035,7 @@ new Chart(document.getElementById('coop-chart'),{
 
         if _df_lanc.empty:
             st.markdown(
-                '<div style="color:#8f8679;font-size:0.82rem;padding:8px 0;">Nenhum lançamento no período.</div>',
+                '<div style="color:var(--c-muted);font-size:0.82rem;padding:8px 0;">Nenhum lançamento no período.</div>',
                 unsafe_allow_html=True,
             )
         else:
@@ -14968,8 +15073,8 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
         st.markdown(
             '<div style="text-align:center;padding:20px 16px 12px;">'
             '<div style="font-size:2.2rem;margin-bottom:6px;">🔒</div>'
-            '<div style="font-size:1rem;font-weight:600;color:#ece6dc;margin-bottom:4px;">Área Protegida</div>'
-            '<div style="font-size:0.8rem;color:#8f8679;">'
+            '<div style="font-size:1rem;font-weight:600;color:var(--c-text);margin-bottom:4px;">Área Protegida</div>'
+            '<div style="font-size:0.8rem;color:var(--c-muted);">'
             'Digite a senha de edição para fazer uploads ou alterar o estoque.'
             '</div></div>',
             unsafe_allow_html=True,
@@ -15340,8 +15445,8 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         with _gcols_up[0]:
                             st.markdown(
                                 f'<div style="margin:4px 0;font-size:13px">'
-                                f'<span style="color:#F9FAFB;font-weight:600">{_gfab_up}</span>'
-                                f'<span style="color:#8f8679;font-size:11px;margin-left:8px">'
+                                f'<span style="color:var(--c-text);font-weight:600">{_gfab_up}</span>'
+                                f'<span style="color:var(--c-muted);font-size:11px;margin-left:8px">'
                                 f'{", ".join(_prods_gfab_up)}</span></div>',
                                 unsafe_allow_html=True,
                             )
@@ -15460,7 +15565,7 @@ if not has_mestre:
                 except Exception as _e_sync:
                     st.error(f"Erro ao sincronizar: {_e_sync}")
     st.markdown(
-        '<div style="text-align:center;color:#8f8679;padding:60px 20px;font-size:1rem;">'
+        '<div style="text-align:center;color:var(--c-muted);padding:60px 20px;font-size:1rem;">'
         "Faça o upload da planilha mestre abaixo para começar 👇</div>",
         unsafe_allow_html=True,
     )

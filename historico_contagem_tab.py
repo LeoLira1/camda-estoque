@@ -74,33 +74,33 @@ def _render_rows(rows: list[str], key: str) -> None:
 
 
 _CSS = """<style>
-.hc-title{font-size:1.05rem;font-weight:700;color:#ece6dc;margin-bottom:12px;}
+.hc-title{font-size:1.05rem;font-weight:700;color:var(--c-text);margin-bottom:12px;}
 .hc-kpi-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;}
-.hc-kpi{flex:1;min-width:80px;background:linear-gradient(135deg,#1c1a17,#24211d);
-         border:1px solid #2e2a24;border-radius:10px;padding:8px 10px;text-align:center;}
-.hc-kpi-v{font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:#3fbf7f;}
-.hc-kpi-v.red{color:#e5533d;}
-.hc-kpi-v.blue{color:#6f9fb8;}
-.hc-kpi-l{font-size:0.58rem;color:#8f8679;text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
-.hc-row{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
+.hc-kpi{flex:1;min-width:80px;background:linear-gradient(135deg,var(--c-surface),var(--c-surface-2));
+         border:1px solid var(--c-line);border-radius:10px;padding:8px 10px;text-align:center;}
+.hc-kpi-v{font-family:'IBM Plex Mono',monospace;font-size:1.1rem;font-weight:700;color:var(--c-ok);}
+.hc-kpi-v.red{color:var(--c-crit);}
+.hc-kpi-v.blue{color:var(--c-info);}
+.hc-kpi-l{font-size:0.58rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:1px;margin-top:2px;}
+.hc-row{background:rgba(17,17,17,.02);border:1px solid rgba(17,17,17,.05);
          border-radius:8px;padding:7px 12px;margin-bottom:3px;
          display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-.hc-row.ok{border-left:3px solid #3fbf7f;}
-.hc-row.div{border-left:3px solid #e5533d;}
-.hc-prod{font-weight:600;font-size:0.83rem;color:#ece6dc;flex:1;min-width:160px;}
-.hc-cod{font-family:'IBM Plex Mono',monospace;font-size:0.70rem;color:#6f9fb8;min-width:75px;}
-.hc-qtd{font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:#b3aa9c;min-width:80px;text-align:right;}
+.hc-row.ok{border-left:3px solid var(--c-ok);}
+.hc-row.div{border-left:3px solid var(--c-crit);}
+.hc-prod{font-weight:600;font-size:0.83rem;color:var(--c-text);flex:1;min-width:160px;}
+.hc-cod{font-family:'IBM Plex Mono',monospace;font-size:0.70rem;color:var(--c-info);min-width:75px;}
+.hc-qtd{font-family:'IBM Plex Mono',monospace;font-size:0.78rem;color:var(--c-text-2);min-width:80px;text-align:right;}
 .hc-delta{font-family:'IBM Plex Mono',monospace;font-size:0.85rem;font-weight:700;min-width:60px;text-align:right;}
-.hc-delta.ok{color:#3fbf7f;}
-.hc-delta.neg{color:#e5533d;}
-.hc-delta.pos{color:#e0a030;}
-.hc-hora{font-size:0.65rem;color:#8f8679;min-width:75px;text-align:right;}
+.hc-delta.ok{color:var(--c-ok);}
+.hc-delta.neg{color:var(--c-crit);}
+.hc-delta.pos{color:var(--c-warn-ink);}
+.hc-hora{font-size:0.65rem;color:var(--c-muted);min-width:75px;text-align:right;}
 .hc-badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:0.63rem;font-weight:700;min-width:60px;text-align:center;}
-.hc-badge.ok{background:rgba(63,191,127,.12);color:#3fbf7f;border:1px solid rgba(63,191,127,.3);}
-.hc-badge.div{background:rgba(229,83,61,.12);color:#e5533d;border:1px solid rgba(229,83,61,.3);}
-.hc-empty{text-align:center;padding:40px 20px;color:#6b6358;font-size:0.85rem;}
+.hc-badge.ok{background:rgba(46,125,50,.12);color:var(--c-ok);border:1px solid rgba(46,125,50,.3);}
+.hc-badge.div{background:rgba(211,47,47,.12);color:var(--c-crit);border:1px solid rgba(211,47,47,.3);}
+.hc-empty{text-align:center;padding:40px 20px;color:var(--c-faint);font-size:0.85rem;}
 .hc-section{font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;
-             color:#8f8679;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid #2e2a24;}
+             color:var(--c-muted);margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid var(--c-line);}
 /* A lista sai em vários st.markdown (ver _render_rows). Sem isto o Streamlit
    insere 1rem de gap entre os blocos e a emenda aparece; zerando só o gap as
    linhas se sobrepõem 13px, porque o markdown do Streamlit já vem com margem
@@ -111,7 +111,7 @@ div[class*="st-key-hc-lista"] .stElementContainer,
 div[class*="st-key-hc-lista"] .stMarkdown,
 div[class*="st-key-hc-lista"] [data-testid="stMarkdownContainer"]{margin:0 !important;}
 /* Destaque nos dias com contagem no calendário */
-.hc-cal-legend{display:flex;gap:16px;font-size:0.7rem;color:#8f8679;
+.hc-cal-legend{display:flex;gap:16px;font-size:0.7rem;color:var(--c-muted);
                margin:4px 0 10px;font-family:'IBM Plex Mono',monospace;}
 </style>"""
 
@@ -400,7 +400,7 @@ def build_historico_contagem_tab(get_db):
                 f'<span class="hc-badge {badge_cls}">{badge_txt}</span>'
                 f'<span class="hc-prod">{_hx(item["produto"] or item["codigo"])}</span>'
                 f'<span class="hc-cod">{_hx(item["codigo"])}</span>'
-                f'<span style="font-size:0.65rem;color:#6b6358;flex:0 0 auto;">{_hx(item["categoria"])}</span>'
+                f'<span style="font-size:0.65rem;color:var(--c-faint);flex:0 0 auto;">{_hx(item["categoria"])}</span>'
                 f'<span class="hc-qtd" title="Sistema / Contado">Sis:{qtd_s} · Cnt:{qtd_c}</span>'
                 f'{delta_html}'
                 f'<span class="hc-hora">{_hx(hora)}</span>'
@@ -438,7 +438,7 @@ def build_historico_contagem_tab(get_db):
                 f'<span class="hc-badge div">{badge_txt}</span>'
                 f'<span class="hc-prod">{_hx(item["produto"] or item["codigo"])}</span>'
                 f'<span class="hc-cod">{_hx(item["codigo"])}</span>'
-                f'<span style="font-size:0.65rem;color:#6b6358;flex:0 0 auto;">{_hx(item["categoria"])}</span>'
+                f'<span style="font-size:0.65rem;color:var(--c-faint);flex:0 0 auto;">{_hx(item["categoria"])}</span>'
                 f'{delta_html}'
                 f'<span class="hc-hora">{_hx(data_fmt)}</span>'
                 f'</div>'
