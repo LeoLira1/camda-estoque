@@ -14463,14 +14463,17 @@ new Chart(document.getElementById('coop-chart'),{
                         1 for _p in _produtos_p if (_parceiro, _p) in _sep_itens
                     )
                     _ja_separado = bool(_produtos_p) and _n_sep_p == len(_produtos_p)
-                    # Parcial ganha cabeçalho próprio (fundo amarelo-claro + selo)
-                    # para saltar aos olhos entre os separados e os pendentes.
+                    # Cabeçalho por situação: separado neutro, parcial em
+                    # amarelo-claro com selo, falta separar em vermelho-claro.
                     _parcial = bool(_n_sep_p) and not _ja_separado
                     _cor_borda = (
                         "#2E7D32" if _ja_separado
-                        else ("#F2B705" if _n_sep_p else "#E08A00")
+                        else ("#F2B705" if _n_sep_p else "#D32F2F")
                     )
-                    _bg_header = "#FFF4C2" if _parcial else "var(--c-surface-2)"
+                    _bg_header = (
+                        "var(--c-surface-2)" if _ja_separado
+                        else ("#FFF4C2" if _parcial else "var(--c-crit-soft)")
+                    )
                     if _ja_separado:
                         _status_txt = (
                             '<span style="color:var(--c-ok);font-weight:700;">✅ Separado</span>'
@@ -14485,7 +14488,7 @@ new Chart(document.getElementById('coop-chart'),{
                         )
                     else:
                         _status_txt = (
-                            '<span style="color:var(--c-warn-ink);font-weight:700;">⚠️ Falta separar</span>'
+                            '<span style="color:var(--c-crit);font-weight:700;">⚠️ Falta separar</span>'
                         )
 
                     # cabeçalho do parceiro com checkbox de separação e botão de download
@@ -14588,14 +14591,17 @@ new Chart(document.getElementById('coop-chart'),{
                         1 for _p in _produtos_p if (_parceiro, _p) in _sep_itens
                     )
                     _ja_separado = bool(_produtos_p) and _n_sep_p == len(_produtos_p)
-                    # Parcial ganha cabeçalho próprio (fundo amarelo-claro + selo)
-                    # para saltar aos olhos entre os separados e os pendentes.
+                    # Cabeçalho por situação: separado neutro, parcial em
+                    # amarelo-claro com selo, falta separar em vermelho-claro.
                     _parcial = bool(_n_sep_p) and not _ja_separado
                     _cor_borda = (
                         "#2E7D32" if _ja_separado
-                        else ("#F2B705" if _n_sep_p else "#E08A00")
+                        else ("#F2B705" if _n_sep_p else "#D32F2F")
                     )
-                    _bg_header = "#FFF4C2" if _parcial else "var(--c-surface-2)"
+                    _bg_header = (
+                        "var(--c-surface-2)" if _ja_separado
+                        else ("#FFF4C2" if _parcial else "var(--c-crit-soft)")
+                    )
                     if _ja_separado:
                         _status_txt = (
                             '<span style="color:var(--c-ok);font-weight:700;">✅ Separado</span>'
@@ -14610,7 +14616,7 @@ new Chart(document.getElementById('coop-chart'),{
                         )
                     else:
                         _status_txt = (
-                            '<span style="color:var(--c-warn-ink);font-weight:700;">⚠️ Falta separar</span>'
+                            '<span style="color:var(--c-crit);font-weight:700;">⚠️ Falta separar</span>'
                         )
 
                     _col_header_d, _col_chk_d = st.columns([8, 2])
