@@ -14239,52 +14239,109 @@ new Chart(document.getElementById('coop-chart'),{
                             .sort_values(["cooperado", "descricao"])
                         )
 
-                        _mr1, _mr2, _mr3 = st.columns(3)
+                        _ret_agg["_zerado"] = _ret_agg["qtd_atual"] <= 0
+                        _ret_saldo = _ret_agg[~_ret_agg["_zerado"]]
+                        _ret_zero = _ret_agg[_ret_agg["_zerado"]]
+
+                        _mr1, _mr2, _mr3, _mr4 = st.columns(4)
                         _mr1.metric("Cooperados", _ret_agg["cooperado"].nunique())
-                        _mr2.metric("Produtos", len(_ret_agg))
+                        _mr2.metric(
+                            "Produtos",
+                            len(_ret_agg),
+                            help=f"{len(_ret_saldo)} ainda com saldo · {len(_ret_zero)} zerados",
+                        )
                         _mr3.metric(
                             "Total retirado (un.)",
                             _fmt_qtd(float(_ret_agg["qtd_retirada"].sum())),
                         )
+                        _mr4.metric(
+                            "Ainda armazenado (un.)",
+                            _fmt_qtd(float(_ret_saldo["qtd_atual"].sum())),
+                        )
 
-                        for _coop_r in _ret_agg["cooperado"].unique().tolist():
-                            _df_cr = _ret_agg[_ret_agg["cooperado"] == _coop_r]
-                            _tot_cr = float(_df_cr["qtd_retirada"].sum())
+                        _th = (
+                            'padding:8px 10px;color:var(--c-muted);'
+                            'font-size:0.75rem;font-weight:600;'
+                        )
+
+                        def _render_ret_secao(_df_sec, _titulo, _cor, _com_saldo):
                             st.markdown(
-                                f'<div style="margin:16px 0 6px;padding:8px 14px;'
-                                f'background:var(--c-line);border-left:4px solid var(--c-warn);border-radius:4px;">'
-                                f'<span style="color:var(--c-text);font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
-                                f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
-                                f'{len(_df_cr)} produto(s) · Retirado: '
-                                f'<b style="color:var(--c-warn-ink)">{_fmt_qtd(_tot_cr)}</b> un.'
-                                f'</span></div>',
+                                f'<div style="margin:22px 0 4px;color:{_cor};font-weight:800;'
+                                f'font-size:1rem;letter-spacing:.02em;">{_titulo} '
+                                f'<span style="color:var(--c-muted);font-weight:500;font-size:0.8rem;">'
+                                f'· {len(_df_sec)} produto(s) de '
+                                f'{_df_sec["cooperado"].nunique()} cooperado(s)</span></div>',
                                 unsafe_allow_html=True,
                             )
-                            _rows_ret = ""
-                            for _, _rr in _df_cr.iterrows():
-                                _rows_ret += (
-                                    f'<tr>'
-                                    f'<td style="padding:7px 10px;color:var(--c-text);">{_rr["descricao"]}</td>'
-                                    f'<td style="padding:7px 10px;color:var(--c-muted);font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
-                                    f'<td style="padding:7px 10px;color:var(--c-text-2);font-size:0.78rem;text-align:right;">'
-                                    f'{_fmt_qtd(float(_rr["qtd_anterior"]))} → {_fmt_qtd(float(_rr["qtd_atual"]))}</td>'
-                                    f'<td style="padding:7px 10px;color:var(--c-warn-ink);font-weight:700;text-align:right;">'
-                                    f'−{_fmt_qtd(float(_rr["qtd_retirada"]))} un.</td>'
-                                    f'</tr>'
+                            for _coop_r in _df_sec["cooperado"].unique().tolist():
+                                _df_cr = _df_sec[_df_sec["cooperado"] == _coop_r]
+                                _tot_cr = float(_df_cr["qtd_retirada"].sum())
+                                _resta_txt = (
+                                    f' · Resta: <b style="color:var(--c-info)">'
+                                    f'{_fmt_qtd(float(_df_cr["qtd_atual"].sum()))}</b> un.'
+                                    if _com_saldo else ""
                                 )
-                            st.markdown(
-                                f'<table style="width:100%;border-collapse:collapse;'
-                                f'background:var(--c-surface-2);border-radius:12px;overflow:hidden;margin-bottom:4px;">'
-                                f'<thead><tr style="background:var(--c-line);">'
-                                f'<th style="padding:8px 10px;text-align:left;color:var(--c-muted);font-size:0.75rem;font-weight:600;">PRODUTO</th>'
-                                f'<th style="padding:8px 10px;text-align:left;color:var(--c-muted);font-size:0.75rem;font-weight:600;">CÓDIGO</th>'
-                                f'<th style="padding:8px 10px;text-align:right;color:var(--c-muted);font-size:0.75rem;font-weight:600;">ANTES → DEPOIS</th>'
-                                f'<th style="padding:8px 10px;text-align:right;color:var(--c-muted);font-size:0.75rem;font-weight:600;">RETIRADO</th>'
-                                f'</tr></thead>'
-                                f'<tbody>{_rows_ret}</tbody>'
-                                f'</table>',
-                                unsafe_allow_html=True,
+                                st.markdown(
+                                    f'<div style="margin:12px 0 6px;padding:8px 14px;'
+                                    f'background:var(--c-line);border-left:4px solid {_cor};border-radius:4px;">'
+                                    f'<span style="color:var(--c-text);font-weight:700;font-size:0.9rem;">👤 {_coop_r}</span>'
+                                    f'<span style="color:var(--c-muted);font-size:0.73rem;margin-left:10px;">'
+                                    f'{len(_df_cr)} produto(s) · Retirado: '
+                                    f'<b style="color:var(--c-warn-ink)">{_fmt_qtd(_tot_cr)}</b> un.'
+                                    f'{_resta_txt}</span></div>',
+                                    unsafe_allow_html=True,
+                                )
+                                _rows_ret = ""
+                                for _, _rr in _df_cr.iterrows():
+                                    if _com_saldo:
+                                        _ult_col = (
+                                            f'<td style="padding:7px 10px;text-align:right;white-space:nowrap;">'
+                                            f'<span style="display:inline-block;min-width:64px;padding:3px 10px;'
+                                            f'border-radius:999px;background:var(--c-info-soft);'
+                                            f'color:var(--c-info);font-weight:800;font-size:1.05rem;">'
+                                            f'{_fmt_qtd(float(_rr["qtd_atual"]))}</span></td>'
+                                        )
+                                    else:
+                                        _ult_col = (
+                                            f'<td style="padding:7px 10px;text-align:right;color:var(--c-label);'
+                                            f'font-size:0.8rem;font-weight:600;white-space:nowrap;">ZERADO</td>'
+                                        )
+                                    _rows_ret += (
+                                        f'<tr>'
+                                        f'<td style="padding:7px 10px;color:var(--c-text);">{_rr["descricao"]}</td>'
+                                        f'<td style="padding:7px 10px;color:var(--c-muted);font-size:0.78rem;">{_rr["codigo_produto"]}</td>'
+                                        f'<td style="padding:7px 10px;color:var(--c-text-2);font-size:0.85rem;text-align:right;">'
+                                        f'{_fmt_qtd(float(_rr["qtd_anterior"]))}</td>'
+                                        f'<td style="padding:7px 10px;color:var(--c-warn-ink);font-weight:700;text-align:right;white-space:nowrap;">'
+                                        f'−{_fmt_qtd(float(_rr["qtd_retirada"]))}</td>'
+                                        f'{_ult_col}'
+                                        f'</tr>'
+                                    )
+                                st.markdown(
+                                    f'<table style="width:100%;border-collapse:collapse;'
+                                    f'background:var(--c-surface-2);border-radius:12px;overflow:hidden;margin-bottom:4px;">'
+                                    f'<thead><tr style="background:var(--c-line);">'
+                                    f'<th style="{_th}text-align:left;">PRODUTO</th>'
+                                    f'<th style="{_th}text-align:left;">CÓDIGO</th>'
+                                    f'<th style="{_th}text-align:right;">ANTES</th>'
+                                    f'<th style="{_th}text-align:right;">RETIRADO</th>'
+                                    f'<th style="{_th}text-align:right;">{"RESTA" if _com_saldo else "SALDO"}</th>'
+                                    f'</tr></thead>'
+                                    f'<tbody>{_rows_ret}</tbody>'
+                                    f'</table>',
+                                    unsafe_allow_html=True,
+                                )
+
+                        if not _ret_saldo.empty:
+                            _render_ret_secao(
+                                _ret_saldo, "🔵 Ainda com saldo armazenado", "var(--c-info)", True,
                             )
+                        if not _ret_zero.empty:
+                            _render_ret_secao(
+                                _ret_zero, "⚪ Zerados pelo cooperado", "var(--c-label)", False,
+                            )
+
+                        _ret_agg = _ret_agg.drop(columns="_zerado")
 
                         _csv_ret = _ret_agg.rename(columns={
                             "cooperado": "COOPERADO",
