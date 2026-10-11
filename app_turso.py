@@ -1568,6 +1568,19 @@ def _pstrip(s: str) -> str:
     return re.sub(r'\s+', ' ', _RE_PA_SIZE.sub('', s)).strip()
 
 
+# Palavras de apresentação que não identificam o produto ("… INJETAVEL FRASCO").
+_RE_PA_GENERICAS = re.compile(
+    r'\b(?:INJETAVEIS|INJETAVEL|FRASCOS?|POUR[\s-]*ON|SPOT[\s-]*ON|USO\s+TOPICO|TOPICO|ORAL)\b'
+)
+
+
+def _pcore(s: str) -> str:
+    """Miolo do nome (já normalizado por _pnorm): sem tamanho e sem palavras de
+    apresentação. Sem isso, "AMOX JA INJETAVEL FRASCO" e "DECTOMAX INJETAVEL
+    FRASCO" ficavam 78% iguais só pelo sufixo e herdavam o P.A. um do outro."""
+    return re.sub(r'\s+', ' ', _RE_PA_GENERICAS.sub('', _pstrip(s))).strip()
+
+
 def _codigo_key(value) -> str:
     """Normaliza código de produto para comparações entre telas/tabelas."""
     if value is None:
@@ -1586,12 +1599,22 @@ def _build_pa_lookup(mapa: dict) -> tuple:
     cat_ns = {_pstrip(_pnorm(k)): v for k, v in mapa.items()}
     cat_n_keys = sorted(cat_n.keys(), key=len, reverse=True)
     cat_ns_keys = sorted(cat_ns.keys(), key=len, reverse=True)
-    return mapa, cat_n, cat_ns, cat_n_keys, cat_ns_keys
+    # miolo → P.A., para o fuzzy comparar só o que identifica o produto
+    cat_core = {}
+    for k, v in mapa.items():
+        c = _pcore(_pnorm(k))
+        if c:
+            cat_core[c] = v
+    return mapa, cat_n, cat_ns, cat_n_keys, cat_ns_keys, cat_core
 
 
 def _lookup_pa_from_index(nome: str, mapa: dict, cat_n: dict, cat_ns: dict,
-                          cat_n_keys: list, cat_ns_keys: list) -> str:
-    """Retorna o princípio ativo para um nome de produto usando match multi-etapa."""
+                          cat_n_keys: list, cat_ns_keys: list,
+                          cat_core: dict = None, permitir_fuzzy: bool = True) -> str:
+    """Retorna o princípio ativo para um nome de produto usando match multi-etapa.
+
+    O fuzzy compara o miolo do nome (_pcore); com permitir_fuzzy=False ele é
+    pulado (usado ao GRAVAR no banco: só vale o que casou de forma firme)."""
     chave = nome.strip().upper()
     chave_n = _pnorm(chave)
     chave_s = _pstrip(chave_n)
@@ -1607,13 +1630,22 @@ def _lookup_pa_from_index(nome: str, mapa: dict, cat_n: dict, cat_ns: dict,
     for ck in cat_ns_keys:
         if ck in chave_s:
             return cat_ns[ck]
-    if len(chave_s) >= 5:
+    core = _pcore(chave_n)
+    # "chave contém o nome" só vale se o nome tem miolo (não é só "INJETAVEL FRASCO")
+    if len(chave_s) >= 5 and core:
         for ck in cat_n_keys:
             if chave_n in ck:
                 return cat_n[ck]
         for ck in cat_ns_keys:
             if chave_s in ck:
                 return cat_ns[ck]
+    if not permitir_fuzzy:
+        return ""
+    if cat_core is not None:
+        if not core:
+            return ""
+        m = _gcm(core, list(cat_core.keys()), n=1, cutoff=0.72)
+        return cat_core[m[0]] if m else ""
     m = _gcm(chave_s, list(cat_ns.keys()), n=1, cutoff=0.72)
     if m:
         return cat_ns[m[0]]
@@ -3718,6 +3750,9 @@ def upsert_principio_ativo(produto: str, principio_ativo: str, categoria: str = 
         )
         conn.commit()
         sync_db()
+        get_principios_ativos.clear()
+        get_pa_count.clear()
+        get_produtos_sem_principio_ativo.clear()
         return True
     except Exception:
         return False
@@ -3776,7 +3811,9 @@ def _auto_cache_principios_ativos(produtos: list, conn) -> int:
             # Já existe registro exato → não sobrescrever
             if nome_u in pa_db:
                 continue
-            pa = _lookup_pa_from_index(produto, *_idx)
+            # semelhança (fuzzy) NÃO é gravada: um palpite errado virava cadastro
+            # exato para sempre (ex.: Amox JA → Doramectina)
+            pa = _lookup_pa_from_index(produto, *_idx, permitir_fuzzy=False)
             if pa:
                 inserir.append((nome_u, pa, ""))
 
@@ -4793,6 +4830,225 @@ def _fmt_volume(total_litros, total_kg, total_units) -> str:
     return " + ".join(parts) if parts else f"{int(total_units)} un.*"
 
 
+def _exigir_senha_edicao(kp: str) -> bool:
+    """True se a edição está liberada; senão pede a senha de edição ali mesmo
+    (a mesma do 📤 Upload de Planilha — gravar P.A. altera o banco compartilhado)."""
+    if st.session_state.get("admin_unlocked"):
+        return True
+    st.caption("🔒 Digite a senha de edição para gravar.")
+    c_pwd, c_btn = st.columns([3, 1])
+    with c_pwd:
+        pwd = st.text_input("Senha edição", type="password", placeholder="🔑 Senha de edição",
+                            label_visibility="collapsed", key=f"{kp}_pwd")
+    with c_btn:
+        if st.button("🔓 Entrar", type="primary", key=f"{kp}_pwd_btn", use_container_width=True):
+            if _senha_confere(pwd, EDIT_PASSWORD):
+                st.session_state.admin_unlocked = True
+                st.rerun()
+            elif not EDIT_PASSWORD:
+                st.error("⚠️ Senha de edição não configurada. Defina **CAMDA_EDIT_PASSWORD** nos Secrets do app.")
+            else:
+                st.error("❌ Senha incorreta")
+    return False
+
+
+def get_pa_automaticos_suspeitos() -> list:
+    """Linhas de `principios_ativos` gravadas pela busca automática (categoria
+    vazia) cujo P.A. não se sustenta pelo critério atual.
+
+    Antes, o auto-cache gravava no banco o P.A. achado por SEMELHANÇA de nome, e o
+    palpite virava cadastro exato (ex.: "AMOX JA INJETAVEL FRASCO" → Doramectina,
+    só porque o Dectomax termina igual). Aqui cada linha automática é refeita
+    contra o catálogo + os cadastros manuais (categoria preenchida); o que não
+    bate volta como suspeito. Só lê — quem remove é o usuário."""
+    rows = get_db().execute("SELECT produto, principio_ativo, categoria FROM principios_ativos").fetchall()
+    auto = [(str(r[0]).strip().upper(), str(r[1]).strip()) for r in rows if not str(r[2] or "").strip()]
+    if not auto:
+        return []
+    confiaveis = {**carregar_mapa_produtos_camda(),
+                  **{str(r[0]).strip().upper(): str(r[1]).strip() for r in rows if str(r[2] or "").strip()}}
+    idx = _build_pa_lookup(confiaveis) if confiaveis else None
+    suspeitos = []
+    for prod, pa in auto:
+        novo = _lookup_pa_from_index(prod, *idx) if idx else ""
+        if _pnorm(novo) != _pnorm(pa):
+            suspeitos.append({"produto": prod, "pa_salvo": pa, "pa_criterio": novo})
+    return suspeitos
+
+
+def remover_pa_automaticos(produtos: list) -> int:
+    """Apaga linhas automáticas (categoria vazia) de `principios_ativos`; os
+    produtos voltam a "sem P.A." para serem mapeados. Nunca toca cadastro manual."""
+    n = 0
+    try:
+        conn = get_db()
+        for prod in produtos:
+            conn.execute(
+                "DELETE FROM principios_ativos WHERE produto = ? AND (categoria IS NULL OR TRIM(categoria) = '')",
+                (str(prod).strip().upper(),),
+            )
+            n += 1
+        conn.commit()
+        sync_db()
+        get_principios_ativos.clear()
+        get_pa_count.clear()
+        get_produtos_sem_principio_ativo.clear()
+    except Exception:
+        return 0
+    return n
+
+
+def _render_pa_revisao(kp: str) -> None:
+    """Lista os P.A.s gravados por semelhança que o critério atual não confirma."""
+    _slot = st.empty()  # slot fixo p/ a confirmação (ver _render_pa_mapper)
+    _flash = st.session_state.pop(f"{kp}_flash", None)
+    if _flash:
+        _slot.success(_flash)
+    with st.expander("🧹 Revisar P.A.s gravados automaticamente", expanded=False):
+        st.caption(
+            "Produtos que ganharam P.A. por **semelhança de nome** e que o critério atual "
+            "não confirma (ex.: *Amox JA → Doramectina*). Nada é apagado sem você marcar."
+        )
+        if not _exigir_senha_edicao(f"{kp}_pwd"):
+            return
+        if st.button("🔎 Analisar", key=f"{kp}_run"):
+            st.session_state[f"{kp}_res"] = get_pa_automaticos_suspeitos()
+        res = st.session_state.get(f"{kp}_res")
+        if res is None:
+            return
+        if not res:
+            st.success("Nenhum suspeito. ✅")
+            return
+        st.warning(f"{len(res)} suspeito(s). Confira antes de remover.")
+        st.dataframe(
+            pd.DataFrame(res).rename(columns={
+                "produto": "Produto", "pa_salvo": "P.A. gravado",
+                "pa_criterio": "P.A. pelo critério atual",
+            }),
+            hide_index=True, use_container_width=True,
+        )
+        todos = st.checkbox(f"Remover todos os {len(res)}", key=f"{kp}_all")
+        nomes = [r["produto"] for r in res]
+        marcados = nomes if todos else st.multiselect(
+            "Remover estes", nomes, key=f"{kp}_sel", placeholder="Escolha os produtos…",
+        )
+        if st.button(f"🗑️ Remover {len(marcados)} selecionado(s)", type="primary",
+                     disabled=not marcados, key=f"{kp}_del"):
+            n = remover_pa_automaticos(marcados)
+            st.session_state.pop(f"{kp}_res", None)
+            if n:
+                st.session_state[f"{kp}_flash"] = f"✅ {n} P.A. removido(s). Mapeie-os pelo 🔍 acima."
+                st.rerun()
+            else:
+                st.error("Não foi possível remover. Tente novamente.")
+
+
+def _buscar_produtos_estoque(query: str, nomes: list, limite: int = 40) -> list:
+    """Busca inteligente de produtos do estoque: sem acento/caixa, por palavras em
+    qualquer ordem e tolerante a erro de digitação (ex.: 'karate' acha 'KARATÊ ZEON')."""
+    tokens = _pnorm(query or "").split()
+    if not tokens:
+        return []
+    norm = {n: _pnorm(str(n)) for n in nomes}
+    vocab = sorted({w for v in norm.values() for w in re.split(r"[^A-Z0-9]+", v) if len(w) >= 3})
+    grupos = []
+    for t in tokens:
+        alts = {t}
+        if len(t) >= 4 and not any(t in v for v in norm.values()):
+            alts.update(_gcm(t, vocab, n=3, cutoff=0.75))
+        grupos.append(alts)
+    achados = []
+    for n, v in norm.items():
+        if all(any(a in v for a in alts) for alts in grupos):
+            pos = min(v.find(a) for alts in grupos for a in alts if a in v)
+            achados.append((pos, len(v), str(n)))
+    achados.sort()
+    return [n for _, _, n in achados[:limite]]
+
+
+def _render_pa_mapper(df_mestre: pd.DataFrame, mapa_combinado: dict, kp: str) -> None:
+    """Busca um produto do estoque e define/corrige o princípio ativo dele."""
+    if df_mestre is None or df_mestre.empty:
+        return
+    df_todos = (
+        df_mestre[["produto", "categoria", "qtd_sistema"]]
+        .rename(columns={"qtd_sistema": "quantidade"})
+        .sort_values("produto").drop_duplicates("produto").reset_index(drop=True)
+    )
+    if mapa_combinado:
+        idx = _build_pa_lookup(mapa_combinado)
+        cat_core = idx[5]
+        def _atual(nome: str) -> str:
+            return _lookup_pa_from_index(nome, *idx) or ""
+        def _sugerir(nome: str) -> str:
+            # só sugere com semelhança razoável do miolo; antes vinha o "menos
+            # diferente" do catálogo (cutoff 0) e um Salvar distraído gravava errado
+            core = _pcore(_pnorm(str(nome)))
+            m = _gcm(core, list(cat_core.keys()), n=1, cutoff=0.6) if core else []
+            return cat_core[m[0]] if m else ""
+        pa_opcoes = sorted(set(mapa_combinado.values()))
+    else:
+        def _atual(nome: str) -> str: return ""
+        def _sugerir(nome: str) -> str: return ""
+        pa_opcoes = []
+
+    nomes = df_todos["produto"].tolist()
+    n_sem = sum(1 for n in nomes if not _atual(str(n)))
+    # Confirmação fora do expander (após o st.rerun() ele volta fechado) e num slot
+    # que existe SEMPRE: mensagem que aparece/some desloca os elementos e o
+    # Streamlit fecha os expanders.
+    _slot = st.empty()
+    _flash = st.session_state.pop(f"{kp}_flash", None)
+    if _flash:
+        _slot.success(_flash)
+    with st.expander(f"🔍 Mapear / corrigir P.A. de um produto ({n_sem} sem mapeamento)", expanded=False):
+        st.caption("Digite parte do nome (ex.: **karate**) — acha mesmo sem acento, fora de ordem ou com erro de digitação.")
+        if not _exigir_senha_edicao(f"{kp}_pwd"):
+            return
+        busca = st.text_input("Buscar produto do estoque", key=f"{kp}_busca",
+                              placeholder="Ex.: karate, glifosato 20L…")
+        if busca.strip():
+            achados = _buscar_produtos_estoque(busca, nomes)
+        else:
+            achados = [str(n) for n in nomes if not _atual(str(n))][:40]
+            st.caption("Sem busca: mostrando produtos **ainda sem P.A.**")
+        if not achados:
+            st.warning("Nenhum produto do estoque encontrado com esse termo.")
+            return
+        prod = st.selectbox(
+            "Produto", achados, key=f"{kp}_prod",
+            format_func=lambda n: f"{n}  —  " + (("✅ " + _atual(n)) if _atual(n) else "⚠️ sem P.A."),
+        )
+        row = df_todos[df_todos["produto"] == prod].iloc[0]
+        cat = str(row["categoria"])
+        pa_cur = _atual(prod)
+        if pa_cur:
+            st.caption(f"Qtd: **{int(row['quantidade'])} un.** — P.A. atual: ✅ *{pa_cur}* — salve para corrigir.")
+        else:
+            st.caption(f"Qtd: **{int(row['quantidade'])} un.** — Sem P.A. mapeado.")
+        padrao = pa_cur or _sugerir(prod)
+        NOVO = "➕ Digitar novo P.A…"
+        ESCOLHA = "— escolha o P.A. —"
+        lista = [padrao or ESCOLHA] + [p for p in pa_opcoes if p != padrao] + [NOVO]
+        pa_sel = st.selectbox(
+            "Princípio Ativo", lista, key=f"{kp}_pa_{prod}",
+            help="Escolha da lista (a primeira é a sugestão, quando há) ou '➕ Digitar novo' para um P.A. inédito.",
+        )
+        pa_final = pa_sel
+        if pa_sel == NOVO:
+            pa_final = st.text_input("Novo Princípio Ativo", key=f"{kp}_novo",
+                                     placeholder="Ex.: Lambda-cialotrina")
+        if st.button("💾 Salvar P.A.", type="primary", use_container_width=True, key=f"{kp}_save"):
+            if prod and pa_final and pa_final.strip() and pa_final not in (NOVO, ESCOLHA):
+                if upsert_principio_ativo(prod, pa_final.strip(), cat):
+                    st.session_state[f"{kp}_flash"] = f"✅ **{prod}** → *{pa_final.strip()}*"
+                    st.rerun()
+                else:
+                    st.error("Erro ao salvar. Tente novamente.")
+            else:
+                st.warning("Escolha o produto e informe o Princípio Ativo antes de salvar.")
+
+
 def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     """Constrói a aba Princípios Ativos — visual fiel ao componente React."""
     if df_mestre.empty:
@@ -4832,6 +5088,9 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
 
     mapa_excel = carregar_mapa_produtos_camda()
     mapa_combinado = {**mapa_excel, **mapa_db}
+
+    _render_pa_mapper(df_mestre, mapa_combinado, "pa_tab_map")
+    _render_pa_revisao("pa_tab_rev")
 
     if not mapa_combinado:
         st.warning(
@@ -5244,7 +5503,7 @@ def build_principios_ativos_tab(df_mestre: pd.DataFrame, df_pa: pd.DataFrame):
     if n_nao_id > 0:
         st.caption(
             f"ℹ️ {n_nao_id} produto(s) sem mapeamento de P.A. "
-            "Use **📤 Upload de Planilha → 🔍 Mapear / corrigir P.A.** para mapear."
+            "Use **🔍 Mapear / corrigir P.A.** no topo desta aba para mapear."
         )
 
 
@@ -15547,94 +15806,11 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                                     st.rerun()
 
             # ── Mapear / corrigir P.A. ────────────────────────────────────────
-            _df_pa_up = get_principios_ativos()
-            _mapa_ex_up = carregar_mapa_produtos_camda()
-            _mapa_db_up: dict = {
+            _mapa_db_up = {
                 str(r["produto"]).strip().upper(): str(r["principio_ativo"]).strip()
-                for _, r in _df_pa_up.iterrows()
+                for _, r in get_principios_ativos().iterrows()
             }
-            _mapa_comb_up = {**_mapa_ex_up, **_mapa_db_up}
-
-            _df_todos_up = (
-                df_mestre[["produto", "categoria", "qtd_sistema"]]
-                .rename(columns={"qtd_sistema": "quantidade"})
-                .sort_values("produto")
-                .drop_duplicates("produto")
-                .reset_index(drop=True)
-                .copy()
-            )
-            if _mapa_comb_up:
-                _idx_up = _build_pa_lookup(_mapa_comb_up)
-                _cat_ns_up = _idx_up[2]
-                _cat_diag_up = list(_cat_ns_up.keys())
-                def _lookup_up(nome: str) -> str:
-                    pa = _lookup_pa_from_index(nome, *_idx_up)
-                    return pa if pa else "Não identificado"
-                def _sugerir_pa_up(nome: str) -> str:
-                    s = _pstrip(_pnorm(str(nome)))
-                    m = _gcm(s, _cat_diag_up, n=1, cutoff=0.0)
-                    return _cat_ns_up[m[0]] if m else ""
-                _df_todos_up["principio_ativo"] = _df_todos_up["produto"].apply(lambda n: _lookup_up(str(n)))
-                _pa_opcoes_up = sorted(set(_mapa_comb_up.values()))
-            else:
-                _df_todos_up["principio_ativo"] = "Não identificado"
-                _pa_opcoes_up = []
-                def _sugerir_pa_up(nome: str) -> str: return ""
-
-            _n_nao_id_up = int((_df_todos_up["principio_ativo"] == "Não identificado").sum())
-
-            with st.expander(f"🔍 Mapear / corrigir P.A. ({_n_nao_id_up} sem mapeamento)", expanded=False):
-                st.caption(
-                    "Busque **qualquer produto** — inclusive os já mapeados para corrigir. "
-                    f"**{_n_nao_id_up}** ainda sem P.A."
-                )
-                _nomes_up = _df_todos_up["produto"].tolist()
-                _prod_up_sel = st.selectbox(
-                    "Produto",
-                    options=_nomes_up,
-                    index=0,
-                    key="up_pa_map_prod_sel",
-                    placeholder="Digite para filtrar…",
-                )
-                _row_up = _df_todos_up[_df_todos_up["produto"] == _prod_up_sel]
-                _qtd_up = int(_row_up["quantidade"].iloc[0]) if not _row_up.empty else 0
-                _cat_up = str(_row_up["categoria"].iloc[0]) if not _row_up.empty else ""
-                _pa_cur_up = str(_row_up["principio_ativo"].iloc[0]) if not _row_up.empty else ""
-                _mapeado_up = _pa_cur_up and _pa_cur_up != "Não identificado"
-                if _mapeado_up:
-                    st.caption(f"Qtd: **{_qtd_up} un.** — P.A. atual: ✅ *{_pa_cur_up}* — clique Salvar para corrigir.")
-                else:
-                    st.caption(f"Qtd: **{_qtd_up} un.** — Sem P.A. mapeado.")
-
-                _def_pa_up = _pa_cur_up if _mapeado_up else _sugerir_pa_up(_prod_up_sel or "")
-                _PA_NOVO_UP = "➕ Digitar novo P.A…"
-                _pa_lista_up = (
-                    [_def_pa_up] + [p for p in _pa_opcoes_up if p != _def_pa_up] + [_PA_NOVO_UP]
-                    if _def_pa_up else _pa_opcoes_up + [_PA_NOVO_UP]
-                )
-                _pa_map_up = st.selectbox(
-                    "Princípio Ativo",
-                    options=_pa_lista_up,
-                    index=0,
-                    key=f"up_pa_map_pa_sel_{_prod_up_sel}",
-                    help="Escolha da lista ou selecione '➕ Digitar novo' para informar um P.A. inédito.",
-                )
-                _pa_final_up = _pa_map_up
-                if _pa_map_up == _PA_NOVO_UP:
-                    _pa_final_up = st.text_input(
-                        "Novo Princípio Ativo",
-                        placeholder="Ex.: Glifosato + Diquat",
-                        key="up_pa_map_pa_novo",
-                    )
-                if st.button("💾 Salvar mapeamento", type="primary", use_container_width=True, key="up_pa_save_btn"):
-                    if _prod_up_sel and _pa_final_up and _pa_final_up.strip() and _pa_final_up != _PA_NOVO_UP:
-                        if upsert_principio_ativo(_prod_up_sel, _pa_final_up.strip(), _cat_up):
-                            st.success(f"✅ **{_prod_up_sel}** → *{_pa_final_up.strip()}*")
-                            st.rerun()
-                        else:
-                            st.error("Erro ao salvar. Tente novamente.")
-                    else:
-                        st.warning("Selecione um produto e informe o Princípio Ativo antes de salvar.")
+            _render_pa_mapper(df_mestre, {**carregar_mapa_produtos_camda(), **_mapa_db_up}, "up_pa_map")
 
 # ── Rodapé ──────────────────────────────────────────────────────────────────
 st.markdown("---")
