@@ -126,6 +126,22 @@ antemão em vez de redescobri-las:
   resumo operacional à direita) — breakpoints em 980px e 720px. Se mudar o
   conteúdo do header, reveja esses paddings.
 
+## Princípio ativo: casamento por nome (`_lookup_pa_from_index`)
+
+- O fuzzy (cutoff 0,72) compara o **miolo** do nome (`_pcore`): sem tamanho e sem
+  palavras de apresentação (`INJETAVEL`, `FRASCO`, `POUR ON`, `SPOT ON`, `USO TOPICO`…).
+  Sem isso, "AMOX JA INJETAVEL FRASCO" casava 78% com "DECTOMAX INJETAVEL FRASCO" e
+  herdava Doramectina. O app Android (repositório `Principioativo`, `PaMatcher.kt` +
+  `miolo()`) usa a MESMA regra — mude os dois juntos.
+- `_auto_cache_principios_ativos` chama com `permitir_fuzzy=False`: palpite por
+  semelhança **não** vira cadastro no banco (antes virava, e ficava errado para sempre).
+  Linhas gravadas por ele têm `categoria` vazia; a aba 🧬 tem "🧹 Revisar P.A.s gravados
+  automaticamente" para achar/remover as que o critério atual não confirma.
+- Gravar P.A. (mapeador da aba 🧬 e do Upload) exige a senha de edição (`admin_unlocked`);
+  `_exigir_senha_edicao()` pede ali mesmo. Confirmações de salvar/remover usam
+  `st.session_state[...flash]` + `st.empty()` fixo: `st.success()` antes de `st.rerun()` some,
+  e mensagem que aparece/desaparece desloca elementos e o Streamlit fecha os expanders.
+
 ## Tema visual (escuro minimalista)
 
 - Paleta única em `theme.py` (`PALETTE`). O CSS global de `app_turso.py`
