@@ -8232,8 +8232,8 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             qtd_av = avarias_map_norm.get(cod_str, 0)
 
             # divergencias_map é a fonte de verdade das divergências ativas:
-            # sobrepõe estoque_mestre e, no inventário cíclico, também a contagem
-            # do ciclo (ver contagem_ciclo_prevalece). Contar e dar OK apaga as
+            # sobrepõe estoque_mestre e, no inventário cíclico, é a única fonte
+            # de falta/sobra (ver _diff_efetivo_row). Contar e dar OK apaga as
             # divergências; aberta é porque ninguém desmentiu.
             _div_entries = divergencias_map_norm.get(cod_str)
             total_div_delta = sum(e["delta"] for e in _div_entries) if _div_entries else 0
@@ -8244,23 +8244,12 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             if color_mode == "ciclico":
                 status_c = str(r.get("status_ciclo", "") or "")
                 if status_c in ("ok", "divergencia"):
-                    # A cor segue a diferença efetiva, não o status gravado —
-                    # precedência: divergências abertas > contagem do ciclo >
-                    # diferença geral. Sem divergência aberta o item vale pelo
-                    # que foi contado: falta vermelho, sobra azul, bateu verde.
-                    _qtd_cont = r.get("qtd_contada_ciclo")
-                    _qtd_sis  = r.get("qtd_sistema_na_contagem")
-                    _tem_contagem = pd.notnull(_qtd_cont) and pd.notnull(_qtd_sis)
-                    if _tem_contagem:
-                        try:
-                            _diff_ciclo = int(float(_qtd_cont)) - int(float(_qtd_sis))
-                            if total_div_delta == 0:
-                                diff = _diff_ciclo
-                        except (ValueError, TypeError):
-                            _tem_contagem = False
-                    # Divergência antiga sem quantidades registradas: mantém vermelho
-                    if diff < 0 or (status_c == "divergencia" and diff == 0
-                                    and not _tem_contagem):
+                    # Conferido no ciclo: a falta/sobra é a das divergências
+                    # abertas (total_div_delta), não a conta do ciclo — ver
+                    # _diff_efetivo_row no inventario_ciclico_tab. Deu OK e não
+                    # sobrou divergência → verde.
+                    diff = total_div_delta
+                    if diff < 0:
                         border_color = "#FF5A5A"
                         card_bg = "var(--c-crit-soft)"
                     elif diff > 0:

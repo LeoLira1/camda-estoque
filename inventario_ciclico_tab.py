@@ -350,6 +350,30 @@ def _marcar_ciclo_divergencia(codigo: str, qtd_real: int, get_db, sync_db) -> bo
             SET status_ciclo='divergencia', qtd_contada_ciclo=?, qtd_sistema_na_contagem=?, contado_ciclo_em=?
             WHERE codigo=?
         """, (qtd_real, qtd_sistema, now, codigo))
+        # A contagem do modal é a quantidade física inteira: substitui as
+        # divergências abertas pela diferença contada agora, e é ela que a aba
+        # Divergências e o card passam a mostrar (ver _diff_efetivo_row).
+        delta = int(qtd_real) - int(qtd_sistema)
+        conn.execute("DELETE FROM divergencias WHERE codigo = ?", (codigo,))
+        if delta == 0:
+            conn.execute("""
+                UPDATE estoque_mestre
+                SET status='ok', qtd_fisica=qtd_sistema, diferenca=0, nota='', ultima_contagem=?
+                WHERE codigo=?
+            """, (now, codigo))
+        else:
+            status_div = "sobra" if delta > 0 else "falta"
+            conn.execute("""
+                UPDATE estoque_mestre
+                SET status=?, qtd_fisica=?, diferenca=?, ultima_contagem=?
+                WHERE codigo=?
+            """, (status_div, int(qtd_real), delta, now, codigo))
+            for tabela in ("divergencias", "historico_divergencias"):
+                conn.execute(
+                    f"INSERT INTO {tabela} (codigo, produto, categoria, delta, status, cooperado, criado_em) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (codigo, produto_nome, categoria, delta, status_div, "", now),
+                )
         data_hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
         _upsert_inventario_cicli(
             conn, data_hoje, codigo, produto_nome, categoria,
@@ -413,22 +437,6 @@ def _ciclo_entry(divergencias_cicli: dict, codigo) -> tuple:
     if isinstance(v, tuple):
         return v
     return (v, "")
-
-
-def _diff_ciclo_row(row, divergencias_cicli: dict) -> float:
-    """Diferença da contagem cíclica (contado − sistema). Se as colunas do
-    ciclo estiverem vazias (registros antigos), usa o histórico inventario_cicli."""
-    qc, qs = row["qtd_contada_ciclo"], row["qtd_sistema_na_contagem"]
-    if pd.notna(qc) and pd.notna(qs):
-        return float(qc) - float(qs)
-    return float(_ciclo_entry(divergencias_cicli, row["codigo"])[0] or 0)
-
-
-def _tem_contagem_ciclo(row, divergencias_cicli: dict) -> bool:
-    """True quando existe uma contagem cíclica registrada para o produto."""
-    if pd.notna(row.get("qtd_contada_ciclo")) and pd.notna(row.get("qtd_sistema_na_contagem")):
-        return True
-    return str(row.get("codigo")) in divergencias_cicli
 
 
 def _contado_em_row(row, divergencias_cicli: dict) -> str:
@@ -607,42 +615,19 @@ def _total_divs(entries) -> int:
     return sum(int(e.get("delta") or 0) for e in (entries or []))
 
 
-def contagem_ciclo_prevalece(row, entries=None, divergencias_cicli=None) -> bool:
-    """A contagem do ciclo define a falta/sobra do produto?
-
-    Só quando NÃO há divergência aberta. A aba Divergências é a verdade sobre
-    falta/sobra: quem conta e acha diferença registra lá (o app de contagem
-    grava a divergência e a contagem do ciclo juntas), e quem conta e dá OK
-    apaga as divergências do produto (app, aba Contagem e o "OK" deste
-    modal). Divergência que ainda está aberta, portanto, ninguém desmentiu.
-
-    A regra anterior (a contagem sempre vencia) servia para falta antiga que
-    sobrevivia a uma contagem OK; agora o OK limpa a falta, e a regra antiga
-    passou a esconder faltas reais atrás de contagens velhas — o card mostrava
-    sobra num produto com 3 faltando.
-
-    Sem divergência aberta, a contagem do ciclo vale sobre
-    `estoque_mestre.diferenca` (inclusive quando bateu, zerando-a).
-    """
-    if _total_divs(entries):
-        return False
-    return _tem_contagem_ciclo(row, divergencias_cicli or {})
-
-
 def _diff_efetivo_row(row, divergencias_cicli: dict, divs_map: dict) -> float:
-    """Diferença efetiva do produto — mesma precedência da cor dos cards:
-    divergências abertas > contagem do ciclo > diferença geral."""
-    entries = divs_map.get(_norm_cod(row["codigo"]))
-    total = _total_divs(entries)
-    if total:
-        return float(total)
-    if contagem_ciclo_prevalece(row, None, divergencias_cicli):
-        return float(_diff_ciclo_row(row, divergencias_cicli))
-    dif = row.get("diferenca")
-    try:
-        return float(dif) if pd.notna(dif) else 0.0
-    except (TypeError, ValueError):
-        return 0.0
+    """Falta/sobra do produto = soma das divergências abertas (aba Divergências).
+
+    O ciclo diz só SE o produto foi conferido e QUANDO; quem diz quanto falta
+    ou sobra é a tabela `divergencias`. Todo caminho de contagem grava lá: o
+    app Contagemsimplificada e a aba Contagem registram a divergência junto
+    com a contagem, o "Divergência" do modal deste ciclo também, e qualquer OK
+    apaga as do produto. As colunas qtd_contada_ciclo/qtd_sistema_na_contagem
+    não entram na conta: contagens gravadas pelos triggers antigos misturavam
+    o saldo da lista com o saldo atual e inventavam sobras (VANTACOR ▲8 sem
+    nenhuma divergência). `divergencias_cicli` é aceito por compatibilidade.
+    """
+    return float(_total_divs(divs_map.get(_norm_cod(row["codigo"]))))
 
 
 def _fmt_qtd(v) -> str:
@@ -662,14 +647,11 @@ def _relatorio_divergencias_html(df_div: pd.DataFrame, divergencias_cicli: dict)
     def _linhas(df_sec: pd.DataFrame) -> str:
         rows = []
         for _, r in df_sec.iterrows():
-            qc, qs = r["qtd_contada_ciclo"], r["qtd_sistema_na_contagem"]
+            # A diferença vem das divergências abertas: o físico é o sistema
+            # atual mais ela (ver _diff_efetivo_row)
             diff = r["_diff"]
-            if pd.isna(qs):
-                qs = r.get("qtd_sistema")
-            # Diferença vinda das divergências abertas (a contagem do ciclo
-            # bateu ou não existe): o contado real é sistema + diferença
-            if pd.notna(qs) and (pd.isna(qc) or float(qc) - float(qs) != diff):
-                qc = float(qs) + diff
+            qs = r.get("qtd_sistema")
+            qc = float(qs) + diff if pd.notna(qs) else float("nan")
             sinal = "+" if diff > 0 else "−"
             rows.append(
                 "<tr>"
@@ -1034,8 +1016,6 @@ def build_inventario_ciclico_tab(
                     "cooperado": str(_drow["cooperado"]) if _drow["cooperado"] else "—",
                     "delta": int(_drow["delta"]) if pd.notna(_drow["delta"]) else 0,
                     "status": str(_drow["status"]),
-                    # Usado para decidir se a contagem cíclica (posterior) já
-                    # desmentiu esta divergência — ver contagem_ciclo_prevalece.
                     "criado_em": str(_drow.get("criado_em") or ""),
                 })
     obs_map = _get_observacoes_cicli(get_db)
@@ -1051,8 +1031,7 @@ def build_inventario_ciclico_tab(
         if not _contados_df.empty:
             _diffs_cont = _contados_df.apply(
                 _diff_efetivo_row, axis=1, args=(divergencias_cicli, divs_map))
-            _n_div = int(((_diffs_cont != 0)
-                          | (_contados_df["status_ciclo"] == "divergencia")).sum())
+            _n_div = int((_diffs_cont != 0).sum())
         progresso = {
             "total": len(df),
             "ok": len(_contados_df) - _n_div,
@@ -1181,7 +1160,7 @@ def build_inventario_ciclico_tab(
             elif "negativas" in filtro_status:
                 df_treemap = df_treemap[diffs < 0]
             else:
-                df_treemap = df_treemap[(diffs != 0) | (df_treemap["status_ciclo"] == "divergencia")]
+                df_treemap = df_treemap[diffs != 0]
 
     html_mapa = build_css_treemap(
         df_treemap,

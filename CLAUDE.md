@@ -109,14 +109,16 @@ antemão em vez de redescobri-las:
   não de `estoque_mestre`: é ela que preserva a janela de auditoria (há quantos
   dias ninguém olha aquele produto na prateleira). Não troque essa origem pela
   coluna de `estoque_mestre` "para simplificar" — some de novo a cada venda.
-- **Regra do Inv. Cíclico (falta/sobra do card):** divergência aberta (tabela
-  `divergencias`) > contagem do ciclo > `estoque_mestre.diferenca`. Contar e dar
-  OK apaga as divergências do produto (app Contagemsimplificada, aba Contagem e
-  o "OK" do modal do ciclo), então divergência aberta é verdade não desmentida.
-  Vendeu/movimentou (qualquer upload que muda `qtd_sistema`) → volta a pendente.
-  Os triggers `trig_contagem_*` usam `estoque_mestre.qtd_sistema` atual como
-  "sistema na contagem" — nunca `contagem_itens.qtd_estoque`, que fica velho e
-  inventava sobras.
+- **Regra do Inv. Cíclico (falta/sobra do card):** o ciclo diz só SE e QUANDO o
+  produto foi conferido; falta/sobra é a soma das divergências abertas (tabela
+  `divergencias`), em card, filtro, progresso e relatório (`_diff_efetivo_row`).
+  Todo caminho de contagem grava lá: o app Contagemsimplificada e a aba Contagem
+  registram a divergência; o "Divergência" do modal do ciclo substitui as abertas
+  pela diferença contada; qualquer OK apaga as do produto. Não volte a usar
+  `qtd_contada_ciclo − qtd_sistema_na_contagem` para a cor: registros gravados
+  pelos triggers antigos misturavam `contagem_itens.qtd_estoque` (velho) com o
+  saldo atual e inventavam sobras. Vendeu/movimentou (qualquer upload que muda
+  `qtd_sistema`) → volta a pendente.
 - **Nunca mande uma lista inteira num único `st.markdown`.** Acima de 10 000
   bytes (`global.minCachedMessageSize`) o Streamlit marca o ForwardMsg como
   *cacheable*: na segunda vez que aquele conteúdo aparece na sessão o servidor
