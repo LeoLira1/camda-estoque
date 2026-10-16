@@ -312,6 +312,15 @@ def _marcar_ciclo_ok(codigo: str, get_db, sync_db) -> bool:
             SET status_ciclo='ok', qtd_contada_ciclo=?, qtd_sistema_na_contagem=?, contado_ciclo_em=?
             WHERE codigo=?
         """, (qtd_sistema, qtd_sistema, now, codigo))
+        # Contou e bateu: a falta/sobra em aberto deixa de existir — mesmo que o
+        # "OK ✓" do app de contagem e da aba Contagem fazem. Sem limpar o status
+        # do mestre, a migração de divergências órfãs recriaria a linha.
+        conn.execute("""
+            UPDATE estoque_mestre
+            SET status='ok', qtd_fisica=qtd_sistema, diferenca=0, nota='', ultima_contagem=?
+            WHERE codigo=? AND status IN ('falta', 'sobra')
+        """, (now, codigo))
+        conn.execute("DELETE FROM divergencias WHERE codigo = ?", (codigo,))
         data_hoje = datetime.now(tz=_BRT).strftime("%Y-%m-%d")
         _upsert_inventario_cicli(
             conn, data_hoje, codigo, produto_nome, categoria,
@@ -594,38 +603,41 @@ def _mapa_antiguidade(ultimas: dict) -> dict:
     return out
 
 
+def _total_divs(entries) -> int:
+    return sum(int(e.get("delta") or 0) for e in (entries or []))
+
+
 def contagem_ciclo_prevalece(row, entries=None, divergencias_cicli=None) -> bool:
-    """O produto tem contagem cíclica? Se tem, ela é a verdade.
+    """A contagem do ciclo define a falta/sobra do produto?
 
-    A contagem do inventário cíclico predomina sobre as divergências abertas e
-    sobre `estoque_mestre.diferenca` — inclusive quando bateu com o sistema,
-    caso em que zera a falta/sobra antiga em vez de ser sobreposta por ela.
-    É o mesmo critério do app mobile, que só olha `inventario_cicli`.
+    Só quando NÃO há divergência aberta. A aba Divergências é a verdade sobre
+    falta/sobra: quem conta e acha diferença registra lá (o app de contagem
+    grava a divergência e a contagem do ciclo juntas), e quem conta e dá OK
+    apaga as divergências do produto (app, aba Contagem e o "OK" deste
+    modal). Divergência que ainda está aberta, portanto, ninguém desmentiu.
 
-    Comparar datas não serve aqui: `divergencias.criado_em` é carimbado com a
-    hora em que a migração de divergências órfãs rodou (ver app_turso.py), não
-    com a data real do apontamento, e `ultima_contagem` é reescrito a cada
-    upload de planilha. Nos dois casos a divergência antiga parecia mais nova
-    que a contagem e continuava vencendo.
+    A regra anterior (a contagem sempre vencia) servia para falta antiga que
+    sobrevivia a uma contagem OK; agora o OK limpa a falta, e a regra antiga
+    passou a esconder faltas reais atrás de contagens velhas — o card mostrava
+    sobra num produto com 3 faltando.
 
-    `entries` é aceito e ignorado — mantido para não quebrar chamadas antigas
-    quando o Streamlit Cloud roda com um dos módulos ainda em cache.
+    Sem divergência aberta, a contagem do ciclo vale sobre
+    `estoque_mestre.diferenca` (inclusive quando bateu, zerando-a).
     """
+    if _total_divs(entries):
+        return False
     return _tem_contagem_ciclo(row, divergencias_cicli or {})
 
 
 def _diff_efetivo_row(row, divergencias_cicli: dict, divs_map: dict) -> float:
     """Diferença efetiva do produto — mesma precedência da cor dos cards:
-    contagem do ciclo > divergências abertas > diferença geral.
-    Item já conferido no ciclo vale pelo que foi contado; só quem ainda não
-    passou pelo ciclo cai nas divergências abertas / diferença geral."""
+    divergências abertas > contagem do ciclo > diferença geral."""
+    entries = divs_map.get(_norm_cod(row["codigo"]))
+    total = _total_divs(entries)
+    if total:
+        return float(total)
     if contagem_ciclo_prevalece(row, None, divergencias_cicli):
         return float(_diff_ciclo_row(row, divergencias_cicli))
-    entries = divs_map.get(_norm_cod(row["codigo"]))
-    if entries:
-        total = sum(int(e.get("delta") or 0) for e in entries)
-        if total:
-            return float(total)
     dif = row.get("diferenca")
     try:
         return float(dif) if pd.notna(dif) else 0.0

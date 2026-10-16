@@ -37,16 +37,6 @@ from inventario_ciclico_tab import (
     build_inventario_ciclico_tab as _render_ciclico_tab,
     _upsert_inventario_cicli as _cicli_upsert,
 )
-try:
-    from inventario_ciclico_tab import contagem_ciclo_prevalece as _ciclo_prevalece
-except ImportError:
-    # No Streamlit Cloud o processo sobrevive ao deploy: ele passa a executar o
-    # app_turso.py novo com o inventario_ciclico_tab ANTIGO ainda em sys.modules,
-    # e um nome recém-criado lá derruba o app inteiro com ImportError até alguém
-    # rebootar. Degrada para a precedência antiga (divergência aberta vence) em
-    # vez de tirar o dashboard do ar; volta ao normal no próximo restart.
-    def _ciclo_prevalece(row, entries, divergencias_cicli=None):
-        return False
 from historico_contagem_tab import build_historico_contagem_tab as _render_historico_contagem_tab
 from etiquetas_tab import build_etiquetas_tab as _render_etiquetas_tab
 from theme import ROOT_VARS as _THEME_ROOT_VARS
@@ -2071,6 +2061,12 @@ def _get_connection():
 
     # ── Triggers: sincroniza contagem_itens → inventario_cicli + status_ciclo ──
     # Dispara para qualquer cliente (Flutter, Streamlit) que altere o status.
+    # O "sistema na contagem" é estoque_mestre.qtd_sistema de AGORA, não
+    # contagem_itens.qtd_estoque: esse é o saldo de quando o item entrou na
+    # lista e fica velho (upload Parcial Estoque e vendas não o atualizam),
+    # enquanto qtd_fisica é gravado pelo app em cima do saldo atual. Misturar
+    # os dois inventava sobras/faltas que ninguém contou. Os apps gravam
+    # estoque_mestre ANTES de contagem_itens, então aqui já é o valor final.
     try:
         # Recria os triggers para garantir versão atualizada
         conn.execute("DROP TRIGGER IF EXISTS trig_contagem_to_cicli")
@@ -2090,14 +2086,15 @@ def _get_connection():
                     COALESCE(em.categoria, NEW.categoria),
                     COALESCE(em.categoria, NEW.categoria),
                     '#A3A5AB',
-                    CAST(NEW.qtd_estoque AS REAL),
+                    CAST(COALESCE(em.qtd_sistema, NEW.qtd_estoque) AS REAL),
                     CASE NEW.status
-                        WHEN 'certa' THEN CAST(NEW.qtd_estoque AS REAL)
-                        ELSE CAST(COALESCE(em.qtd_fisica, NEW.qtd_estoque) AS REAL)
+                        WHEN 'certa' THEN CAST(COALESCE(em.qtd_sistema, NEW.qtd_estoque) AS REAL)
+                        ELSE CAST(COALESCE(em.qtd_fisica, em.qtd_sistema, NEW.qtd_estoque) AS REAL)
                     END,
                     CASE NEW.status
                         WHEN 'certa' THEN 0.0
-                        ELSE CAST(COALESCE(em.qtd_fisica, NEW.qtd_estoque) AS REAL) - CAST(NEW.qtd_estoque AS REAL)
+                        ELSE CAST(COALESCE(em.qtd_fisica, em.qtd_sistema, NEW.qtd_estoque) AS REAL)
+                             - CAST(COALESCE(em.qtd_sistema, NEW.qtd_estoque) AS REAL)
                     END,
                     datetime('now', '-3 hours'),
                     COALESCE(NEW.motivo, '')
@@ -2113,10 +2110,10 @@ def _get_connection():
                 UPDATE estoque_mestre
                 SET status_ciclo = CASE NEW.status WHEN 'certa' THEN 'ok' ELSE 'divergencia' END,
                     qtd_contada_ciclo = CASE NEW.status
-                        WHEN 'certa' THEN CAST(NEW.qtd_estoque AS REAL)
-                        ELSE qtd_fisica
+                        WHEN 'certa' THEN qtd_sistema
+                        ELSE COALESCE(qtd_fisica, qtd_sistema)
                     END,
-                    qtd_sistema_na_contagem = CAST(NEW.qtd_estoque AS REAL),
+                    qtd_sistema_na_contagem = qtd_sistema,
                     contado_ciclo_em = datetime('now', '-3 hours')
                 WHERE codigo = NEW.codigo;
             END
@@ -2139,9 +2136,9 @@ def _get_connection():
                     NEW.categoria,
                     NEW.categoria,
                     '#A3A5AB',
-                    CAST(COALESCE(NEW.qtd_sistema_na_contagem, NEW.qtd_sistema) AS REAL),
+                    CAST(NEW.qtd_sistema AS REAL),
                     CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL),
-                    CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL) - CAST(COALESCE(NEW.qtd_sistema_na_contagem, NEW.qtd_sistema) AS REAL),
+                    CAST(COALESCE(NEW.qtd_fisica, NEW.qtd_sistema) AS REAL) - CAST(NEW.qtd_sistema AS REAL),
                     datetime('now', '-3 hours'),
                     COALESCE(NEW.nota, '')
                 );
@@ -8234,33 +8231,30 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Aviso de avarias abertas
             qtd_av = avarias_map_norm.get(cod_str, 0)
 
-            # divergencias_map é a fonte de verdade das divergências ativas: sobrepõe
-            # estoque_mestre — exceto no inventário cíclico, onde a contagem do ciclo
-            # predomina sobre tudo (ver contagem_ciclo_prevalece).
+            # divergencias_map é a fonte de verdade das divergências ativas:
+            # sobrepõe estoque_mestre e, no inventário cíclico, também a contagem
+            # do ciclo (ver contagem_ciclo_prevalece). Contar e dar OK apaga as
+            # divergências; aberta é porque ninguém desmentiu.
             _div_entries = divergencias_map_norm.get(cod_str)
-            _ciclo_vence = (color_mode == "ciclico"
-                            and _ciclo_prevalece(r, _div_entries))
-            if _div_entries and not _ciclo_vence:
-                total_div_delta = sum(e["delta"] for e in _div_entries)
-                if total_div_delta != 0:
-                    diff = total_div_delta
+            total_div_delta = sum(e["delta"] for e in _div_entries) if _div_entries else 0
+            if total_div_delta != 0:
+                diff = total_div_delta
 
             # Status → border color, bg, qty color
             if color_mode == "ciclico":
                 status_c = str(r.get("status_ciclo", "") or "")
                 if status_c in ("ok", "divergencia"):
                     # A cor segue a diferença efetiva, não o status gravado —
-                    # precedência: contagem do ciclo > divergências abertas >
-                    # diferença geral. Item já conferido no ciclo vale pelo que
-                    # foi contado: falta fica vermelho, sobra azul, e contagem
-                    # que bateu fica verde mesmo com falta antiga em aberto.
+                    # precedência: divergências abertas > contagem do ciclo >
+                    # diferença geral. Sem divergência aberta o item vale pelo
+                    # que foi contado: falta vermelho, sobra azul, bateu verde.
                     _qtd_cont = r.get("qtd_contada_ciclo")
                     _qtd_sis  = r.get("qtd_sistema_na_contagem")
                     _tem_contagem = pd.notnull(_qtd_cont) and pd.notnull(_qtd_sis)
                     if _tem_contagem:
                         try:
                             _diff_ciclo = int(float(_qtd_cont)) - int(float(_qtd_sis))
-                            if _diff_ciclo != 0 or _ciclo_vence:
+                            if total_div_delta == 0:
                                 diff = _diff_ciclo
                         except (ValueError, TypeError):
                             _tem_contagem = False
@@ -8415,21 +8409,11 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                         else f"{_n} ({_s}{_q})"
                         for _n, _q, _s in _coops
                     )
-                    if _ciclo_vence:
-                        # A contagem do ciclo já substituiu esses apontamentos
-                        # (o badge e o filtro seguem a contagem): sem o aviso,
-                        # o popup dizia "falta" num card de sobra.
-                        cooperado_popup_html = (
-                            f'<div style="font-size:0.74rem;font-weight:500;color:var(--c-text-2);margin-top:6px;'
-                            f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
-                            f'Apont. anterior: {_coops_txt} · substituído pela contagem</div>'
-                        )
-                    else:
-                        cooperado_popup_html = (
-                            f'<div style="font-size:0.82rem;font-weight:600;color:var(--c-text);margin-top:6px;'
-                            f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
-                            f'&#x1F464; {_coops_txt}</div>'
-                        )
+                    cooperado_popup_html = (
+                        f'<div style="font-size:0.82rem;font-weight:600;color:var(--c-text);margin-top:6px;'
+                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
+                        f'&#x1F464; {_coops_txt}</div>'
+                    )
 
             # Último comentário do app sincronizado (inventario_cicli.observacao)
             obs_popup_html = ""
