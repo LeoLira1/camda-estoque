@@ -6735,6 +6735,18 @@ def upload_parcial_estoque(records: list, do_sync: bool = True,
             "SELECT codigo, qtd_sistema, qtd_fisica, diferenca, nota, status FROM estoque_mestre"
         ).fetchall()}
 
+        # Conferência do ciclo cujo sistema mudou desde a contagem deixa de valer
+        # (mesma regra de upload_parcial). Sem isso, uma sobra contada antes da NF
+        # de entrada ser lançada ficava no card para sempre, depois de o sistema
+        # já ter alcançado o físico.
+        invalidar_ciclo = [
+            cod for cod, snap, st_c in conn.execute(
+                "SELECT codigo, qtd_sistema_na_contagem, status_ciclo FROM estoque_mestre"
+            ).fetchall()
+            if st_c in ("ok", "divergencia") and snap is not None
+            and cod in _seen and not _num_eq(snap, _seen[cod]["qtd_sistema"])
+        ]
+
         ausentes = detectar_ausentes_na_planilha(records, conn) if zerar_ausentes else []
 
         novos_data, update_data, update_nota_data, touch_only = [], [], [], []
@@ -6875,6 +6887,15 @@ def upload_parcial_estoque(records: list, do_sync: bool = True,
             # Auto-cachear P.A. para produtos que entraram ou voltaram ao estoque
             _auto_cache_principios_ativos([r[1] for r in novos_data], conn)
 
+        for chunk in _chunks(invalidar_ciclo, 400):
+            ph = ",".join("?" * len(chunk))
+            conn.execute(f"""
+                UPDATE estoque_mestre
+                SET status_ciclo = '', qtd_contada_ciclo = NULL,
+                    qtd_sistema_na_contagem = NULL, contado_ciclo_em = ''
+                WHERE codigo IN ({ph})
+            """, chunk)
+
         conn.commit()
         _t1 = time.perf_counter()
         if do_sync:
@@ -6893,6 +6914,8 @@ def upload_parcial_estoque(records: list, do_sync: bool = True,
             parts.append(f"{len(novos_data)} novos")
         if n_div:
             parts.append(f"{n_div} divergências")
+        if invalidar_ciclo:
+            parts.append(f"🔄 {len(invalidar_ciclo)} voltaram pra contagem (movimentaram)")
         if ausentes:
             parts.append(
                 f"🔄 {len(ausentes)} saíram do estoque (ausentes na planilha) — "
@@ -8385,12 +8408,28 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     _qtd = abs(_delta)
                     _coops.append((_coop, _qtd, _sinal))
                 if _coops:
-                    _coops_txt = ", ".join(f"{_n} ({_s}{_q})" for _n, _q, _s in _coops)
-                    cooperado_popup_html = (
-                        f'<div style="font-size:0.82rem;font-weight:600;color:var(--c-text);margin-top:6px;'
-                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
-                        f'&#x1F464; {_coops_txt}</div>'
+                    # "Faltando"/"Sobrando" no campo cooperado é status, não nome:
+                    # mostra só a quantidade em vez de "Faltando (▼1)".
+                    _coops_txt = ", ".join(
+                        f"{_s}{_q}" if _n.lower() in _NOMES_INVALIDOS_COOP
+                        else f"{_n} ({_s}{_q})"
+                        for _n, _q, _s in _coops
                     )
+                    if _ciclo_vence:
+                        # A contagem do ciclo já substituiu esses apontamentos
+                        # (o badge e o filtro seguem a contagem): sem o aviso,
+                        # o popup dizia "falta" num card de sobra.
+                        cooperado_popup_html = (
+                            f'<div style="font-size:0.74rem;font-weight:500;color:var(--c-text-2);margin-top:6px;'
+                            f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
+                            f'Apont. anterior: {_coops_txt} · substituído pela contagem</div>'
+                        )
+                    else:
+                        cooperado_popup_html = (
+                            f'<div style="font-size:0.82rem;font-weight:600;color:var(--c-text);margin-top:6px;'
+                            f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
+                            f'&#x1F464; {_coops_txt}</div>'
+                        )
 
             # Último comentário do app sincronizado (inventario_cicli.observacao)
             obs_popup_html = ""
