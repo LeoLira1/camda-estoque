@@ -8243,8 +8243,9 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
             # Status → border color, bg, qty color
             if color_mode == "ciclico":
                 status_c = str(r.get("status_ciclo", "") or "")
-                if status_c in ("ok", "divergencia"):
-                    # Conferido no ciclo: a falta/sobra é a das divergências
+                if status_c in ("ok", "divergencia") or total_div_delta != 0:
+                    # Conferido no ciclo, ou pendente com divergência aberta
+                    # (que continua valendo): a falta/sobra é a das divergências
                     # abertas (total_div_delta), não a conta do ciclo — ver
                     # _diff_efetivo_row no inventario_ciclico_tab. Deu OK e não
                     # sobrou divergência → verde.

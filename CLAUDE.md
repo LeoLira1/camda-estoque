@@ -118,7 +118,8 @@ antemão em vez de redescobri-las:
   `qtd_contada_ciclo − qtd_sistema_na_contagem` para a cor: registros gravados
   pelos triggers antigos misturavam `contagem_itens.qtd_estoque` (velho) com o
   saldo atual e inventavam sobras. Vendeu/movimentou (qualquer upload que muda
-  `qtd_sistema`) → volta a pendente.
+  `qtd_sistema`) → volta a pendente — mas divergência aberta aparece (cor e
+  filtros) mesmo em item pendente.
 - **Nunca mande uma lista inteira num único `st.markdown`.** Acima de 10 000
   bytes (`global.minCachedMessageSize`) o Streamlit marca o ForwardMsg como
   *cacheable*: na segunda vez que aquele conteúdo aparece na sessão o servidor

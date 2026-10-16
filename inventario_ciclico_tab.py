@@ -653,6 +653,9 @@ def _relatorio_divergencias_html(df_div: pd.DataFrame, divergencias_cicli: dict)
             qs = r.get("qtd_sistema")
             qc = float(qs) + diff if pd.notna(qs) else float("nan")
             sinal = "+" if diff > 0 else "−"
+            _conferido = _fmt_dt_br(r.get("contado_ciclo_em"))
+            if _conferido.lower() in ("", "nan", "none", "nat"):
+                _conferido = "pendente"
             rows.append(
                 "<tr>"
                 f"<td class='mono'>{_html.escape(str(r['codigo']))}</td>"
@@ -661,7 +664,7 @@ def _relatorio_divergencias_html(df_div: pd.DataFrame, divergencias_cicli: dict)
                 f"<td class='num'>{_fmt_qtd(qs) if pd.notna(qs) else '—'}</td>"
                 f"<td class='num'>{_fmt_qtd(qc) if pd.notna(qc) else '—'}</td>"
                 f"<td class='num diff'>{sinal}{_fmt_qtd(abs(diff))}</td>"
-                f"<td class='mono'>{_html.escape(_fmt_dt_br(r['contado_ciclo_em']))}</td>"
+                f"<td class='mono'>{_html.escape(_conferido)}</td>"
                 "</tr>"
             )
         return "".join(rows)
@@ -1151,8 +1154,9 @@ def build_inventario_ciclico_tab(
     elif filtro_status == "Contados":
         df_treemap = df_treemap[df_treemap["status_ciclo"] == "ok"]
     elif filtro_status.startswith("Divergências"):
-        # Inclui itens "ok" com falta/sobra efetiva (ex.: apontada em app sincronizado)
-        df_treemap = df_treemap[df_treemap["status_ciclo"].isin(["ok", "divergencia"])]
+        # Toda divergência aberta aparece, conferida no ciclo ou não: um item
+        # pendente (vendeu depois da contagem, ou nunca contado) com falta na
+        # aba Divergências continua com falta.
         if not df_treemap.empty:
             diffs = df_treemap.apply(_diff_efetivo_row, axis=1, args=(divergencias_cicli, divs_map))
             if "positivas" in filtro_status:
@@ -1180,8 +1184,8 @@ def build_inventario_ciclico_tab(
     iframe_compat.html(_JS_HIDE_CONFERENCIA, height=0)
 
     # ── Download discreto: relatório imprimível das divergências ─────────────
-    # Inclui também itens "ok" com falta/sobra efetiva (app sincronizado)
-    df_div = df[df["status_ciclo"].isin(["ok", "divergencia"])].copy()
+    # Mesma regra do filtro: toda divergência aberta, conferida ou pendente
+    df_div = df.copy()
     if not df_div.empty:
         df_div["_diff"] = df_div.apply(_diff_efetivo_row, axis=1, args=(divergencias_cicli, divs_map))
         df_div = df_div[df_div["_diff"] != 0]
