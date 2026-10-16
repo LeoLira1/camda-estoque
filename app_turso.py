@@ -8385,12 +8385,28 @@ def build_css_treemap(df: pd.DataFrame, filter_cat: str = "TODOS", avarias_map: 
                     _qtd = abs(_delta)
                     _coops.append((_coop, _qtd, _sinal))
                 if _coops:
-                    _coops_txt = ", ".join(f"{_n} ({_s}{_q})" for _n, _q, _s in _coops)
-                    cooperado_popup_html = (
-                        f'<div style="font-size:0.82rem;font-weight:600;color:var(--c-text);margin-top:6px;'
-                        f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
-                        f'&#x1F464; {_coops_txt}</div>'
+                    # "Faltando"/"Sobrando" no campo cooperado é status, não nome:
+                    # mostra só a quantidade em vez de "Faltando (▼1)".
+                    _coops_txt = ", ".join(
+                        f"{_s}{_q}" if _n.lower() in _NOMES_INVALIDOS_COOP
+                        else f"{_n} ({_s}{_q})"
+                        for _n, _q, _s in _coops
                     )
+                    if _ciclo_vence:
+                        # A contagem do ciclo já substituiu esses apontamentos
+                        # (o badge e o filtro seguem a contagem): sem o aviso,
+                        # o popup dizia "falta" num card de sobra.
+                        cooperado_popup_html = (
+                            f'<div style="font-size:0.74rem;font-weight:500;color:var(--c-text-2);margin-top:6px;'
+                            f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
+                            f'Apont. anterior: {_coops_txt} · substituído pela contagem</div>'
+                        )
+                    else:
+                        cooperado_popup_html = (
+                            f'<div style="font-size:0.82rem;font-weight:600;color:var(--c-text);margin-top:6px;'
+                            f'border-top:1px solid rgba(255,255,255,0.12);padding-top:6px;">'
+                            f'&#x1F464; {_coops_txt}</div>'
+                        )
 
             # Último comentário do app sincronizado (inventario_cicli.observacao)
             obs_popup_html = ""
