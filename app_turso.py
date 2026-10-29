@@ -8864,23 +8864,31 @@ def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
 
     div_rows = conn.execute(
         "SELECT cooperado, codigo, produto, delta, status, criado_em FROM divergencias"
-        " WHERE cooperado != '' AND criado_em >= ?",
+        " WHERE cooperado != '' AND criado_em >= ? ORDER BY id",
         (cutoff,),
     ).fetchall()
     out["n_div_window"] = len(div_rows)
 
+    # Agrupa o cooperado sem diferenciar maiúsculas/minúsculas nem espaços
+    # extras ("Serginho" e "SERGINHO " são o mesmo) — só na comparação, o
+    # gravado não muda. Mostra a grafia que mais aparece (empate: a primeira).
     por_coop: dict = {}
+    grafias: dict = {}
     for coop, cod, prod, delta, _st, criado in div_rows:
-        coop = (coop or "").strip()
+        coop = " ".join((coop or "").split())
         # Filtra nomes inválidos (status, keywords, etc.)
         if not coop or coop.lower() in _NOMES_INVALIDOS_COOP:
             continue
-        por_coop.setdefault(coop, []).append({
+        chave = coop.lower()
+        cont = grafias.setdefault(chave, {})
+        cont[coop] = cont.get(coop, 0) + 1
+        por_coop.setdefault(chave, []).append({
             "produto": prod, "codigo": _codigo_key(cod),
             "delta": int(delta or 0), "dia": str(criado or "")[:10],
         })
 
-    for coop, items in por_coop.items():
+    for chave, items in por_coop.items():
+        coop = max(grafias[chave].items(), key=lambda kv: kv[1])[0]
         # A tabela divergencias pode ter várias linhas para o mesmo produto
         # (contagens parciais): soma os deltas por código e conta as vendas a
         # partir da divergência mais antiga desse código.
