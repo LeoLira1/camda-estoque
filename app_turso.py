@@ -8680,18 +8680,12 @@ def parse_faturamento_gv_excel(df: pd.DataFrame):
 
 # Tolerância padrão para considerar divergência relevante no GV (%)
 _GV_THRESHOLD_PCT = 5.0
-# Tolerância para considerar quantidade vendida "similar" ao delta da divergência (50%)
+# Selo 🎯 do CHECK 2: venda do dia até (1 + isto) × falta; acima disso é 📦 (50%)
 _QTD_MATCH_TOLERANCIA = 0.50
-# Percentual mínimo de produtos com match para disparar alerta de possível faturamento (70%)
-_POSSIVEL_FAT_MIN_MATCH_PCT = 0.70
 # Janela máxima (dias) para considerar divergências ativas no CHECK 2
 _POSSIVEL_FAT_MAX_DIAS_DIV = 60
-# Mínimo de produtos elegíveis para disparar alerta de possível faturamento
+# Mínimo de faltas no dia de venda para disparar alerta de possível faturamento
 _POSSIVEL_FAT_MIN_ELEGIVEIS = 2
-# Nível "vendas cobrem a falta": só conta as vendas até N dias depois do
-# criado_em da divergência — senão uma falta antiga é "coberta" por semanas de
-# venda normal do produto. O nível "bate certinho" não tem esse limite.
-_POSSIVEL_FAT_COBRE_MAX_DIAS = 15
 # Valores que aparecem no campo cooperado mas não são nomes reais
 _NOMES_INVALIDOS_COOP = {
     "faltando", "falta", "sobra", "sobrando", "ok", "none", "nan",
@@ -8709,11 +8703,10 @@ def checar_reconciliacao_gv() -> list:
       Alerta quando divergência > _GV_THRESHOLD_PCT.
 
     CHECK 2 — "Possível faturamento" (automático, sem GV):
-      Para cada cooperado com divergência aberta, compara o delta de cada
-      produto com as vendas de vendas_historico desde o dia do criado_em da
-      divergência (ver _diagnostico_possivel_faturamento). Dois níveis:
-      "bate certinho" (venda ≈ falta, ±_QTD_MATCH_TOLERANCIA) e "vendas
-      cobrem a falta" (venda até _POSSIVEL_FAT_COBRE_MAX_DIAS dias ≥ falta).
+      O cooperado paga tudo de uma vez: dispara quando existe UM dia de venda
+      em que TODAS as faltas abertas dele lançadas até aquele dia foram
+      vendidas (venda do dia >= falta). Selo: 🎯 até 150% da falta, 📦 acima.
+      Ver _diagnostico_possivel_faturamento.
       Nomes de status ("Faltando", "Sobrando", etc.) são ignorados.
     """
     try:
@@ -8767,7 +8760,7 @@ def checar_reconciliacao_gv() -> list:
                             "origem": "gv",
                         }
 
-        # ── CHECK 2: vendas desde a divergência × delta ───────────────────
+        # ── CHECK 2: um dia de venda em que todas as faltas casam ─────────
         _diag = _diagnostico_possivel_faturamento(conn)
         data_ref_vend = _diag["data_ref_vend"]
         for _c in _diag["cooperados"]:
@@ -8778,9 +8771,9 @@ def checar_reconciliacao_gv() -> list:
                 {
                     "produto": d["produto"],
                     "codigo": d["codigo"],
-                    "delta": d["delta"],
-                    "qtd_vendida": d["qtd_vend_nivel"],
-                    "vendas_desde": d["vendas_desde"],
+                    "delta": -d["falta_no_dia"],
+                    "qtd_vendida": d["vendido_no_dia"],
+                    "dia_venda": _c["dia"],
                     "nivel": d["nivel"],
                 }
                 for d in _c["detalhes"] if d["nivel"]
@@ -8790,6 +8783,7 @@ def checar_reconciliacao_gv() -> list:
                 "itens_bate": [m for m in matches_qtd if m["nivel"] == "bate"],
                 "itens_cobre": [m for m in matches_qtd if m["nivel"] == "cobre"],
                 "nivel": _c["nivel"],
+                "dia_venda": _c["dia"],
             }
             # Enriquece alerta GV existente ou cria novo
             if coop in alertas:
@@ -8814,25 +8808,67 @@ def checar_reconciliacao_gv() -> list:
         return []
 
 
+def _chave_nome_produto(texto) -> str:
+    """Maiúsculo, sem acento, espaços colapsados (chaveNomeProduto do Gondolas)."""
+    t = unicodedata.normalize("NFD", str(texto or "").strip().upper())
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return " ".join(t.split())
+
+
+def _grupos_codigos_irmaos(conn, nomes) -> dict:
+    """codigo → id do grupo de códigos do mesmo produto, com a regra do Gondolas
+    (codigos_vinculados.dart, igual ao camda-mcp): primeiro o vínculo do mapa
+    (mapa_produtos.codigo + mapa_produtos_codigos); sem vínculo, a mesma chave
+    de nome. `nomes` = [(codigo, produto)], o primeiro nome de cada código vale.
+    Código fora dos dois fica sozinho (grupo = ele mesmo)."""
+    pid_por_cod: dict = {}
+    for sql in ("SELECT codigo, produto_id FROM mapa_produtos WHERE codigo IS NOT NULL",
+                "SELECT codigo, produto_id FROM mapa_produtos_codigos"):
+        try:
+            rows = conn.execute(sql).fetchall()
+        except Exception:
+            continue  # tabela/coluna do mapa ausente neste banco
+        for cod, pid in rows:
+            ck, pid = _codigo_key(cod), str(pid or "").strip()
+            if ck and pid:
+                pid_por_cod[ck] = pid
+    grupo: dict = {ck: f"pid:{pid}" for ck, pid in pid_por_cod.items()}
+    for cod, prod in nomes:
+        ck = _codigo_key(cod)
+        if not ck or ck in grupo:
+            continue
+        chave = _chave_nome_produto(prod)
+        grupo[ck] = f"nome:{chave}" if chave else f"cod:{ck}"
+    return grupo
+
+
+def _nivel_venda_no_dia(falta: int, vendido: int):
+    """Uma falta (positiva) contra a venda de UM dia. Só casa com venda >= falta
+    (o cooperado paga tudo de uma vez: vender menos não fecha a falta). Selo só
+    informativo: "bate" até (1 + _QTD_MATCH_TOLERANCIA) × falta, "cobre" acima.
+    None = não casa."""
+    if vendido < falta or vendido <= 0:
+        return None
+    if vendido - falta <= _QTD_MATCH_TOLERANCIA * falta:
+        return "bate"
+    return "cobre"
+
+
 def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
     """Núcleo do CHECK 2 ("Possível faturamento"), usado pelo alerta
     (checar_reconciliacao_gv) e pelo diagnóstico da aba de Conferência.
 
-    Para cada cooperado com divergência nos últimos _POSSIVEL_FAT_MAX_DIAS_DIV
-    dias, agrega o delta por código e soma as vendas de vendas_historico com
-    data_upload >= dia do criado_em mais antigo daquele código (o próprio dia
-    conta). Cada produto cai em um nível:
-      - "bate": venda do período ≈ |delta| (±_QTD_MATCH_TOLERANCIA), sem limite
-        de dias;
-      - "cobre": vendas dos primeiros
-        _POSSIVEL_FAT_COBRE_MAX_DIAS dias >= falta;
-      - None: não casa.
-    Elegível = FALTA (delta agregado < 0) com alguma venda no período. Sobra
-    nunca é elegível — venda não explica sobra, e uma sobra solta não pode
-    derrubar o mínimo nem o percentual de quem tem faltas faturadas. O cooperado
-    qualifica com >= _POSSIVEL_FAT_MIN_ELEGIVEIS elegíveis e
-    >= _POSSIVEL_FAT_MIN_MATCH_PCT deles em algum nível. Nível do cooperado:
-    "bate_certinho" se todos os casados batem, senão "vendas_cobrem".
+    O cooperado paga tudo de uma vez. Para cada dia D com vendas, a partir da
+    divergência mais antiga do cooperado (janela de _POSSIVEL_FAT_MAX_DIAS_DIV
+    dias), entram TODAS as faltas dele lançadas até D (o próprio dia conta),
+    somadas por produto — códigos irmãos são o mesmo produto
+    (_grupos_codigos_irmaos). Cada falta casa só se a venda daquele dia sozinho
+    for >= falta; venda menor ou sem venda no dia = não casa. Selo informativo:
+    "bate" até (1 + _QTD_MATCH_TOLERANCIA) × falta, "cobre" acima. Sobra nunca entra.
+    O dia qualifica com >= _POSSIVEL_FAT_MIN_ELEGIVEIS faltas e TODAS casando.
+    Vale o dia com mais faltas casando; no empate, o mais antigo. Sem dia que
+    qualifique, o diagnóstico mostra o melhor dia e quais faltas impediram.
+    Nível do cooperado: "bate_certinho" se todas têm selo 🎯, senão "vendas_cobrem".
     """
     out = {"data_ref_vend": None, "n_vend": 0, "n_div_window": 0, "cooperados": []}
     vend_ref_row = conn.execute("SELECT MAX(data_upload) FROM vendas_historico").fetchone()
@@ -8844,30 +8880,41 @@ def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
     hoje = hoje or datetime.now(tz=_BRT).date()
     cutoff = (hoje - timedelta(days=_POSSIVEL_FAT_MAX_DIAS_DIV)).isoformat()
 
-    # codigo → [(dia, qtd)] desde o início da janela. Usa _codigo_key para casar
-    # com divergencias mesmo que as tabelas gravem o código em formatos
-    # diferentes (ex.: "12345" vs "12345.0").
-    vendas_por_cod: dict = {}
-    n_vend_ultimo = set()
-    for cod, qtd, dia in conn.execute(
-        "SELECT codigo, qtd_vendida, data_upload FROM vendas_historico WHERE data_upload >= ?",
+    vend_rows = conn.execute(
+        "SELECT codigo, produto, qtd_vendida, data_upload FROM vendas_historico WHERE data_upload >= ?",
         (cutoff,),
-    ).fetchall():
-        _ck = _codigo_key(cod)
-        if not _ck:
-            continue
-        dia = str(dia or "")[:10]
-        vendas_por_cod.setdefault(_ck, []).append((dia, int(qtd or 0)))
-        if dia == str(data_ref_vend)[:10]:
-            n_vend_ultimo.add(_ck)
-    out["n_vend"] = len(n_vend_ultimo)
-
+    ).fetchall()
     div_rows = conn.execute(
         "SELECT cooperado, codigo, produto, delta, status, criado_em FROM divergencias"
         " WHERE cooperado != '' AND criado_em >= ? ORDER BY id",
         (cutoff,),
     ).fetchall()
     out["n_div_window"] = len(div_rows)
+
+    # Nomes para os irmãos: estoque_mestre primeiro; código que só aparece na
+    # divergência ou na venda (ex.: Phosfix 222534) usa o nome gravado ali.
+    nomes = list(conn.execute("SELECT codigo, produto FROM estoque_mestre").fetchall())
+    nomes += [(r[1], r[2]) for r in div_rows] + [(r[0], r[1]) for r in vend_rows]
+    grupo_de = _grupos_codigos_irmaos(conn, nomes)
+    _g = lambda ck: grupo_de.get(ck) or f"cod:{ck}"
+
+    # grupo → {dia: qtd}; dias com venda
+    vendas_por_grupo: dict = {}
+    dias_venda = set()
+    n_vend_ultimo = set()
+    for cod, _prod, qtd, dia in vend_rows:
+        ck = _codigo_key(cod)
+        if not ck:
+            continue
+        dia = str(dia or "")[:10]
+        por_dia = vendas_por_grupo.setdefault(_g(ck), {})
+        por_dia[dia] = por_dia.get(dia, 0) + int(qtd or 0)
+        if int(qtd or 0) > 0:
+            dias_venda.add(dia)
+        if dia == str(data_ref_vend)[:10]:
+            n_vend_ultimo.add(ck)
+    out["n_vend"] = len(n_vend_ultimo)
+    dias_venda = sorted(dias_venda)
 
     # Agrupa o cooperado sem diferenciar maiúsculas/minúsculas nem espaços
     # extras ("Serginho" e "SERGINHO " são o mesmo) — só na comparação, o
@@ -8879,86 +8926,114 @@ def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
         # Filtra nomes inválidos (status, keywords, etc.)
         if not coop or coop.lower() in _NOMES_INVALIDOS_COOP:
             continue
+        ck = _codigo_key(cod)
+        if not ck:
+            continue
         chave = coop.lower()
         cont = grafias.setdefault(chave, {})
         cont[coop] = cont.get(coop, 0) + 1
         por_coop.setdefault(chave, []).append({
-            "produto": prod, "codigo": _codigo_key(cod),
+            "grupo": _g(ck), "codigo": ck, "produto": prod,
             "delta": int(delta or 0), "dia": str(criado or "")[:10],
         })
 
     for chave, items in por_coop.items():
         coop = max(grafias[chave].items(), key=lambda kv: kv[1])[0]
-        # A tabela divergencias pode ter várias linhas para o mesmo produto
-        # (contagens parciais): soma os deltas por código e conta as vendas a
-        # partir da divergência mais antiga desse código.
-        delta_por_cod: dict = {}
-        prod_por_cod: dict = {}
-        desde_por_cod: dict = {}
+        # por produto: códigos (na ordem em que aparecem), nome, dia da 1ª divergência
+        info: dict = {}
         for it in items:
-            cod = it["codigo"]
-            if not cod:
-                continue
-            delta_por_cod[cod] = delta_por_cod.get(cod, 0) + it["delta"]
-            prod_por_cod.setdefault(cod, it["produto"])
-            if cod not in desde_por_cod or it["dia"] < desde_por_cod[cod]:
-                desde_por_cod[cod] = it["dia"]
+            g = info.setdefault(it["grupo"], {"codigos": [], "produto": it["produto"], "desde": it["dia"]})
+            if it["codigo"] not in g["codigos"]:
+                g["codigos"].append(it["codigo"])
+            g["desde"] = min(g["desde"], it["dia"])
+        inicio = min(it["dia"] for it in items)
 
-        detalhes, n_eleg, n_bate, n_cobre = [], 0, 0, 0
-        for cod, delta_tot in delta_por_cod.items():
-            ad = abs(delta_tot)
-            desde = desde_por_cod[cod]
-            try:
-                ate_cobre = (date.fromisoformat(desde)
-                             + timedelta(days=_POSSIVEL_FAT_COBRE_MAX_DIAS)).isoformat()
-            except ValueError:
-                ate_cobre = desde
-            vendas = vendas_por_cod.get(cod, [])
-            qv = sum(q for d, q in vendas if d >= desde)
-            qv_cobre = sum(q for d, q in vendas if desde <= d <= ate_cobre)
-            eleg = delta_tot < 0 and qv > 0
-            nivel = None
-            if eleg:
-                n_eleg += 1
-                if abs(qv - ad) / ad <= _QTD_MATCH_TOLERANCIA:
-                    nivel = "bate"
-                    n_bate += 1
-                elif qv_cobre >= ad:
-                    nivel = "cobre"
-                    n_cobre += 1
+        def _avaliar(dia):
+            """Faltas lançadas até `dia` (somadas por produto) × venda do dia."""
+            delta_ate: dict = {}
+            for it in items:
+                if it["dia"] <= dia:
+                    delta_ate[it["grupo"]] = delta_ate.get(it["grupo"], 0) + it["delta"]
+            linhas = []
+            for g, d in delta_ate.items():
+                if d >= 0:
+                    continue  # sobra (ou zerada) não entra
+                v = vendas_por_grupo.get(g, {}).get(dia, 0)
+                linhas.append((g, -d, v, _nivel_venda_no_dia(-d, v)))
+            return linhas
+
+        melhor = None   # (dia, linhas) que qualifica
+        perto = None    # melhor dia que não qualifica
+        for dia in dias_venda:
+            if dia < inicio or dia > hoje.isoformat():
+                continue
+            linhas = _avaliar(dia)
+            n_ok = sum(1 for l in linhas if l[3])
+            if len(linhas) >= _POSSIVEL_FAT_MIN_ELEGIVEIS and n_ok == len(linhas):
+                if melhor is None or n_ok > len(melhor[1]):
+                    melhor = (dia, linhas)
+            elif linhas:
+                n_falha = len(linhas) - n_ok
+                if (perto is None or n_ok > perto[2]
+                        or (n_ok == perto[2] and n_falha < len(perto[1]) - perto[2])):
+                    perto = (dia, linhas, n_ok)
+
+        if melhor:
+            dia, linhas = melhor
+            ok = True
+            motivo = f"✅ tudo vendido em {_fmt_dia_iso_br(dia)}"
+        elif perto:
+            dia, linhas, n_ok = perto
+            ok = False
+            if len(linhas) < _POSSIVEL_FAT_MIN_ELEGIVEIS:
+                motivo = (f"nenhum dia com {_POSSIVEL_FAT_MIN_ELEGIVEIS}+ faltas; "
+                          f"melhor dia {_fmt_dia_iso_br(dia)}: {len(linhas)} falta")
+            else:
+                _imp = ", ".join(info[l[0]]["produto"][:30].rstrip() for l in linhas if not l[3])
+                motivo = (f"melhor dia {_fmt_dia_iso_br(dia)}: {n_ok} de {len(linhas)} casaram — "
+                          f"impediram: {_imp}")
+        else:
+            dia, linhas, ok = None, [], False
+            motivo = "sem venda de nenhum produto desde a divergência"
+
+        no_dia = {l[0]: l for l in linhas}
+        detalhes = []
+        for g, gi in info.items():
+            vendas_g = vendas_por_grupo.get(g, {})
+            qv_periodo = sum(q for d_, q in vendas_g.items() if d_ >= gi["desde"])
+            delta_tot = sum(it["delta"] for it in items if it["grupo"] == g)
+            l = no_dia.get(g)
             detalhes.append({
-                "produto": prod_por_cod[cod], "codigo": cod, "delta": delta_tot,
-                "vendas_desde": desde,
-                "qtd_vend": qv if qv > 0 else None,
-                "qtd_vend_cobre": qv_cobre,
-                # quantidade que justificou o nível (período todo ou 15 dias)
-                "qtd_vend_nivel": qv_cobre if nivel == "cobre" else qv,
-                "elegivel": eleg, "nivel": nivel, "match": nivel is not None,
+                "produto": gi["produto"], "codigo": "/".join(gi["codigos"]),
+                "delta": delta_tot,
+                # falta somada até o dia (None = lançada depois do dia ou sobra)
+                "falta_no_dia": l[1] if l else None,
+                "vendido_no_dia": l[2] if l else None,
+                "nivel": l[3] if l else None,
+                "entrou_no_dia": l is not None,
+                "impediu": bool(l) and l[3] is None,
+                # informativo: vendas desde a 1ª divergência do produto
+                "vendas_desde": gi["desde"],
+                "qtd_vend": qv_periodo if qv_periodo > 0 else None,
             })
 
-        n_match = n_bate + n_cobre
-        if n_eleg < _POSSIVEL_FAT_MIN_ELEGIVEIS:
-            motivo = f"produtos elegíveis insuficientes ({n_eleg} < {_POSSIVEL_FAT_MIN_ELEGIVEIS})"
-            ok = False
-        elif n_match == 0:
-            motivo = "nenhum produto com vendas que batem ou cobrem a divergência"
-            ok = False
-        elif n_match / n_eleg < _POSSIVEL_FAT_MIN_MATCH_PCT:
-            motivo = (f"% de match abaixo do mínimo "
-                      f"({n_match}/{n_eleg} = {n_match / n_eleg:.0%} < {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%})")
-            ok = False
-        else:
-            motivo = "✅ qualifica"
-            ok = True
-
+        n_bate = sum(1 for l in linhas if l[3] == "bate")
+        n_cobre = sum(1 for l in linhas if l[3] == "cobre")
         out["cooperados"].append({
             "cooperado": coop, "n_itens": len(items),
-            "n_elegiveis": n_eleg, "n_matches": n_match,
-            "n_bate": n_bate, "n_cobre": n_cobre,
+            "dia": dia, "n_faltas_dia": len(linhas),
+            "n_matches": n_bate + n_cobre, "n_bate": n_bate, "n_cobre": n_cobre,
             "nivel": ("bate_certinho" if n_cobre == 0 else "vendas_cobrem") if ok else None,
             "qualifica": ok, "motivo": motivo, "detalhes": detalhes,
         })
     return out
+
+
+def _fmt_dia_iso_br(iso) -> str:
+    try:
+        return date.fromisoformat(str(iso)[:10]).strftime("%d/%m")
+    except ValueError:
+        return str(iso or "—")
 
 
 def diagnosticar_possivel_faturamento() -> dict:
@@ -12348,43 +12423,43 @@ new Chart(document.getElementById('coop-chart'),{
         _alertas_conf = checar_reconciliacao_gv()
         _al_poss = [a for a in _alertas_conf if a.get("status") == "possivel_faturamento"]
 
-        def _fmt_dia_br(_iso):
-            try:
-                return date.fromisoformat(str(_iso)[:10]).strftime("%d/%m")
-            except ValueError:
-                return str(_iso or "—")
+        _fmt_dia_br = _fmt_dia_iso_br
+        _ic_nivel = {"bate": "🎯", "cobre": "📦"}
 
-        def _linha_pf(_a, _itens, _cor, _borda, _fundo, _titulo):
+        def _linha_pf(_a, _cor, _borda, _fundo, _titulo):
+            _itens = _a.get("itens_possiveis", [])
             _prods = " · ".join(
-                f'{_esc_html.escape((i["produto"] or "")[:32])} '
+                f'{_ic_nivel.get(i["nivel"], "")} {_esc_html.escape((i["produto"] or "")[:32])} '
                 f'<span style="color:var(--c-text)">falta {abs(i["delta"])} · vendeu '
-                f'{i["qtd_vendida"]} desde {_fmt_dia_br(i.get("vendas_desde"))}</span>'
-                for i in _itens[:4]
+                f'{i["qtd_vendida"]}</span>'
+                for i in _itens[:6]
             )
-            if len(_itens) > 4:
-                _prods += f" +{len(_itens) - 4}"
+            if len(_itens) > 6:
+                _prods += f" +{len(_itens) - 6}"
             return (
                 f'<div style="padding:8px 14px;border-radius:8px;'
                 f'background:{_fundo};border:1px solid {_borda};'
                 f'margin-bottom:6px;font-size:0.83rem;">'
                 f'{_titulo} <b style="color:{_cor}">{_esc_html.escape(_a["cooperado"])}</b>'
+                f'<span style="color:var(--c-text);margin-left:6px;">· tudo vendido em '
+                f'{_fmt_dia_br(_a.get("dia_venda"))}</span>'
                 f'<div style="color:var(--c-muted);font-size:0.75rem;margin-top:2px;">'
                 f'{_prods}</div></div>'
             )
 
         if _al_poss:
-            # Nível 1 — bate certinho (venda ≈ falta)
-            _bate = [a for a in _al_poss if a.get("itens_bate")]
-            # Nível 2 — vendas cobrem a falta (venda ≥ falta, até N dias)
-            _cobre = [a for a in _al_poss if a.get("itens_cobre")]
+            # Nível 1 — todas as faltas do dia batem (venda ≈ falta)
+            _bate = [a for a in _al_poss if a.get("nivel") == "bate_certinho"]
+            # Nível 2 — todas casam, mas alguma só porque a venda passou da falta
+            _cobre = [a for a in _al_poss if a.get("nivel") == "vendas_cobrem"]
             if _bate:
                 st.markdown(
-                    f"**🎯 Bate certinho** — venda desde a divergência ≈ falta "
-                    f"(±{_QTD_MATCH_TOLERANCIA:.0%})"
+                    f"**🎯 Bate certinho** — num mesmo dia, cada falta vendeu de 100% a "
+                    f"{1 + _QTD_MATCH_TOLERANCIA:.0%} da falta"
                 )
                 st.markdown(
                     '<div style="margin-bottom:8px;">' + "".join(
-                        _linha_pf(_a, _a["itens_bate"], "var(--c-ok)", "rgba(76,195,138,0.45)",
+                        _linha_pf(_a, "var(--c-ok)", "rgba(76,195,138,0.45)",
                                   "rgba(76,195,138,0.08)", "🎯 <b>Possível faturamento:</b>")
                         for _a in _bate
                     ) + "</div>",
@@ -12392,20 +12467,19 @@ new Chart(document.getElementById('coop-chart'),{
                 )
             if _cobre:
                 st.markdown(
-                    f"**📦 Vendas cobrem a falta** — vendeu ≥ a falta nos "
-                    f"{_POSSIVEL_FAT_COBRE_MAX_DIAS} dias seguintes à divergência "
-                    f"(sinal mais fraco: confira)"
+                    f"**📦 Vendas cobrem a falta** — num mesmo dia todas as faltas vendidas, "
+                    f"alguma acima de {1 + _QTD_MATCH_TOLERANCIA:.0%} da falta (sinal mais fraco: confira)"
                 )
                 st.markdown(
                     '<div style="margin-bottom:8px;">' + "".join(
-                        _linha_pf(_a, _a["itens_cobre"], "var(--c-info)", "rgba(123,155,255,0.35)",
+                        _linha_pf(_a, "var(--c-info)", "rgba(123,155,255,0.35)",
                                   "rgba(123,155,255,0.08)", "📦 <b>Possível faturamento:</b>")
                         for _a in _cobre
                     ) + "</div>",
                     unsafe_allow_html=True,
                 )
         else:
-            st.caption("Nenhum possível faturamento detectado nas vendas desde as divergências.")
+            st.caption("Nenhum possível faturamento: nenhum cooperado com todas as faltas vendidas num mesmo dia.")
 
         # ── Diagnóstico: por que não disparou? ────────────────────────────────
         with st.expander("🔎 Diagnóstico — por que não disparou?", expanded=False):
@@ -12419,11 +12493,12 @@ new Chart(document.getElementById('coop-chart'),{
                 f"{_POSSIVEL_FAT_MAX_DIAS_DIV} dias."
             )
             st.caption(
-                f"Regra: soma as vendas desde o dia em que a divergência foi lançada. "
-                f"🎯 bate certinho = venda dentro de ±{_QTD_MATCH_TOLERANCIA:.0%} da falta; "
-                f"📦 cobre = venda dos {_POSSIVEL_FAT_COBRE_MAX_DIAS} primeiros dias ≥ falta. "
-                f"Sobras não entram. Dispara com ≥ {_POSSIVEL_FAT_MIN_ELEGIVEIS} faltas com venda e "
-                f"≥ {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%} deles em algum dos dois níveis."
+                f"Regra: o cooperado paga tudo de uma vez. Dispara se existir um dia de venda em que "
+                f"TODAS as faltas abertas dele lançadas até aquele dia foram vendidas no dia (venda ≥ falta). "
+                f"Selo: 🎯 venda até {1 + _QTD_MATCH_TOLERANCIA:.0%} da falta, 📦 acima disso. "
+                f"Venda menor que a falta ou sem venda no dia derruba o dia. Mínimo de {_POSSIVEL_FAT_MIN_ELEGIVEIS} faltas; "
+                f"códigos irmãos contam como o mesmo produto; sobras não entram. "
+                f"Mais de um dia: o com mais faltas casando (empate: o mais antigo)."
             )
             _coops = _diag.get("cooperados", [])
             if not _coops:
@@ -12432,27 +12507,34 @@ new Chart(document.getElementById('coop-chart'),{
                     "nos últimos dias. Verifique se a divergência foi registrada com o "
                     "cooperado e se há vendas lançadas desde então."
                 )
-            _nivel_txt = {"bate": "🎯 bate certinho", "cobre": "📦 cobre", None: "não casa"}
+            _nivel_txt = {"bate": "🎯 bate certinho", "cobre": "📦 cobre"}
             for _c in _coops:
                 _icon = "✅" if _c["qualifica"] else "❌"
                 _niv = {"bate_certinho": " · 🎯 bate certinho",
                         "vendas_cobrem": " · 📦 vendas cobrem a falta"}.get(_c.get("nivel"), "")
                 st.markdown(
                     f"{_icon} **{_c['cooperado']}** — {_c['motivo']}{_niv} "
-                    f"· elegíveis: {_c['n_elegiveis']}, 🎯 {_c.get('n_bate', 0)}, "
+                    f"· faltas no dia: {_c['n_faltas_dia']}, 🎯 {_c.get('n_bate', 0)}, "
                     f"📦 {_c.get('n_cobre', 0)}, itens: {_c['n_itens']}"
                 )
+                _dia_c = _fmt_dia_br(_c["dia"]) if _c.get("dia") else "—"
                 _rows_diag = []
                 for _d in _c["detalhes"]:
+                    if _d["entrou_no_dia"]:
+                        _nv = _nivel_txt.get(_d["nivel"]) or "❌ impediu"
+                    elif _d["delta"] < 0:
+                        _nv = f"lançada depois de {_dia_c}"
+                    else:
+                        _nv = "sobra (não entra)"
+                    # texto em todas: misturar "—" com int quebra o Arrow
                     _rows_diag.append({
                         "Produto": (_d["produto"] or "")[:35],
                         "Código": _d["codigo"],
-                        "Delta": _d["delta"],
+                        f"Falta em {_dia_c}": "—" if _d["falta_no_dia"] is None else str(_d["falta_no_dia"]),
+                        f"Venda em {_dia_c}": "—" if _d["vendido_no_dia"] is None else str(_d["vendido_no_dia"]),
+                        "Nível": _nv,
                         "Vendido desde": _fmt_dia_br(_d.get("vendas_desde")),
-                        # texto nas duas: misturar "sem venda" com int quebra o Arrow
                         "Qtd vendida no período": "sem venda" if _d["qtd_vend"] is None else str(_d["qtd_vend"]),
-                        f"Vendida em {_POSSIVEL_FAT_COBRE_MAX_DIAS} dias": str(_d.get("qtd_vend_cobre", 0)),
-                        "Nível": _nivel_txt.get(_d.get("nivel"), "não casa"),
                     })
                 if _rows_diag:
                     st.dataframe(pd.DataFrame(_rows_diag), hide_index=True, use_container_width=True)
