@@ -8688,6 +8688,10 @@ _POSSIVEL_FAT_MIN_MATCH_PCT = 0.70
 _POSSIVEL_FAT_MAX_DIAS_DIV = 60
 # Mínimo de produtos elegíveis para disparar alerta de possível faturamento
 _POSSIVEL_FAT_MIN_ELEGIVEIS = 2
+# Nível "vendas cobrem a falta": só conta as vendas até N dias depois do
+# criado_em da divergência — senão uma falta antiga é "coberta" por semanas de
+# venda normal do produto. O nível "bate certinho" não tem esse limite.
+_POSSIVEL_FAT_COBRE_MAX_DIAS = 15
 # Valores que aparecem no campo cooperado mas não são nomes reais
 _NOMES_INVALIDOS_COOP = {
     "faltando", "falta", "sobra", "sobrando", "ok", "none", "nan",
@@ -8705,10 +8709,11 @@ def checar_reconciliacao_gv() -> list:
       Alerta quando divergência > _GV_THRESHOLD_PCT.
 
     CHECK 2 — "Possível faturamento" (automático, sem GV):
-      Para cada cooperado com divergência aberta, compara a quantidade
-      vendida no lançamento com o delta da divergência.
-      Se abs(qtd_vendida - abs(delta)) / abs(delta) <= _QTD_MATCH_TOLERANCIA
-      em pelo menos 1 produto → alerta "Possível faturamento: [Cooperado]".
+      Para cada cooperado com divergência aberta, compara o delta de cada
+      produto com as vendas de vendas_historico desde o dia do criado_em da
+      divergência (ver _diagnostico_possivel_faturamento). Dois níveis:
+      "bate certinho" (venda ≈ falta, ±_QTD_MATCH_TOLERANCIA) e "vendas
+      cobrem a falta" (venda até _POSSIVEL_FAT_COBRE_MAX_DIAS dias ≥ falta).
       Nomes de status ("Faltando", "Sobrando", etc.) são ignorados.
     """
     try:
@@ -8762,207 +8767,202 @@ def checar_reconciliacao_gv() -> list:
                             "origem": "gv",
                         }
 
-        # ── CHECK 2: quantidade vendida ≈ delta da divergência ────────────
-        vend_ref_row = conn.execute("SELECT MAX(data_upload) FROM vendas_historico").fetchone()
-        data_ref_vend = vend_ref_row[0] if vend_ref_row and vend_ref_row[0] else None
-
-        if data_ref_vend:
-            # codigo → qtd_vendida no lançamento mais recente
-            # Usa _codigo_key para casar com divergencias mesmo que as tabelas
-            # gravem o código em formatos diferentes (ex.: "12345" vs "12345.0").
-            vend_qtd: dict = {}
-            for r in conn.execute(
-                "SELECT codigo, qtd_vendida FROM vendas_historico WHERE data_upload = ?",
-                (data_ref_vend,),
-            ).fetchall():
-                _ck = _codigo_key(r[0])
-                if _ck:
-                    vend_qtd[_ck] = int(r[1])
-
-            if vend_qtd:
-                # Apenas divergências criadas nos últimos _POSSIVEL_FAT_MAX_DIAS_DIV dias
-                _cutoff_div = (
-                    datetime.now(tz=_BRT) - timedelta(days=_POSSIVEL_FAT_MAX_DIAS_DIV)
-                ).date().isoformat()
-                div_rows = conn.execute(
-                    "SELECT cooperado, codigo, produto, delta, status FROM divergencias"
-                    " WHERE cooperado != '' AND criado_em >= ?",
-                    (_cutoff_div,),
-                ).fetchall()
-
-                todos_por_coop: dict = {}
-                for coop, cod, prod, delta, st in div_rows:
-                    coop = (coop or "").strip()
-                    # Filtra nomes inválidos (status, keywords, etc.)
-                    if not coop or coop.lower() in _NOMES_INVALIDOS_COOP:
-                        continue
-                    todos_por_coop.setdefault(coop, []).append({
-                        "produto": prod,
-                        "codigo": _codigo_key(cod),
-                        "delta": int(delta or 0),
-                        "status": st,
-                    })
-
-                for coop, div_items in todos_por_coop.items():
-                    # A tabela divergencias pode ter várias linhas para o mesmo
-                    # produto (contagens parciais), mas a qtd vendida é única por
-                    # código. Por isso somamos os deltas por código antes de
-                    # comparar com a quantidade vendida desse produto.
-                    delta_por_cod: dict = {}
-                    prod_por_cod: dict = {}
-                    for item in div_items:
-                        cod = item["codigo"]
-                        if not cod:
-                            continue
-                        delta_por_cod[cod] = delta_por_cod.get(cod, 0) + item["delta"]
-                        prod_por_cod.setdefault(cod, item["produto"])
-
-                    matches_qtd = []
-                    n_elegiveis = 0
-                    for cod, delta_tot in delta_por_cod.items():
-                        abs_delta = abs(delta_tot)
-                        if abs_delta == 0 or cod not in vend_qtd:
-                            continue
-                        n_elegiveis += 1
-                        qtd_vend = vend_qtd[cod]
-                        # Verifica se qtd_vendida é similar ao delta agregado
-                        if abs(qtd_vend - abs_delta) / abs_delta <= _QTD_MATCH_TOLERANCIA:
-                            matches_qtd.append({
-                                "produto": prod_por_cod[cod],
-                                "codigo": cod,
-                                "delta": delta_tot,
-                                "qtd_vendida": qtd_vend,
-                            })
-
-                    if not matches_qtd:
-                        continue
-
-                    # Exige pelo menos _POSSIVEL_FAT_MIN_ELEGIVEIS produtos
-                    # elegíveis (delta agregado != 0 e presentes nas vendas) e
-                    # que ao menos _POSSIVEL_FAT_MIN_MATCH_PCT deles tenham match.
-                    if (
-                        n_elegiveis < _POSSIVEL_FAT_MIN_ELEGIVEIS
-                        or len(matches_qtd) / n_elegiveis < _POSSIVEL_FAT_MIN_MATCH_PCT
-                    ):
-                        continue
-
-                    # Enriquece alerta GV existente ou cria novo
-                    if coop in alertas:
-                        alertas[coop]["origem"] = "gv+divergencias"
-                        alertas[coop]["itens_possiveis"] = matches_qtd
-                    else:
-                        alertas[coop] = {
-                            "cooperado": coop,
-                            "qtd_vendida": sum(m["qtd_vendida"] for m in matches_qtd),
-                            "qtd_faturada": 0,
-                            "delta_abs": sum(abs(m["delta"]) for m in matches_qtd),
-                            "delta_pct": 0.0,
-                            "data_ref": data_ref_vend,
-                            "status": "possivel_faturamento",
-                            "origem": "divergencias",
-                            "itens_possiveis": matches_qtd,
-                            "n_total_div": len(div_items),
-                        }
+        # ── CHECK 2: vendas desde a divergência × delta ───────────────────
+        _diag = _diagnostico_possivel_faturamento(conn)
+        data_ref_vend = _diag["data_ref_vend"]
+        for _c in _diag["cooperados"]:
+            if not _c["qualifica"]:
+                continue
+            coop = _c["cooperado"]
+            matches_qtd = [
+                {
+                    "produto": d["produto"],
+                    "codigo": d["codigo"],
+                    "delta": d["delta"],
+                    "qtd_vendida": d["qtd_vend_nivel"],
+                    "vendas_desde": d["vendas_desde"],
+                    "nivel": d["nivel"],
+                }
+                for d in _c["detalhes"] if d["nivel"]
+            ]
+            _extra = {
+                "itens_possiveis": matches_qtd,
+                "itens_bate": [m for m in matches_qtd if m["nivel"] == "bate"],
+                "itens_cobre": [m for m in matches_qtd if m["nivel"] == "cobre"],
+                "nivel": _c["nivel"],
+            }
+            # Enriquece alerta GV existente ou cria novo
+            if coop in alertas:
+                alertas[coop]["origem"] = "gv+divergencias"
+                alertas[coop].update(_extra)
+            else:
+                alertas[coop] = {
+                    "cooperado": coop,
+                    "qtd_vendida": sum(m["qtd_vendida"] for m in matches_qtd),
+                    "qtd_faturada": 0,
+                    "delta_abs": sum(abs(m["delta"]) for m in matches_qtd),
+                    "delta_pct": 0.0,
+                    "data_ref": data_ref_vend,
+                    "status": "possivel_faturamento",
+                    "origem": "divergencias",
+                    "n_total_div": _c["n_itens"],
+                    **_extra,
+                }
 
         return list(alertas.values())
     except Exception:
         return []
 
 
-def diagnosticar_possivel_faturamento() -> dict:
-    """Espelha o CHECK 2 de checar_reconciliacao_gv, mas em vez de filtrar
-    silenciosamente registra POR QUE cada cooperado qualifica ou não.
-    Usado no painel de Conferência para depurar o alerta 'Possível faturamento'.
+def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
+    """Núcleo do CHECK 2 ("Possível faturamento"), usado pelo alerta
+    (checar_reconciliacao_gv) e pelo diagnóstico da aba de Conferência.
+
+    Para cada cooperado com divergência nos últimos _POSSIVEL_FAT_MAX_DIAS_DIV
+    dias, agrega o delta por código e soma as vendas de vendas_historico com
+    data_upload >= dia do criado_em mais antigo daquele código (o próprio dia
+    conta). Cada produto cai em um nível:
+      - "bate": venda do período ≈ |delta| (±_QTD_MATCH_TOLERANCIA), sem limite
+        de dias;
+      - "cobre": só falta (delta < 0) — vendas dos primeiros
+        _POSSIVEL_FAT_COBRE_MAX_DIAS dias >= falta;
+      - None: não casa.
+    Elegível = delta agregado != 0 e alguma venda no período. O cooperado
+    qualifica com >= _POSSIVEL_FAT_MIN_ELEGIVEIS elegíveis e
+    >= _POSSIVEL_FAT_MIN_MATCH_PCT deles em algum nível. Nível do cooperado:
+    "bate_certinho" se todos os casados batem, senão "vendas_cobrem".
     """
-    out = {"data_ref_vend": None, "n_vend": 0, "n_div_window": 0,
-           "cooperados": [], "erro": None}
-    try:
-        conn = get_db()
-        vend_ref_row = conn.execute("SELECT MAX(data_upload) FROM vendas_historico").fetchone()
-        data_ref_vend = vend_ref_row[0] if vend_ref_row and vend_ref_row[0] else None
-        out["data_ref_vend"] = data_ref_vend
-        if not data_ref_vend:
-            return out
+    out = {"data_ref_vend": None, "n_vend": 0, "n_div_window": 0, "cooperados": []}
+    vend_ref_row = conn.execute("SELECT MAX(data_upload) FROM vendas_historico").fetchone()
+    data_ref_vend = vend_ref_row[0] if vend_ref_row and vend_ref_row[0] else None
+    out["data_ref_vend"] = data_ref_vend
+    if not data_ref_vend:
+        return out
 
-        vend_qtd: dict = {}
-        for r in conn.execute(
-            "SELECT codigo, qtd_vendida FROM vendas_historico WHERE data_upload = ?",
-            (data_ref_vend,),
-        ).fetchall():
-            _ck = _codigo_key(r[0])
-            if _ck:
-                vend_qtd[_ck] = int(r[1])
-        out["n_vend"] = len(vend_qtd)
+    hoje = hoje or datetime.now(tz=_BRT).date()
+    cutoff = (hoje - timedelta(days=_POSSIVEL_FAT_MAX_DIAS_DIV)).isoformat()
 
-        cutoff = (datetime.now(tz=_BRT) - timedelta(days=_POSSIVEL_FAT_MAX_DIAS_DIV)).date().isoformat()
-        div_rows = conn.execute(
-            "SELECT cooperado, codigo, produto, delta, status, criado_em FROM divergencias"
-            " WHERE cooperado != '' AND criado_em >= ?",
-            (cutoff,),
-        ).fetchall()
-        out["n_div_window"] = len(div_rows)
+    # codigo → [(dia, qtd)] desde o início da janela. Usa _codigo_key para casar
+    # com divergencias mesmo que as tabelas gravem o código em formatos
+    # diferentes (ex.: "12345" vs "12345.0").
+    vendas_por_cod: dict = {}
+    n_vend_ultimo = set()
+    for cod, qtd, dia in conn.execute(
+        "SELECT codigo, qtd_vendida, data_upload FROM vendas_historico WHERE data_upload >= ?",
+        (cutoff,),
+    ).fetchall():
+        _ck = _codigo_key(cod)
+        if not _ck:
+            continue
+        dia = str(dia or "")[:10]
+        vendas_por_cod.setdefault(_ck, []).append((dia, int(qtd or 0)))
+        if dia == str(data_ref_vend)[:10]:
+            n_vend_ultimo.add(_ck)
+    out["n_vend"] = len(n_vend_ultimo)
 
-        por_coop: dict = {}
-        for coop, cod, prod, delta, _st, _criado in div_rows:
-            coop = (coop or "").strip()
-            if not coop or coop.lower() in _NOMES_INVALIDOS_COOP:
+    div_rows = conn.execute(
+        "SELECT cooperado, codigo, produto, delta, status, criado_em FROM divergencias"
+        " WHERE cooperado != '' AND criado_em >= ?",
+        (cutoff,),
+    ).fetchall()
+    out["n_div_window"] = len(div_rows)
+
+    por_coop: dict = {}
+    for coop, cod, prod, delta, _st, criado in div_rows:
+        coop = (coop or "").strip()
+        # Filtra nomes inválidos (status, keywords, etc.)
+        if not coop or coop.lower() in _NOMES_INVALIDOS_COOP:
+            continue
+        por_coop.setdefault(coop, []).append({
+            "produto": prod, "codigo": _codigo_key(cod),
+            "delta": int(delta or 0), "dia": str(criado or "")[:10],
+        })
+
+    for coop, items in por_coop.items():
+        # A tabela divergencias pode ter várias linhas para o mesmo produto
+        # (contagens parciais): soma os deltas por código e conta as vendas a
+        # partir da divergência mais antiga desse código.
+        delta_por_cod: dict = {}
+        prod_por_cod: dict = {}
+        desde_por_cod: dict = {}
+        for it in items:
+            cod = it["codigo"]
+            if not cod:
                 continue
-            por_coop.setdefault(coop, []).append({
-                "produto": prod, "codigo": _codigo_key(cod), "delta": int(delta or 0),
+            delta_por_cod[cod] = delta_por_cod.get(cod, 0) + it["delta"]
+            prod_por_cod.setdefault(cod, it["produto"])
+            if cod not in desde_por_cod or it["dia"] < desde_por_cod[cod]:
+                desde_por_cod[cod] = it["dia"]
+
+        detalhes, n_eleg, n_bate, n_cobre = [], 0, 0, 0
+        for cod, delta_tot in delta_por_cod.items():
+            ad = abs(delta_tot)
+            desde = desde_por_cod[cod]
+            try:
+                ate_cobre = (date.fromisoformat(desde)
+                             + timedelta(days=_POSSIVEL_FAT_COBRE_MAX_DIAS)).isoformat()
+            except ValueError:
+                ate_cobre = desde
+            vendas = vendas_por_cod.get(cod, [])
+            qv = sum(q for d, q in vendas if d >= desde)
+            qv_cobre = sum(q for d, q in vendas if desde <= d <= ate_cobre)
+            eleg = ad != 0 and qv > 0
+            nivel = None
+            if eleg:
+                n_eleg += 1
+                if abs(qv - ad) / ad <= _QTD_MATCH_TOLERANCIA:
+                    nivel = "bate"
+                    n_bate += 1
+                elif delta_tot < 0 and qv_cobre >= ad:
+                    nivel = "cobre"
+                    n_cobre += 1
+            detalhes.append({
+                "produto": prod_por_cod[cod], "codigo": cod, "delta": delta_tot,
+                "vendas_desde": desde,
+                "qtd_vend": qv if qv > 0 else None,
+                "qtd_vend_cobre": qv_cobre,
+                # quantidade que justificou o nível (período todo ou 15 dias)
+                "qtd_vend_nivel": qv_cobre if nivel == "cobre" else qv,
+                "elegivel": eleg, "nivel": nivel, "match": nivel is not None,
             })
 
-        for coop, items in por_coop.items():
-            # Agrega deltas por código (mesma lógica do CHECK 2 real).
-            delta_por_cod: dict = {}
-            prod_por_cod: dict = {}
-            for it in items:
-                cod = it["codigo"]
-                if not cod:
-                    continue
-                delta_por_cod[cod] = delta_por_cod.get(cod, 0) + it["delta"]
-                prod_por_cod.setdefault(cod, it["produto"])
+        n_match = n_bate + n_cobre
+        if n_eleg < _POSSIVEL_FAT_MIN_ELEGIVEIS:
+            motivo = f"produtos elegíveis insuficientes ({n_eleg} < {_POSSIVEL_FAT_MIN_ELEGIVEIS})"
+            ok = False
+        elif n_match == 0:
+            motivo = "nenhum produto com vendas que batem ou cobrem a divergência"
+            ok = False
+        elif n_match / n_eleg < _POSSIVEL_FAT_MIN_MATCH_PCT:
+            motivo = (f"% de match abaixo do mínimo "
+                      f"({n_match}/{n_eleg} = {n_match / n_eleg:.0%} < {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%})")
+            ok = False
+        else:
+            motivo = "✅ qualifica"
+            ok = True
 
-            detalhes, n_eleg, n_match = [], 0, 0
-            for cod, delta_tot in delta_por_cod.items():
-                ad = abs(delta_tot)
-                in_vend = cod in vend_qtd
-                qv = vend_qtd.get(cod)
-                eleg = ad != 0 and in_vend
-                match = False
-                if eleg:
-                    n_eleg += 1
-                    if abs(qv - ad) / ad <= _QTD_MATCH_TOLERANCIA:
-                        match = True
-                        n_match += 1
-                detalhes.append({
-                    "produto": prod_por_cod[cod], "codigo": cod, "delta": delta_tot,
-                    "qtd_vend": qv if in_vend else None,
-                    "elegivel": eleg, "match": match,
-                })
+        out["cooperados"].append({
+            "cooperado": coop, "n_itens": len(items),
+            "n_elegiveis": n_eleg, "n_matches": n_match,
+            "n_bate": n_bate, "n_cobre": n_cobre,
+            "nivel": ("bate_certinho" if n_cobre == 0 else "vendas_cobrem") if ok else None,
+            "qualifica": ok, "motivo": motivo, "detalhes": detalhes,
+        })
+    return out
 
-            if n_eleg < _POSSIVEL_FAT_MIN_ELEGIVEIS:
-                motivo = f"produtos elegíveis insuficientes ({n_eleg} < {_POSSIVEL_FAT_MIN_ELEGIVEIS})"
-                ok = False
-            elif n_match == 0:
-                motivo = "nenhum produto com qtd vendida ≈ divergência"
-                ok = False
-            elif n_match / n_eleg < _POSSIVEL_FAT_MIN_MATCH_PCT:
-                motivo = (f"% de match abaixo do mínimo "
-                          f"({n_match}/{n_eleg} = {n_match / n_eleg:.0%} < {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%})")
-                ok = False
-            else:
-                motivo = "✅ qualifica"
-                ok = True
 
-            out["cooperados"].append({
-                "cooperado": coop, "n_itens": len(items),
-                "n_elegiveis": n_eleg, "n_matches": n_match,
-                "qualifica": ok, "motivo": motivo, "detalhes": detalhes,
-            })
+def diagnosticar_possivel_faturamento() -> dict:
+    """Mesmo cálculo do CHECK 2 de checar_reconciliacao_gv, mas registra POR QUE
+    cada cooperado qualifica ou não. Usado no painel de Conferência para depurar
+    o alerta 'Possível faturamento'.
+    """
+    try:
+        out = _diagnostico_possivel_faturamento(get_db())
+        out["erro"] = None
         return out
     except Exception as e:
-        out["erro"] = str(e)
-        return out
+        return {"data_ref_vend": None, "n_vend": 0, "n_div_window": 0,
+                "cooperados": [], "erro": str(e)}
 
 
 @st.cache_data(ttl=1800)
@@ -12338,27 +12338,64 @@ new Chart(document.getElementById('coop-chart'),{
         _alertas_conf = checar_reconciliacao_gv()
         _al_poss = [a for a in _alertas_conf if a.get("status") == "possivel_faturamento"]
 
-        if _al_poss:
-            _linhas_pf = []
-            for _a in _al_poss:
-                _itens = _a.get("itens_possiveis", [])
-                _prods = ", ".join(i["produto"][:32] for i in _itens[:3])
-                if len(_itens) > 3:
-                    _prods += f" +{len(_itens) - 3}"
-                _linhas_pf.append(
-                    f'<div style="padding:8px 14px;border-radius:8px;'
-                    f'background:rgba(123,155,255,0.08);border:1px solid rgba(123,155,255,0.3);'
-                    f'margin-bottom:6px;font-size:0.83rem;">'
-                    f'🔵 <b>Possível faturamento:</b> <b style="color:var(--c-info)">{_a["cooperado"]}</b>'
-                    f'<span style="color:var(--c-muted);font-size:0.75rem;margin-left:8px;">'
-                    f'{len(_itens)} produto(s) com qtd similar à divergência: {_prods}</span></div>'
-                )
-            st.markdown(
-                '<div style="margin-bottom:8px;">' + "".join(_linhas_pf) + "</div>",
-                unsafe_allow_html=True,
+        def _fmt_dia_br(_iso):
+            try:
+                return date.fromisoformat(str(_iso)[:10]).strftime("%d/%m")
+            except ValueError:
+                return str(_iso or "—")
+
+        def _linha_pf(_a, _itens, _cor, _cor_soft, _titulo):
+            _prods = " · ".join(
+                f'{_esc_html.escape((i["produto"] or "")[:32])} '
+                f'<span style="color:var(--c-text)">falta {abs(i["delta"])} · vendeu '
+                f'{i["qtd_vendida"]} desde {_fmt_dia_br(i.get("vendas_desde"))}</span>'
+                for i in _itens[:4]
             )
+            if len(_itens) > 4:
+                _prods += f" +{len(_itens) - 4}"
+            return (
+                f'<div style="padding:8px 14px;border-radius:8px;'
+                f'background:{_cor_soft};border:1px solid {_cor};'
+                f'margin-bottom:6px;font-size:0.83rem;">'
+                f'{_titulo} <b style="color:{_cor}">{_esc_html.escape(_a["cooperado"])}</b>'
+                f'<div style="color:var(--c-muted);font-size:0.75rem;margin-top:2px;">'
+                f'{_prods}</div></div>'
+            )
+
+        if _al_poss:
+            # Nível 1 — bate certinho (venda ≈ falta)
+            _bate = [a for a in _al_poss if a.get("itens_bate")]
+            # Nível 2 — vendas cobrem a falta (venda ≥ falta, até N dias)
+            _cobre = [a for a in _al_poss if a.get("itens_cobre")]
+            if _bate:
+                st.markdown(
+                    f"**🎯 Bate certinho** — venda desde a divergência ≈ falta "
+                    f"(±{_QTD_MATCH_TOLERANCIA:.0%})"
+                )
+                st.markdown(
+                    '<div style="margin-bottom:8px;">' + "".join(
+                        _linha_pf(_a, _a["itens_bate"], "rgba(76,195,138,0.45)",
+                                  "rgba(76,195,138,0.08)", "🎯 <b>Possível faturamento:</b>")
+                        for _a in _bate
+                    ) + "</div>",
+                    unsafe_allow_html=True,
+                )
+            if _cobre:
+                st.markdown(
+                    f"**📦 Vendas cobrem a falta** — vendeu ≥ a falta nos "
+                    f"{_POSSIVEL_FAT_COBRE_MAX_DIAS} dias seguintes à divergência "
+                    f"(sinal mais fraco: confira)"
+                )
+                st.markdown(
+                    '<div style="margin-bottom:8px;">' + "".join(
+                        _linha_pf(_a, _a["itens_cobre"], "rgba(123,155,255,0.35)",
+                                  "rgba(123,155,255,0.08)", "📦 <b>Possível faturamento:</b>")
+                        for _a in _cobre
+                    ) + "</div>",
+                    unsafe_allow_html=True,
+                )
         else:
-            st.caption("Nenhum possível faturamento detectado no último lançamento.")
+            st.caption("Nenhum possível faturamento detectado nas vendas desde as divergências.")
 
         # ── Diagnóstico: por que não disparou? ────────────────────────────────
         with st.expander("🔎 Diagnóstico — por que não disparou?", expanded=False):
@@ -12367,28 +12404,33 @@ new Chart(document.getElementById('coop-chart'),{
                 st.error(f"Erro no diagnóstico: {_diag['erro']}")
             st.caption(
                 f"Último lançamento de vendas: **{_diag.get('data_ref_vend') or '—'}** · "
-                f"{_diag.get('n_vend', 0)} código(s) vendidos · "
+                f"{_diag.get('n_vend', 0)} código(s) vendidos nele · "
                 f"{_diag.get('n_div_window', 0)} divergência(s) com cooperado nos últimos "
                 f"{_POSSIVEL_FAT_MAX_DIAS_DIV} dias."
             )
             st.caption(
-                f"Regra atual: ≥ {_POSSIVEL_FAT_MIN_ELEGIVEIS} produtos elegíveis e "
-                f"≥ {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%} deles com qtd vendida dentro de "
-                f"±{_QTD_MATCH_TOLERANCIA:.0%} do delta da divergência."
+                f"Regra: soma as vendas desde o dia em que a divergência foi lançada. "
+                f"🎯 bate certinho = venda dentro de ±{_QTD_MATCH_TOLERANCIA:.0%} da falta; "
+                f"📦 cobre = só falta, venda dos {_POSSIVEL_FAT_COBRE_MAX_DIAS} primeiros dias ≥ falta. "
+                f"Dispara com ≥ {_POSSIVEL_FAT_MIN_ELEGIVEIS} produtos com venda e "
+                f"≥ {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%} deles em algum dos dois níveis."
             )
             _coops = _diag.get("cooperados", [])
             if not _coops:
                 st.info(
                     "Nenhum cooperado com divergência aberta (com nome de cooperado) "
                     "nos últimos dias. Verifique se a divergência foi registrada com o "
-                    "cooperado e se o lançamento de vendas é o mais recente."
+                    "cooperado e se há vendas lançadas desde então."
                 )
+            _nivel_txt = {"bate": "🎯 bate certinho", "cobre": "📦 cobre", None: "não casa"}
             for _c in _coops:
                 _icon = "✅" if _c["qualifica"] else "❌"
+                _niv = {"bate_certinho": " · 🎯 bate certinho",
+                        "vendas_cobrem": " · 📦 vendas cobrem a falta"}.get(_c.get("nivel"), "")
                 st.markdown(
-                    f"{_icon} **{_c['cooperado']}** — {_c['motivo']} "
-                    f"· elegíveis: {_c['n_elegiveis']}, match: {_c['n_matches']}, "
-                    f"itens: {_c['n_itens']}"
+                    f"{_icon} **{_c['cooperado']}** — {_c['motivo']}{_niv} "
+                    f"· elegíveis: {_c['n_elegiveis']}, 🎯 {_c.get('n_bate', 0)}, "
+                    f"📦 {_c.get('n_cobre', 0)}, itens: {_c['n_itens']}"
                 )
                 _rows_diag = []
                 for _d in _c["detalhes"]:
@@ -12396,9 +12438,10 @@ new Chart(document.getElementById('coop-chart'),{
                         "Produto": (_d["produto"] or "")[:35],
                         "Código": _d["codigo"],
                         "Delta": _d["delta"],
-                        "Qtd vendida": "sem venda" if _d["qtd_vend"] is None else _d["qtd_vend"],
-                        "Elegível": "sim" if _d["elegivel"] else "não",
-                        "Match": "sim" if _d["match"] else "não",
+                        "Vendido desde": _fmt_dia_br(_d.get("vendas_desde")),
+                        "Qtd vendida no período": "sem venda" if _d["qtd_vend"] is None else _d["qtd_vend"],
+                        f"Vendida em {_POSSIVEL_FAT_COBRE_MAX_DIAS} dias": _d.get("qtd_vend_cobre", 0),
+                        "Nível": _nivel_txt.get(_d.get("nivel"), "não casa"),
                     })
                 if _rows_diag:
                     st.dataframe(pd.DataFrame(_rows_diag), hide_index=True, use_container_width=True)
