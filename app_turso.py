@@ -12344,7 +12344,7 @@ new Chart(document.getElementById('coop-chart'),{
             except ValueError:
                 return str(_iso or "—")
 
-        def _linha_pf(_a, _itens, _cor, _cor_soft, _titulo):
+        def _linha_pf(_a, _itens, _cor, _borda, _fundo, _titulo):
             _prods = " · ".join(
                 f'{_esc_html.escape((i["produto"] or "")[:32])} '
                 f'<span style="color:var(--c-text)">falta {abs(i["delta"])} · vendeu '
@@ -12355,7 +12355,7 @@ new Chart(document.getElementById('coop-chart'),{
                 _prods += f" +{len(_itens) - 4}"
             return (
                 f'<div style="padding:8px 14px;border-radius:8px;'
-                f'background:{_cor_soft};border:1px solid {_cor};'
+                f'background:{_fundo};border:1px solid {_borda};'
                 f'margin-bottom:6px;font-size:0.83rem;">'
                 f'{_titulo} <b style="color:{_cor}">{_esc_html.escape(_a["cooperado"])}</b>'
                 f'<div style="color:var(--c-muted);font-size:0.75rem;margin-top:2px;">'
@@ -12374,7 +12374,7 @@ new Chart(document.getElementById('coop-chart'),{
                 )
                 st.markdown(
                     '<div style="margin-bottom:8px;">' + "".join(
-                        _linha_pf(_a, _a["itens_bate"], "rgba(76,195,138,0.45)",
+                        _linha_pf(_a, _a["itens_bate"], "var(--c-ok)", "rgba(76,195,138,0.45)",
                                   "rgba(76,195,138,0.08)", "🎯 <b>Possível faturamento:</b>")
                         for _a in _bate
                     ) + "</div>",
@@ -12388,7 +12388,7 @@ new Chart(document.getElementById('coop-chart'),{
                 )
                 st.markdown(
                     '<div style="margin-bottom:8px;">' + "".join(
-                        _linha_pf(_a, _a["itens_cobre"], "rgba(123,155,255,0.35)",
+                        _linha_pf(_a, _a["itens_cobre"], "var(--c-info)", "rgba(123,155,255,0.35)",
                                   "rgba(123,155,255,0.08)", "📦 <b>Possível faturamento:</b>")
                         for _a in _cobre
                     ) + "</div>",
@@ -12439,8 +12439,9 @@ new Chart(document.getElementById('coop-chart'),{
                         "Código": _d["codigo"],
                         "Delta": _d["delta"],
                         "Vendido desde": _fmt_dia_br(_d.get("vendas_desde")),
-                        "Qtd vendida no período": "sem venda" if _d["qtd_vend"] is None else _d["qtd_vend"],
-                        f"Vendida em {_POSSIVEL_FAT_COBRE_MAX_DIAS} dias": _d.get("qtd_vend_cobre", 0),
+                        # texto nas duas: misturar "sem venda" com int quebra o Arrow
+                        "Qtd vendida no período": "sem venda" if _d["qtd_vend"] is None else str(_d["qtd_vend"]),
+                        f"Vendida em {_POSSIVEL_FAT_COBRE_MAX_DIAS} dias": str(_d.get("qtd_vend_cobre", 0)),
                         "Nível": _nivel_txt.get(_d.get("nivel"), "não casa"),
                     })
                 if _rows_diag:
