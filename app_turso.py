@@ -8824,10 +8824,12 @@ def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
     conta). Cada produto cai em um nível:
       - "bate": venda do período ≈ |delta| (±_QTD_MATCH_TOLERANCIA), sem limite
         de dias;
-      - "cobre": só falta (delta < 0) — vendas dos primeiros
+      - "cobre": vendas dos primeiros
         _POSSIVEL_FAT_COBRE_MAX_DIAS dias >= falta;
       - None: não casa.
-    Elegível = delta agregado != 0 e alguma venda no período. O cooperado
+    Elegível = FALTA (delta agregado < 0) com alguma venda no período. Sobra
+    nunca é elegível — venda não explica sobra, e uma sobra solta não pode
+    derrubar o mínimo nem o percentual de quem tem faltas faturadas. O cooperado
     qualifica com >= _POSSIVEL_FAT_MIN_ELEGIVEIS elegíveis e
     >= _POSSIVEL_FAT_MIN_MATCH_PCT deles em algum nível. Nível do cooperado:
     "bate_certinho" se todos os casados batem, senão "vendas_cobrem".
@@ -8906,14 +8908,14 @@ def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
             vendas = vendas_por_cod.get(cod, [])
             qv = sum(q for d, q in vendas if d >= desde)
             qv_cobre = sum(q for d, q in vendas if desde <= d <= ate_cobre)
-            eleg = ad != 0 and qv > 0
+            eleg = delta_tot < 0 and qv > 0
             nivel = None
             if eleg:
                 n_eleg += 1
                 if abs(qv - ad) / ad <= _QTD_MATCH_TOLERANCIA:
                     nivel = "bate"
                     n_bate += 1
-                elif delta_tot < 0 and qv_cobre >= ad:
+                elif qv_cobre >= ad:
                     nivel = "cobre"
                     n_cobre += 1
             detalhes.append({
@@ -12411,8 +12413,8 @@ new Chart(document.getElementById('coop-chart'),{
             st.caption(
                 f"Regra: soma as vendas desde o dia em que a divergência foi lançada. "
                 f"🎯 bate certinho = venda dentro de ±{_QTD_MATCH_TOLERANCIA:.0%} da falta; "
-                f"📦 cobre = só falta, venda dos {_POSSIVEL_FAT_COBRE_MAX_DIAS} primeiros dias ≥ falta. "
-                f"Dispara com ≥ {_POSSIVEL_FAT_MIN_ELEGIVEIS} produtos com venda e "
+                f"📦 cobre = venda dos {_POSSIVEL_FAT_COBRE_MAX_DIAS} primeiros dias ≥ falta. "
+                f"Sobras não entram. Dispara com ≥ {_POSSIVEL_FAT_MIN_ELEGIVEIS} faltas com venda e "
                 f"≥ {_POSSIVEL_FAT_MIN_MATCH_PCT:.0%} deles em algum dos dois níveis."
             )
             _coops = _diag.get("cooperados", [])
