@@ -8680,7 +8680,7 @@ def parse_faturamento_gv_excel(df: pd.DataFrame):
 
 # Tolerância padrão para considerar divergência relevante no GV (%)
 _GV_THRESHOLD_PCT = 5.0
-# Tolerância para considerar quantidade vendida "similar" ao delta da divergência (50%)
+# Selo 🎯 do CHECK 2: venda do dia até (1 + isto) × falta; acima disso é 📦 (50%)
 _QTD_MATCH_TOLERANCIA = 0.50
 # Janela máxima (dias) para considerar divergências ativas no CHECK 2
 _POSSIVEL_FAT_MAX_DIAS_DIV = 60
@@ -8704,9 +8704,9 @@ def checar_reconciliacao_gv() -> list:
 
     CHECK 2 — "Possível faturamento" (automático, sem GV):
       O cooperado paga tudo de uma vez: dispara quando existe UM dia de venda
-      em que TODAS as faltas abertas dele lançadas até aquele dia casam com a
-      venda do dia — 🎯 bate certinho (±_QTD_MATCH_TOLERANCIA) ou 📦 cobre
-      (venda >= falta). Ver _diagnostico_possivel_faturamento.
+      em que TODAS as faltas abertas dele lançadas até aquele dia foram
+      vendidas (venda do dia >= falta). Selo: 🎯 até 150% da falta, 📦 acima.
+      Ver _diagnostico_possivel_faturamento.
       Nomes de status ("Faltando", "Sobrando", etc.) são ignorados.
     """
     try:
@@ -8843,15 +8843,15 @@ def _grupos_codigos_irmaos(conn, nomes) -> dict:
 
 
 def _nivel_venda_no_dia(falta: int, vendido: int):
-    """Nível de uma falta (positivo) contra a venda de UM dia: "bate" (±tolerância),
-    "cobre" (venda >= falta) ou None."""
-    if vendido <= 0:
+    """Uma falta (positiva) contra a venda de UM dia. Só casa com venda >= falta
+    (o cooperado paga tudo de uma vez: vender menos não fecha a falta). Selo só
+    informativo: "bate" até (1 + _QTD_MATCH_TOLERANCIA) × falta, "cobre" acima.
+    None = não casa."""
+    if vendido < falta or vendido <= 0:
         return None
-    if abs(vendido - falta) / falta <= _QTD_MATCH_TOLERANCIA:
+    if vendido - falta <= _QTD_MATCH_TOLERANCIA * falta:
         return "bate"
-    if vendido >= falta:
-        return "cobre"
-    return None
+    return "cobre"
 
 
 def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
@@ -8862,13 +8862,13 @@ def _diagnostico_possivel_faturamento(conn, hoje: date = None) -> dict:
     divergência mais antiga do cooperado (janela de _POSSIVEL_FAT_MAX_DIAS_DIV
     dias), entram TODAS as faltas dele lançadas até D (o próprio dia conta),
     somadas por produto — códigos irmãos são o mesmo produto
-    (_grupos_codigos_irmaos). Cada falta é comparada com a venda daquele dia
-    sozinho: "bate" (venda ≈ falta, ±_QTD_MATCH_TOLERANCIA) ou "cobre"
-    (venda >= falta); sem venda no dia = não casa. Sobra nunca entra.
+    (_grupos_codigos_irmaos). Cada falta casa só se a venda daquele dia sozinho
+    for >= falta; venda menor ou sem venda no dia = não casa. Selo informativo:
+    "bate" até (1 + _QTD_MATCH_TOLERANCIA) × falta, "cobre" acima. Sobra nunca entra.
     O dia qualifica com >= _POSSIVEL_FAT_MIN_ELEGIVEIS faltas e TODAS casando.
     Vale o dia com mais faltas casando; no empate, o mais antigo. Sem dia que
     qualifique, o diagnóstico mostra o melhor dia e quais faltas impediram.
-    Nível do cooperado: "bate_certinho" se todas batem, senão "vendas_cobrem".
+    Nível do cooperado: "bate_certinho" se todas têm selo 🎯, senão "vendas_cobrem".
     """
     out = {"data_ref_vend": None, "n_vend": 0, "n_div_window": 0, "cooperados": []}
     vend_ref_row = conn.execute("SELECT MAX(data_upload) FROM vendas_historico").fetchone()
@@ -12454,8 +12454,8 @@ new Chart(document.getElementById('coop-chart'),{
             _cobre = [a for a in _al_poss if a.get("nivel") == "vendas_cobrem"]
             if _bate:
                 st.markdown(
-                    f"**🎯 Bate certinho** — num mesmo dia, cada falta vendeu ≈ a falta "
-                    f"(±{_QTD_MATCH_TOLERANCIA:.0%})"
+                    f"**🎯 Bate certinho** — num mesmo dia, cada falta vendeu de 100% a "
+                    f"{1 + _QTD_MATCH_TOLERANCIA:.0%} da falta"
                 )
                 st.markdown(
                     '<div style="margin-bottom:8px;">' + "".join(
@@ -12467,8 +12467,8 @@ new Chart(document.getElementById('coop-chart'),{
                 )
             if _cobre:
                 st.markdown(
-                    "**📦 Vendas cobrem a falta** — num mesmo dia todas as faltas casam, "
-                    "alguma com venda maior que a falta (sinal mais fraco: confira)"
+                    f"**📦 Vendas cobrem a falta** — num mesmo dia todas as faltas vendidas, "
+                    f"alguma acima de {1 + _QTD_MATCH_TOLERANCIA:.0%} da falta (sinal mais fraco: confira)"
                 )
                 st.markdown(
                     '<div style="margin-bottom:8px;">' + "".join(
@@ -12494,9 +12494,9 @@ new Chart(document.getElementById('coop-chart'),{
             )
             st.caption(
                 f"Regra: o cooperado paga tudo de uma vez. Dispara se existir um dia de venda em que "
-                f"TODAS as faltas abertas dele lançadas até aquele dia casam com a venda do dia — "
-                f"🎯 bate certinho (±{_QTD_MATCH_TOLERANCIA:.0%} da falta) ou 📦 cobre (venda ≥ falta). "
-                f"Falta sem venda no dia derruba o dia. Mínimo de {_POSSIVEL_FAT_MIN_ELEGIVEIS} faltas; "
+                f"TODAS as faltas abertas dele lançadas até aquele dia foram vendidas no dia (venda ≥ falta). "
+                f"Selo: 🎯 venda até {1 + _QTD_MATCH_TOLERANCIA:.0%} da falta, 📦 acima disso. "
+                f"Venda menor que a falta ou sem venda no dia derruba o dia. Mínimo de {_POSSIVEL_FAT_MIN_ELEGIVEIS} faltas; "
                 f"códigos irmãos contam como o mesmo produto; sobras não entram. "
                 f"Mais de um dia: o com mais faltas casando (empate: o mais antigo)."
             )
