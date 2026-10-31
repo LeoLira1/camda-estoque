@@ -105,6 +105,21 @@ def _hx(v) -> str:
     return _esc_html.escape(str(v), quote=True)
 
 
+def _avisar_erro_banco(onde: str, e: Exception) -> None:
+    """Mostra na tela (sem derrubar a página) que uma leitura do banco falhou.
+
+    Antes, esses erros caíam num ``except`` que devolvia lista vazia: a aba
+    mostrava "nada encontrado" e ninguém sabia que a consulta tinha quebrado
+    (foi assim com a coluna ``motivo`` de lancamentos_manuais). Também vai para o
+    log. Fora de uma execução do Streamlit (thread, teste) o st.warning é ignorado.
+    """
+    logging.getLogger("camda").warning("erro de banco em %s: %s", onde, e)
+    try:
+        st.warning(f"⚠️ Não consegui ler **{onde}** do banco — a lista abaixo pode estar incompleta. Erro: `{e}`")
+    except Exception:
+        pass
+
+
 # ── Weather Widget ───────────────────────────────────────────────────────────
 def _weather_desc_from_code(code):
     if code == 0:              return "☀️", "Céu limpo"
@@ -2449,7 +2464,8 @@ def listar_lancamentos(limit: int = 200) -> pd.DataFrame:
         ).fetchall()
         cols = ["id", "codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"]
         return pd.DataFrame(rows, columns=cols) if rows else pd.DataFrame(columns=cols)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('lançamentos manuais', _e_db)
         return pd.DataFrame(columns=["id", "codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"])
 
 
@@ -2495,7 +2511,8 @@ def listar_pendencias_meta() -> list:
         return get_db().execute(
             "SELECT id, data_registro FROM pendencias_entrega ORDER BY data_registro DESC"
         ).fetchall()
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('pendências de entrega', _e_db)
         return []
 
 
@@ -2506,7 +2523,8 @@ def listar_pendencias() -> list:
             "SELECT id, foto_base64, data_registro, observacao FROM pendencias_entrega ORDER BY data_registro DESC"
         ).fetchall()
         return rows
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('pendências de entrega', _e_db)
         return []
 
 
@@ -2570,7 +2588,8 @@ def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
             sql += " AND status = 'pendente'"
         sql += " ORDER BY detectado_em DESC LIMIT 1000"
         saidas = conn.execute(sql).fetchall()
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('saídas sem venda', _e_db)
         return []
     if not saidas:
         return []
@@ -2583,7 +2602,8 @@ def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
                 "SELECT DISTINCT substr(data, 1, 10) FROM historico_uploads"
             ).fetchall()
         }
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('datas de upload (saídas sem venda)', _e_db)
         datas_uploads = set()
     inicio_janela: dict = {}
     for dia in dias:
@@ -2606,7 +2626,8 @@ def checar_saidas_sem_venda(apenas_pendentes: bool = True) -> list:
             por_dia = vendas.setdefault(_codigo_key(cod_v), {})
             dv = str(dia_v)[:10]
             por_dia[dv] = por_dia.get(dv, 0) + int(qtd_v or 0)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('saídas sem venda', _e_db)
         return []
 
     grupos: dict = {}
@@ -3161,7 +3182,8 @@ def get_mural_recados(tag: str | None = None) -> list:
                 " ORDER BY criado_em DESC"
             ).fetchall()
         return rows
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('recados do Mural', _e_db)
         return []
 
 
@@ -3183,7 +3205,8 @@ def listar_avarias(apenas_abertas: bool = False) -> pd.DataFrame:
         query += " ORDER BY registrado_em DESC"
         rows = get_db().execute(query).fetchall()
         return pd.DataFrame(rows, columns=cols)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('avarias', _e_db)
         return pd.DataFrame(columns=cols)
 
 
@@ -3285,7 +3308,8 @@ def listar_unidades_avaria(avaria_id: int) -> list[dict]:
             (avaria_id,)
         ).fetchall()
         return [{"id": r[0], "avaria_id": r[1], "uid": r[2], "nivel": float(r[3])} for r in rows]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('unidades de avaria', _e_db)
         return []
 
 
@@ -3374,7 +3398,8 @@ def listar_fotos_avaria(avaria_id: int) -> list[dict]:
         ).fetchall()
         return [{"id": r[0], "avaria_id": r[1], "foto_base64": r[2], "registrado_em": r[3]}
                 for r in rows]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('fotos de avaria', _e_db)
         return []
 
 
@@ -3663,7 +3688,8 @@ def get_historico_uploads() -> pd.DataFrame:
             "FROM historico_uploads ORDER BY id DESC LIMIT 20"
         ).fetchall()
         return pd.DataFrame(rows, columns=cols)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('histórico de uploads', _e_db)
         return pd.DataFrame(columns=cols)
 
 
@@ -3849,7 +3875,8 @@ def get_principios_ativos() -> pd.DataFrame:
     try:
         rows = get_db().execute("SELECT produto, principio_ativo, categoria FROM principios_ativos").fetchall()
         return pd.DataFrame(rows, columns=_PA_COLS)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('princípios ativos', _e_db)
         return pd.DataFrame(columns=_PA_COLS)
 
 
@@ -3872,7 +3899,8 @@ def get_fabricantes_produtos() -> pd.DataFrame:
             "SELECT id, fabricante, produto FROM fabricantes_produtos ORDER BY fabricante, produto"
         ).fetchall()
         return pd.DataFrame(rows, columns=["id", "fabricante", "produto"])
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('fabricantes', _e_db)
         return pd.DataFrame(columns=["id", "fabricante", "produto"])
 
 
@@ -3929,7 +3957,8 @@ def get_estocados_ativos() -> pd.DataFrame:
             ORDER BY produto
         """).fetchall()
         return pd.DataFrame(rows, columns=cols)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('estocados de cooperados', _e_db)
         return pd.DataFrame(columns=cols)
 
 
@@ -4138,7 +4167,8 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
         ).fetchone()
         if _row_ref:
             data_ref_anterior = _row_ref[0] or ""
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('saldos anteriores de materiais de terceiros', _e_db)
         saldos_anteriores = {}
 
     # Calcula docs novos por cliente a partir dos registros que serão inseridos
@@ -4252,7 +4282,8 @@ def get_materiais_separacao() -> dict:
             "SELECT razao_social, separado_em FROM materiais_separacao WHERE separado = 1"
         ).fetchall()
         return {r[0]: r[1] for r in rows}
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('materiais em separação', _e_db)
         return {}
 
 
@@ -4265,7 +4296,8 @@ def get_materiais_separacao_itens() -> set:
             " WHERE separado = 1"
         ).fetchall()
         return {(r[0], r[1]) for r in rows}
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('itens em separação', _e_db)
         return set()
 
 
@@ -4432,7 +4464,8 @@ def get_materiais_terceiros(
             params,
         ).fetchall()
         return pd.DataFrame(rows, columns=cols)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('materiais de terceiros', _e_db)
         return pd.DataFrame(columns=cols)
 
 
@@ -4446,7 +4479,8 @@ def get_materiais_cooperados() -> list:
             " ORDER BY razao_social"
         ).fetchall()
         return [r[0] for r in rows]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('cooperados (materiais de terceiros)', _e_db)
         return []
 
 
@@ -4460,7 +4494,8 @@ def get_materiais_grupos() -> list:
             " ORDER BY 1"
         ).fetchall()
         return [r[0] for r in rows]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('grupos (materiais de terceiros)', _e_db)
         return []
 
 
@@ -4474,7 +4509,8 @@ def get_materiais_descricoes() -> list:
             " ORDER BY descricao"
         ).fetchall()
         return [r[0] for r in rows]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('descrições (materiais de terceiros)', _e_db)
         return []
 
 
@@ -4490,7 +4526,8 @@ def get_materiais_descricoes_por_cooperado(cooperado: str) -> list:
             (cooperado,)
         ).fetchall()
         return [r[0] for r in rows]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('descrições por cooperado', _e_db)
         return []
 
 
@@ -4633,7 +4670,8 @@ def get_retiradas_terceiros(
             params,
         ).fetchall()
         return pd.DataFrame(rows, columns=cols)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('retiradas de terceiros', _e_db)
         return pd.DataFrame(columns=cols)
 
 
@@ -4665,7 +4703,8 @@ def get_retiradas_mes(
             params,
         ).fetchall()
         return pd.DataFrame(rows, columns=cols)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('retiradas do mês', _e_db)
         return pd.DataFrame(columns=cols)
 
 
@@ -4679,7 +4718,8 @@ def get_retiradas_datas() -> list:
             " ORDER BY data_movimento DESC"
         ).fetchall()
         return [r[0] for r in rows]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('datas de retirada', _e_db)
         return []
 
 
@@ -4709,7 +4749,8 @@ def get_retiradas_recentes(horas: int = 24) -> list:
             }
             for r in rows
         ]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('retiradas recentes', _e_db)
         return []
 
 
@@ -4803,12 +4844,27 @@ _PA_PALETTE = [
 ]
 
 
+# Sementes vêm como "SEM SOJA NEO790 IPRO TSI FTZ DUO BAG 5ML": o "5ML" é a dose
+# do tratamento de semente (TSI), não o tamanho da embalagem — a embalagem é o
+# bag. Nome começando com "SEM " ou com a palavra BAG = semente. A mesma regra
+# está no MCP (camda-mcp, `ehSemente` em src/pa.ts) — mude os dois juntos.
+_RE_SEMENTE = re.compile(r'^\s*SEM\s|\bBAGS?\b')
+
+
+def eh_semente(nome_produto: str) -> bool:
+    """True para semente (nome começa com "SEM " ou contém BAG)."""
+    return bool(_RE_SEMENTE.search(str(nome_produto or "").upper()))
+
+
 def extrair_litros(nome_produto: str):
     """Extrai o volume em litros a partir do nome do produto.
 
     Suporta padrões como: 5L, 20L, 200L, 1L, 500ML, 250ML, 1,5L, etc.
     Retorna float com o volume em litros, ou None se não encontrado.
+    Semente (embalagem = bag) devolve None: o "5ML" do nome é do tratamento.
     """
+    if eh_semente(nome_produto):
+        return None
     nome = str(nome_produto).upper()
     ml = re.search(r'(\d+(?:[.,]\d+)?)\s*ML\b', nome)
     if ml:
@@ -4824,7 +4880,10 @@ def extrair_kg(nome_produto: str):
 
     Suporta padrões como: 5KG, 20KG, 500G, 1,5KG, etc.
     Retorna float com o peso em kg, ou None se não encontrado.
+    Semente (embalagem = bag) devolve None.
     """
+    if eh_semente(nome_produto):
+        return None
     nome = str(nome_produto).upper()
     kg_m = re.search(r'(\d+(?:[.,]\d+)?)\s*KG\b', nome)
     if kg_m:
@@ -5990,7 +6049,8 @@ def get_divergencias() -> pd.DataFrame:
             ORDER BY d.criado_em DESC
         """).fetchall()
         return pd.DataFrame(rows, columns=["id", "codigo", "produto", "categoria", "delta", "status", "cooperado", "criado_em", "qtd_sistema"])
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('divergências', _e_db)
         return pd.DataFrame(columns=["id", "codigo", "produto", "categoria", "delta", "status", "cooperado", "criado_em", "qtd_sistema"])
 
 
@@ -6004,7 +6064,8 @@ def get_historico_divergencias() -> pd.DataFrame:
             "FROM historico_divergencias ORDER BY criado_em DESC"
         ).fetchall()
         return pd.DataFrame(rows, columns=["id", "codigo", "produto", "categoria", "cooperado", "delta", "status", "criado_em"])
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('histórico de divergências', _e_db)
         return pd.DataFrame(columns=["id", "codigo", "produto", "categoria", "cooperado", "delta", "status", "criado_em"])
 
 
@@ -6092,6 +6153,8 @@ _SHORT_PREFIXES = [
 
 def classify_product(name: str) -> str:
     n = name.upper()
+    if eh_semente(n):
+        return "SEMENTES"
     for cat, keywords in _CLASSIFY_RULES:
         for kw in keywords:
             if kw in n:
@@ -6701,7 +6764,8 @@ def detectar_ausentes_na_planilha(records: list, conn) -> list:
             "SELECT codigo, produto, categoria, qtd_sistema FROM estoque_mestre "
             "WHERE qtd_sistema > 0"
         ).fetchall()
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('produtos ausentes na planilha', _e_db)
         return []
     ausentes = [
         {
@@ -7255,7 +7319,8 @@ def get_variacoes(apenas_pendentes: bool = False) -> pd.DataFrame:
         query += " ORDER BY detectado_em DESC LIMIT 200"
         rows = get_db().execute(query).fetchall()
         return pd.DataFrame(rows, columns=cols)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('variações de estoque', _e_db)
         return pd.DataFrame(columns=cols)
 
 
@@ -7361,7 +7426,8 @@ def get_validade_lotes() -> pd.DataFrame:
         df["QUANTIDADE"] = pd.to_numeric(df["QUANTIDADE"], errors="coerce").fillna(0).astype(int)
         df["VALOR"] = pd.to_numeric(df["VALOR"], errors="coerce").fillna(0.0)
         return df
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('lotes de validade', _e_db)
         return pd.DataFrame()
 
 
@@ -7375,6 +7441,91 @@ def get_validade_upload_date() -> str:
         return row[0] if row else ""
     except Exception:
         return ""
+
+
+# Validade menos de N dias depois da fabricação = lote suspeito (mesma regra do
+# MCP, `motivosLoteSuspeito` em camda-mcp/src/abas.ts — mude os dois juntos).
+_VALIDADE_MIN_DIAS = 60
+_RE_COD_VALIDADE = re.compile(r"^\s*([A-Z0-9\-]{3,20})\s*[-–]\s*.+$", re.IGNORECASE)
+
+
+def motivos_lote_suspeito(lote, fabricacao, vencimento) -> list:
+    """Por que conferir o lote no carimbo: lote "AUTO…" (gerado pelo sistema)
+    ou validade menos de 60 dias depois da fabricação (ou antes dela)."""
+    out = []
+    if str(lote or "").strip().upper().startswith("AUTO"):
+        out.append("lote AUTO (gerado pelo sistema)")
+    fab, ven = pd.to_datetime(fabricacao, errors="coerce"), pd.to_datetime(vencimento, errors="coerce")
+    if pd.notna(fab) and pd.notna(ven):
+        d = (ven.normalize() - fab.normalize()).days
+        if d <= 0:
+            out.append("validade igual ou antes da fabricação")
+        elif d < _VALIDADE_MIN_DIAS:
+            out.append(f"validade só {d} dias depois da fabricação")
+    return out
+
+
+@st.cache_data(ttl=60)
+def get_alertas_validade() -> dict:
+    """Divergências abertas (com cooperado) e recados ativos do Mural por grupo
+    de códigos irmãos, para marcar ao lado de cada lote na aba 📅 Validade.
+    Recado conta quando o texto cita um código do produto (4+ dígitos).
+    Mesma regra do MCP (ver_validade)."""
+    conn = get_db()
+    vazio = {"grupo": {}, "nome_grupos": {}, "div": {}, "div_nome": {}, "rec": {}}
+    try:
+        nomes = conn.execute("SELECT codigo, produto FROM estoque_mestre").fetchall()
+        divs = conn.execute("""
+            SELECT d.codigo, d.produto, d.delta, d.status,
+                   COALESCE(NULLIF(TRIM(d.cooperado), ''), NULLIF(TRIM(e.nota), ''), NULLIF(TRIM(e.observacoes), ''), '')
+            FROM divergencias d LEFT JOIN estoque_mestre e ON d.codigo = e.codigo
+        """).fetchall()
+        recs = conn.execute(
+            "SELECT id, texto FROM mural_recados WHERE COALESCE(arquivado, 0) = 0"
+        ).fetchall()
+    except Exception as _e_db:
+        _avisar_erro_banco("divergências e recados (marcas da Validade)", _e_db)
+        return vazio
+    grupo = _grupos_codigos_irmaos(conn, [(c, p) for c, p in nomes] + [(r[0], r[1]) for r in divs])
+    gid = lambda c: grupo.get(_codigo_key(c), f"cod:{_codigo_key(c)}")
+    nome_grupos: dict = {}
+    for c, p in nomes:
+        nome_grupos.setdefault(_nome_validade_key(p), set()).add(gid(c))
+    div: dict = {}
+    div_nome: dict = {}
+    for cod, prod, delta, status, coop in divs:
+        delta = int(delta or 0)
+        tipo = str(status or "") or ("falta" if delta < 0 else "sobra")
+        txt = f"{tipo} de {abs(delta)}" + (f" — {coop}" if coop else "")
+        for m in (div.setdefault(gid(cod), []), div_nome.setdefault(_nome_validade_key(prod), [])):
+            if txt not in m:
+                m.append(txt)
+    rec: dict = {}
+    for rid, texto in recs:
+        texto = str(texto or "")
+        curto = texto if len(texto) <= 120 else texto[:117] + "..."
+        for tok in set(re.findall(r"\b\d{4,}\b", texto)):
+            lst = rec.setdefault(gid(tok), [])
+            if (rid, curto) not in lst:
+                lst.append((rid, curto))
+    return {"grupo": grupo, "nome_grupos": nome_grupos, "div": div, "div_nome": div_nome, "rec": rec}
+
+
+def alertas_do_lote(alertas: dict, produto_validade: str) -> tuple:
+    """(divergências, recados) do produto de um lote de validade_lotes
+    ("100235440 - NOME" ou só "NOME")."""
+    nk = _nome_validade_key(produto_validade)
+    gids = set(alertas["nome_grupos"].get(nk, set()))
+    m = _RE_COD_VALIDADE.match(str(produto_validade or ""))
+    if m:
+        ck = _codigo_key(m.group(1))
+        gids.add(alertas["grupo"].get(ck, f"cod:{ck}"))
+    divs = list(alertas["div_nome"].get(nk, []))
+    recs = []
+    for g in gids:
+        divs += [d for d in alertas["div"].get(g, []) if d not in divs]
+        recs += [r for r in alertas["rec"].get(g, []) if r not in recs]
+    return divs, recs
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -8629,8 +8780,8 @@ def get_faturamento_gv(data_ref: str = None) -> pd.DataFrame:
         ).fetchall()
         if rows:
             return pd.DataFrame(rows, columns=cols)
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('faturamento GV', _e_db)
     return pd.DataFrame(columns=cols)
 
 
@@ -8823,7 +8974,8 @@ def checar_reconciliacao_gv() -> list:
                 }
 
         return list(alertas.values())
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('reconciliação GV', _e_db)
         return []
 
 
@@ -9115,7 +9267,8 @@ def get_resumo_reconciliacao_gv() -> pd.DataFrame:
                 "Status": status,
             })
         return pd.DataFrame(records)
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('reconciliação GV', _e_db)
         return pd.DataFrame()
 
 
@@ -9165,8 +9318,8 @@ def get_vendas_historico() -> pd.DataFrame:
         """).fetchall()
         if rows:
             return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "qtd_vendida", "qtd_estoque", "data_upload"])
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('histórico de vendas', _e_db)
     return pd.DataFrame()
 
 
@@ -9202,8 +9355,8 @@ def get_ultima_venda_por_produto() -> pd.DataFrame:
         """).fetchall()
         if rows:
             return pd.DataFrame(rows, columns=["codigo", "produto", "grupo", "ultima_data", "qtd_ultimo_dia", "qtd_total"])
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('última venda por produto', _e_db)
     return pd.DataFrame()
 
 
@@ -9230,8 +9383,8 @@ def get_vendas_dias_por_produto(codigo: str) -> pd.DataFrame:
         """, (str(codigo),)).fetchall()
         if rows:
             return pd.DataFrame(rows, columns=["dia", "qtd"])
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('dias de venda por produto', _e_db)
     return pd.DataFrame()
 
 
@@ -9288,8 +9441,8 @@ def get_vendas_por_dia() -> pd.DataFrame:
             )
             df_dia["dia"] = pd.to_datetime(df_dia["dia"]).dt.date
             return df_dia
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('vendas por dia', _e_db)
     return pd.DataFrame()
 
 
@@ -9330,8 +9483,8 @@ def get_top_produtos_historico(top_n: int = 15) -> pd.DataFrame:
                 .sort_values("total", ascending=False)
                 .reset_index(drop=True)
             )
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('mais vendidos', _e_db)
     return pd.DataFrame()
 
 
@@ -9362,7 +9515,8 @@ def get_grupos_vendas() -> list:
             "SELECT DISTINCT grupo FROM vendas_historico ORDER BY grupo"
         ).fetchall()
         return [r[0] for r in rows if r[0]]
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('grupos de vendas', _e_db)
         return []
 
 
@@ -9386,8 +9540,8 @@ def get_vendas_heatmap(data_inicio: str, data_fim: str) -> pd.DataFrame:
             top20_codigos = df.groupby("codigo")["qtd_vendida"].sum().nlargest(20).index
             df = df[df["codigo"].isin(top20_codigos)]
             return df.groupby(["produto", "dia_semana"], as_index=False)["qtd_vendida"].sum()
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('mapa de calor de vendas', _e_db)
     return pd.DataFrame()
 
 
@@ -9419,8 +9573,8 @@ def get_mais_menos_movimentados(data_inicio: str, data_fim: str, grupo: str = "T
             df = _normalizar_qtd_filme(df)
             df = df[df["total_vendido"] > 0].sort_values("total_vendido", ascending=False)
             return df.reset_index(drop=True)
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('mais e menos movimentados', _e_db)
     return pd.DataFrame()
 
 
@@ -9459,7 +9613,8 @@ def get_produtos_sem_principio_ativo() -> list:
                 sem_pa.append((produto, categoria, criado_em))
 
         return sem_pa
-    except Exception:
+    except Exception as _e_db:
+        _avisar_erro_banco('produtos sem princípio ativo', _e_db)
         return []
 
 
@@ -9491,7 +9646,8 @@ def get_produtos_parados(dias_min: int) -> pd.DataFrame:
                 "SELECT produto, SUM(valor) FROM validade_lotes GROUP BY produto"
             ).fetchall()
             vl_map = {r[0].strip().upper(): float(r[1] or 0) for r in vl_rows if r[0]}
-        except Exception:
+        except Exception as _e_db:
+            _avisar_erro_banco('produtos parados', _e_db)
             vl_map = {}
 
         df["valor_imobilizado"] = df["produto"].apply(lambda p: vl_map.get(str(p).strip().upper(), 0.0))
@@ -9517,8 +9673,8 @@ def get_produtos_parados(dias_min: int) -> pd.DataFrame:
 
         df["ultima_venda_fmt"] = df["ultima_venda"].apply(_fmt_data)
         return df.sort_values("valor_imobilizado", ascending=False).reset_index(drop=True)
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('produtos parados', _e_db)
     return pd.DataFrame()
 
 
@@ -9771,7 +9927,8 @@ def get_esquecidos_com_validade(dias_min: int) -> pd.DataFrame:
             vl_rows = get_db().execute(
                 "SELECT produto, lote, vencimento, quantidade FROM validade_lotes"
             ).fetchall()
-        except Exception:
+        except Exception as _e_db:
+            _avisar_erro_banco('lotes de validade (produtos esquecidos)', _e_db)
             vl_rows = []
 
         if vl_rows:
@@ -9818,8 +9975,8 @@ def get_esquecidos_com_validade(dias_min: int) -> pd.DataFrame:
 
         df["ultima_venda_fmt"] = df["ultima_venda"].apply(_fmt_data)
         return df.sort_values("dias_parado", ascending=False).reset_index(drop=True)
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('esquecidos com validade', _e_db)
     return pd.DataFrame()
 
 
@@ -9849,7 +10006,8 @@ def get_giro_ruptura_grupos(data_inicio: str, data_fim: str) -> pd.DataFrame:
                 "SELECT grupo, SUM(valor) FROM validade_lotes GROUP BY grupo"
             ).fetchall()
             valor_map = {r[0]: float(r[1] or 0) for r in valor_rows if r[0]}
-        except Exception:
+        except Exception as _e_db:
+            _avisar_erro_banco('giro e ruptura por grupo', _e_db)
             valor_map = {}
 
         if rows:
@@ -9868,8 +10026,8 @@ def get_giro_ruptura_grupos(data_inicio: str, data_fim: str) -> pd.DataFrame:
                     "valor_estoque": valor,
                 })
             return pd.DataFrame(records)
-    except Exception:
-        pass
+    except Exception as _e_db:
+        _avisar_erro_banco('giro e ruptura por grupo', _e_db)
     return pd.DataFrame()
 
 
@@ -11553,7 +11711,8 @@ if has_mestre:
                 "WHERE qtd_sistema > 0 AND qtd_sistema <= 10 ORDER BY qtd_sistema ASC LIMIT 100"
             ).fetchall()
             _df_crit_i = pd.DataFrame(_crit_rows_i, columns=["codigo", "produto", "categoria", "qtd"])
-        except Exception:
+        except Exception as _e_db:
+            _avisar_erro_banco('estoque crítico', _e_db)
             _df_crit_i = pd.DataFrame()
 
         _df_esq_i = get_esquecidos_com_validade(dias_min=90)
@@ -14012,6 +14171,10 @@ new Chart(document.getElementById('coop-chart'),{
         .val-prod{font-weight:600;font-size:0.85rem;color:var(--c-text);}
         .val-meta{font-size:0.68rem;color:var(--c-muted);margin-top:2px;}
         .val-lote{font-family:'IBM Plex Mono',monospace;font-size:0.72rem;color:var(--c-muted);}
+        .val-flag{font-size:0.7rem;margin-top:4px;line-height:1.35;}
+        .val-flag.susp{color:var(--c-warn-ink);}
+        .val-flag.div{color:var(--c-crit);}
+        .val-flag.mural{color:var(--c-text-2);}
         </style>
         """, unsafe_allow_html=True)
 
@@ -14136,6 +14299,25 @@ new Chart(document.getElementById('coop-chart'),{
                 df_show = df_show[df_show["STATUS"] != "OK"]
             df_show = df_show.sort_values("DIAS")
 
+            # ── Marcas por lote: ⚠️ suspeito, divergência aberta, recado do Mural ──
+            _alertas_val = get_alertas_validade()
+            _marcas = [
+                (motivos_lote_suspeito(r["LOTE"], r["FABRICACAO"], r["VENCIMENTO"]),
+                 *alertas_do_lote(_alertas_val, r["PRODUTO"]))
+                for _, r in df_show.iterrows()
+            ]
+            df_show["CONFERIR"] = ["; ".join(m[0]) for m in _marcas]
+            df_show["DIVERGENCIA"] = ["; ".join(m[1]) for m in _marcas]
+            df_show["MURAL"] = ["; ".join(f"#{i}: {t}" for i, t in m[2]) for m in _marcas]
+            _n_susp = sum(1 for m in _marcas if m[0])
+            _n_div = sum(1 for m in _marcas if m[1])
+            _n_mur = sum(1 for m in _marcas if m[2])
+            if _n_susp or _n_div or _n_mur:
+                st.caption(
+                    f"⚠️ {_n_susp} lote(s) para conferir no carimbo · "
+                    f"🔴 {_n_div} com divergência aberta · 📌 {_n_mur} com recado no Mural"
+                )
+
             # ── Lista de lotes ─────────────────────────────────────────────────
             badge_map = {
                 "VENCIDO":   '<span class="val-badge val-vencido">🔴 VENCIDO</span>',
@@ -14156,27 +14338,36 @@ new Chart(document.getElementById('coop-chart'),{
                 qtd       = int(row["QUANTIDADE"])
                 valor     = float(row["VALOR"])
                 badge_html = badge_map.get(row["STATUS"], row["STATUS"])
+                _flags = ""
+                if row["CONFERIR"]:
+                    _flags += f'<div class="val-flag susp">⚠️ Conferir no carimbo: {_hx(row["CONFERIR"])}</div>'
+                if row["DIVERGENCIA"]:
+                    _flags += f'<div class="val-flag div">🔴 Divergência aberta: {_hx(row["DIVERGENCIA"])}</div>'
+                if row["MURAL"]:
+                    _flags += f'<div class="val-flag mural">📌 Mural: {_hx(row["MURAL"])}</div>'
+                _susp_ico = "⚠️ " if row["CONFERIR"] else ""
 
                 st.markdown(f"""
                 <div class="val-row">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px;">
-                        <span class="val-prod">{prod_nome}</span>
+                        <span class="val-prod">{_susp_ico}{_hx(prod_nome)}</span>
                         {badge_html}
                     </div>
                     <div class="val-meta">
-                        <span class="val-lote">Lote: {lote}</span>
+                        <span class="val-lote">Lote: {_hx(lote)}</span>
                         &nbsp;·&nbsp; Grupo: {grp_nome}
                         &nbsp;·&nbsp; Vencimento: {venc_str}
                         &nbsp;·&nbsp; {dias_str}
                         &nbsp;·&nbsp; Qtd: {qtd} un
                         &nbsp;·&nbsp; Valor: R$ {valor:,.2f}
-                    </div>
+                    </div>{_flags}
                 </div>
                 """, unsafe_allow_html=True)
 
             # ── Download CSV ───────────────────────────────────────────────────
             st.markdown("---")
-            csv_val = df_show[["GRUPO","PRODUTO","LOTE","FABRICACAO","VENCIMENTO","QUANTIDADE","VALOR","STATUS","DIAS"]].copy()
+            csv_val = df_show[["GRUPO","PRODUTO","LOTE","FABRICACAO","VENCIMENTO","QUANTIDADE","VALOR","STATUS","DIAS",
+                               "CONFERIR","DIVERGENCIA","MURAL"]].copy()
             csv_val["FABRICACAO"] = csv_val["FABRICACAO"].dt.strftime("%d/%m/%Y")
             csv_val["VENCIMENTO"] = csv_val["VENCIMENTO"].dt.strftime("%d/%m/%Y")
             csv_bytes = csv_val.to_csv(index=False).encode("utf-8-sig")
@@ -15393,7 +15584,8 @@ new Chart(document.getElementById('coop-chart'),{
                 _rows_var,
                 columns=["codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"],
             )
-        except Exception:
+        except Exception as _e_db:
+            _avisar_erro_banco('entradas e saídas (Movimentações)', _e_db)
             _df_var = pd.DataFrame(columns=["codigo", "produto", "qtd_anterior", "qtd_atual", "delta", "detectado_em", "status"])
 
         # ── Carregar lancamentos_manuais ─────────────────────────────────────
@@ -15410,7 +15602,8 @@ new Chart(document.getElementById('coop-chart'),{
                 _rows_lanc,
                 columns=["codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"],
             )
-        except Exception:
+        except Exception as _e_db:
+            _avisar_erro_banco('lançamentos manuais (Movimentações)', _e_db)
             _df_lanc = pd.DataFrame(columns=["codigo", "produto", "categoria", "tipo", "quantidade", "motivo", "registrado_em"])
 
         # ── Filtro de busca ──────────────────────────────────────────────────
@@ -15679,7 +15872,8 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                 if ok and is_parcial_estoque:
                     try:
                         _ausentes = detectar_ausentes_na_planilha(result, get_db())
-                    except Exception:
+                    except Exception as _e_db:
+                        _avisar_erro_banco('produtos ausentes na planilha', _e_db)
                         _ausentes = []
                 st.session_state["_parsed_ok"] = ok
                 st.session_state["_parsed_result"] = result
