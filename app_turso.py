@@ -2281,6 +2281,25 @@ def _get_connection():
     except Exception:
         pass
 
+    # lancamentos_manuais no Turso foi criada sem "motivo" (o CREATE TABLE IF NOT
+    # EXISTS não altera tabela que já existe), e o SELECT da aba 📥📤
+    # Movimentações quebrava. Só adiciona a coluna — não apaga nada. Se houver
+    # uma coluna com nome antigo, copia o texto dela para não perder o motivo.
+    try:
+        lanc_cols = {row[1] for row in conn.execute("PRAGMA table_info(lancamentos_manuais)").fetchall()}
+        if lanc_cols and "motivo" not in lanc_cols:
+            conn.execute("ALTER TABLE lancamentos_manuais ADD COLUMN motivo TEXT DEFAULT ''")
+            for _antiga in ("observacao", "observacoes", "obs", "descricao"):
+                if _antiga in lanc_cols:
+                    conn.execute(
+                        f"UPDATE lancamentos_manuais SET motivo = COALESCE({_antiga}, '') "
+                        "WHERE COALESCE(motivo, '') = ''"
+                    )
+                    break
+        conn.commit()
+    except Exception:
+        pass
+
     try:
         est_cols = {row[1] for row in conn.execute("PRAGMA table_info(estoque_mestre)").fetchall()}
         if "observacoes" not in est_cols:
