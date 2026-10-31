@@ -4848,12 +4848,22 @@ _PA_PALETTE = [
 # do tratamento de semente (TSI), não o tamanho da embalagem — a embalagem é o
 # bag. Nome começando com "SEM " ou com a palavra BAG = semente. A mesma regra
 # está no MCP (camda-mcp, `ehSemente` em src/pa.ts) — mude os dois juntos.
-_RE_SEMENTE = re.compile(r'^\s*SEM\s|\bBAGS?\b')
+# BAG sozinho não basta: adubo também vem em bag ("ADUBO Q.FORMULA 04-30-10
+# BAG"). Por isso BAG só vale quando o nome não é de outra categoria conhecida
+# (_CLASSIFY_RULES: adubo, defensivo, óleo, adjuvante, medicamento).
+_RE_SEMENTE_PREFIXO = re.compile(r'^\s*SEM\s')
+_RE_BAG = re.compile(r'\bBAGS?\b')
 
 
 def eh_semente(nome_produto: str) -> bool:
-    """True para semente (nome começa com "SEM " ou contém BAG)."""
-    return bool(_RE_SEMENTE.search(str(nome_produto or "").upper()))
+    """True para semente: nome começa com "SEM ", ou tem BAG e não é de outra
+    categoria conhecida pelo nome."""
+    n = str(nome_produto or "").upper()
+    if _RE_SEMENTE_PREFIXO.search(n):
+        return True
+    if not _RE_BAG.search(n):
+        return False
+    return not any(kw in n for cat, kws in _CLASSIFY_RULES if cat != "SEMENTES" for kw in kws)
 
 
 def extrair_litros(nome_produto: str):
