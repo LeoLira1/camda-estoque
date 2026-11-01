@@ -11763,12 +11763,24 @@ if has_mestre:
                         st.caption("Nenhum")
                         return
                     _df_g = _df.copy()
-                    _df_g["_coop_key"] = _df_g["cooperado"].fillna("").astype(str).str.strip()
-                    _df_g["_coop_label"] = _df_g["_coop_key"].replace("", _label_sem)
-                    _grupos = (
-                        _df_g.groupby("_coop_label", sort=False)
-                             .apply(lambda g: g.assign(_abs=g["delta"].abs().sum()))
+                    _df_g["_coop_raw"] = _df_g["cooperado"].fillna("").astype(str).str.strip()
+
+                    # Agrupa por chave normalizada (sem acento, caixa ou espaços
+                    # duplicados): "Serginho" e "SERGINHO" caem no mesmo bloco.
+                    def _norm_coop(_s):
+                        _s = unicodedata.normalize("NFKD", str(_s))
+                        _s = "".join(c for c in _s if not unicodedata.combining(c))
+                        return " ".join(_s.split()).casefold()
+
+                    _df_g["_coop_key"] = _df_g["_coop_raw"].map(_norm_coop)
+                    # Rótulo exibido = grafia mais frequente de cada chave
+                    _rotulo = (
+                        _df_g[_df_g["_coop_key"] != ""]
+                        .groupby("_coop_key")["_coop_raw"]
+                        .agg(lambda s: " ".join(s.mode().iloc[0].split()))
+                        .to_dict()
                     )
+                    _df_g["_coop_label"] = _df_g["_coop_key"].map(_rotulo).fillna(_label_sem)
                     _ordem = (
                         _df_g.groupby("_coop_label")["delta"].apply(lambda s: s.abs().sum())
                              .sort_values(ascending=False).index.tolist()
