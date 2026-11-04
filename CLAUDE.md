@@ -120,6 +120,15 @@ antemão em vez de redescobri-las:
   saldo atual e inventavam sobras. Vendeu/movimentou (qualquer upload que muda
   `qtd_sistema`) → volta a pendente — mas divergência aberta aparece (cor e
   filtros) mesmo em item pendente.
+- **Avarias: histórico em `avarias_log`.** Toda ação do app sobre uma avaria
+  (registrar, resolver, excluir, ＋/✕ balde, nível, ＋/✕ foto) grava uma linha via
+  `_log_avaria` (origem `'app'`) no mesmo commit; o MCP `camda-mcp` grava as dele
+  (editar/resolver/reabrir/apagar) com origem `'Claude (MCP)'`. O DDL é o mesmo do
+  `DDL_AVARIAS_LOG` do MCP — mude os dois juntos. Resolver grava `resolvido_em`
+  em Brasília (`%Y-%m-%d %H:%M:%S`) e a observação em `avarias.obs_resolucao`;
+  reabrir volta `resolvido_em` para `''`. A aba lista só as abertas; as resolvidas
+  ficam no expander "✅ Avarias resolvidas" no fim da aba (o histórico ali é
+  inline: o Streamlit não deixa aninhar expanders).
 - **Nunca mande uma lista inteira num único `st.markdown`.** Acima de 10 000
   bytes (`global.minCachedMessageSize`) o Streamlit marca o ForwardMsg como
   *cacheable*: na segunda vez que aquele conteúdo aparece na sessão o servidor

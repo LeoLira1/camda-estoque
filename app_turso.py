@@ -1838,6 +1838,24 @@ def _get_connection():
             registrado_em TEXT    NOT NULL
         )
     """)
+    # Observação da resolução e quem lançou (o MCP camda-mcp cria as mesmas colunas).
+    for _col_av in ("obs_resolucao", "origem"):
+        try:
+            conn.execute(f"ALTER TABLE avarias ADD COLUMN {_col_av} TEXT DEFAULT ''")
+        except Exception:
+            pass  # coluna já existe
+    # Histórico de cada avaria (mesmo DDL do DDL_AVARIAS_LOG do camda-mcp — mude os dois juntos).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS avarias_log (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_avaria INTEGER NOT NULL,
+            acao      TEXT    NOT NULL,
+            antes     TEXT    DEFAULT '',
+            depois    TEXT    DEFAULT '',
+            quando    TEXT    NOT NULL,
+            origem    TEXT    NOT NULL DEFAULT ''
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS contagem_itens (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2061,6 +2079,7 @@ def _get_connection():
         "CREATE INDEX IF NOT EXISTS idx_vl_vencimento   ON validade_lotes(vencimento)",
         "CREATE INDEX IF NOT EXISTS idx_reposto         ON reposicao_loja(reposto)",
         "CREATE INDEX IF NOT EXISTS idx_av_status       ON avarias(status)",
+        "CREATE INDEX IF NOT EXISTS idx_avarias_log_id  ON avarias_log(id_avaria)",
         "CREATE INDEX IF NOT EXISTS idx_ci_codigo       ON contagem_itens(codigo)",
         "CREATE INDEX IF NOT EXISTS idx_mapa_pos_rua    ON mapa_posicoes(rua, face)",
         "CREATE INDEX IF NOT EXISTS idx_ret_ter_data    ON retiradas_terceiros(data_movimento)",
@@ -3191,18 +3210,129 @@ def get_mural_recados(tag: str | None = None) -> list:
 # AVARIAS — funções CRUD
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Toda ação sobre uma avaria grava uma linha em avarias_log (origem 'app'); o
+# MCP grava as dele com origem 'Claude (MCP)'. antes/depois são JSON com
+# quantidade, motivo, status, resolvido_em e obs_resolucao (ou o balde/foto).
+_ORIGEM_LOG_APP = "app"
+
+
+def _estado_avaria(conn, avaria_id: int) -> dict | None:
+    row = conn.execute(
+        "SELECT qtd_avariada, motivo, status, resolvido_em, COALESCE(obs_resolucao, '') "
+        "FROM avarias WHERE id = ?", (avaria_id,)
+    ).fetchone()
+    if not row:
+        return None
+    return {"quantidade": int(row[0] or 0), "motivo": row[1] or "", "status": row[2] or "",
+            "resolvido_em": row[3] or "", "obs_resolucao": row[4] or ""}
+
+
+def _log_avaria(conn, avaria_id: int, acao: str, antes=None, depois=None):
+    """Insere no avarias_log sem commit (vai junto com a alteração)."""
+    import json as _json_av
+    _j = lambda v: "" if v is None else _json_av.dumps(v, ensure_ascii=False)
+    try:
+        conn.execute(
+            "INSERT INTO avarias_log (id_avaria, acao, antes, depois, quando, origem) VALUES (?, ?, ?, ?, ?, ?)",
+            (avaria_id, acao, _j(antes), _j(depois),
+             datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S"), _ORIGEM_LOG_APP),
+        )
+    except Exception as _e_log:
+        # o histórico nunca bloqueia a ação em si
+        print(f"[avarias_log] falhou ({acao} #{avaria_id}): {_e_log}")
+
+
+def _limpar_caches_avarias():
+    listar_avarias.clear()
+    get_avarias_count_abertas.clear()
+    listar_log_avarias.clear()
+
+
 @st.cache_data(ttl=120)
-def listar_avarias(apenas_abertas: bool = False) -> pd.DataFrame:
+def listar_log_avarias() -> dict:
+    """{id_avaria: [ {acao, quando, origem, antes, depois}, ... ]} em ordem cronológica."""
+    import json as _json_av
+    out: dict = {}
+    try:
+        rows = get_db().execute(
+            "SELECT id_avaria, acao, antes, depois, quando, origem FROM avarias_log ORDER BY id"
+        ).fetchall()
+    except Exception:
+        return out
+    for r in rows:
+        def _p(t):
+            if not t:
+                return None
+            try:
+                return _json_av.loads(t)
+            except Exception:
+                return t
+        out.setdefault(int(r[0]), []).append(
+            {"acao": r[1], "antes": _p(r[2]), "depois": _p(r[3]), "quando": r[4] or "", "origem": r[5] or ""}
+        )
+    return out
+
+
+def _fmt_log_avaria(e: dict) -> str:
+    """Uma linha de histórico, em texto curto."""
+    a, d = e.get("antes") or {}, e.get("depois") or {}
+    if not isinstance(a, dict):
+        a = {}
+    if not isinstance(d, dict):
+        d = {}
+    acao = e.get("acao", "")
+    if acao == "criar":
+        txt = f"registrada · {d.get('quantidade', '?')} un"
+    elif acao == "editar":
+        partes = []
+        if a.get("quantidade") != d.get("quantidade"):
+            partes.append(f"qtd {a.get('quantidade')} → {d.get('quantidade')}")
+        if a.get("motivo") != d.get("motivo"):
+            partes.append(f"motivo “{a.get('motivo', '')}” → “{d.get('motivo', '')}”")
+        txt = "editada · " + ("; ".join(partes) or "sem mudança")
+    elif acao == "resolver":
+        txt = "resolvida" + (f" · {d.get('obs_resolucao')}" if d.get("obs_resolucao") else "")
+    elif acao == "reabrir":
+        txt = "reaberta"
+    elif acao == "apagar":
+        txt = "apagada"
+    elif acao == "balde_add":
+        txt = "＋ balde"
+    elif acao == "balde_rm":
+        txt = f"✕ balde ({a.get('nivel', '?'):.0f}%)" if isinstance(a.get("nivel"), (int, float)) else "✕ balde"
+    elif acao == "nivel":
+        txt = f"nível {a.get('nivel', 0):.0f}% → {d.get('nivel', 0):.0f}%"
+    elif acao == "foto_add":
+        txt = "＋ foto"
+    elif acao == "foto_rm":
+        txt = "✕ foto"
+    else:
+        txt = acao
+    q = str(e.get("quando", ""))
+    try:
+        q = datetime.strptime(q[:19], "%Y-%m-%d %H:%M:%S").strftime("%d/%m %H:%M")
+    except Exception:
+        pass
+    return f"{q} · {txt} · {e.get('origem') or 'app'}"
+
+
+@st.cache_data(ttl=120)
+def listar_avarias(apenas_abertas: bool = False, apenas_resolvidas: bool = False) -> pd.DataFrame:
     cols = ["id", "codigo", "produto", "qtd_avariada", "motivo", "status",
-            "registrado_em", "resolvido_em", "capacidade_litros", "foto_base64"]
+            "registrado_em", "resolvido_em", "capacidade_litros", "foto_base64",
+            "obs_resolucao", "origem"]
     try:
         query = """SELECT id, codigo, produto, qtd_avariada, motivo, status,
                           registrado_em, resolvido_em, capacidade_litros,
-                          COALESCE(foto_base64, '') AS foto_base64
+                          COALESCE(foto_base64, '') AS foto_base64,
+                          COALESCE(obs_resolucao, '') AS obs_resolucao,
+                          COALESCE(origem, '') AS origem
                    FROM avarias"""
         if apenas_abertas:
             query += " WHERE status = 'aberto'"
-        query += " ORDER BY registrado_em DESC"
+        elif apenas_resolvidas:
+            query += " WHERE status = 'resolvido'"
+        query += (" ORDER BY resolvido_em DESC" if apenas_resolvidas else " ORDER BY registrado_em DESC")
         rows = get_db().execute(query).fetchall()
         return pd.DataFrame(rows, columns=cols)
     except Exception as _e_db:
@@ -3210,18 +3340,22 @@ def listar_avarias(apenas_abertas: bool = False) -> pd.DataFrame:
         return pd.DataFrame(columns=cols)
 
 
-def resolver_avaria(avaria_id: int):
+def resolver_avaria(avaria_id: int, observacao: str = ""):
     try:
         conn = get_db()
         now = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+        obs = " ".join(str(observacao or "").split())[:300]
+        antes = _estado_avaria(conn, avaria_id)
         conn.execute(
-            "UPDATE avarias SET status = 'resolvido', resolvido_em = ? WHERE id = ?",
-            (now, avaria_id)
+            "UPDATE avarias SET status = 'resolvido', resolvido_em = ?, obs_resolucao = ? WHERE id = ?",
+            (now, obs, avaria_id)
         )
+        if antes is not None:
+            _log_avaria(conn, avaria_id, "resolver", antes,
+                        {**antes, "status": "resolvido", "resolvido_em": now, "obs_resolucao": obs})
         conn.commit()
         sync_db()
-        listar_avarias.clear()
-        get_avarias_count_abertas.clear()
+        _limpar_caches_avarias()
     except Exception as e:
         st.error(f"❌ Erro ao resolver avaria: {e}")
 
@@ -3229,13 +3363,25 @@ def resolver_avaria(avaria_id: int):
 def deletar_avaria(avaria_id: int):
     try:
         conn = get_db()
+        antes = _estado_avaria(conn, avaria_id)
+        if antes is not None:
+            _r = conn.execute("SELECT codigo, produto, registrado_em FROM avarias WHERE id = ?",
+                              (avaria_id,)).fetchone()
+            _bal = conn.execute("SELECT uid, nivel FROM avaria_unidades WHERE avaria_id = ? ORDER BY id",
+                                (avaria_id,)).fetchall()
+            _nf = conn.execute("SELECT COUNT(*) FROM avaria_fotos WHERE avaria_id = ?",
+                               (avaria_id,)).fetchone()[0]
+            antes.update({"codigo": _r[0], "produto": _r[1], "registrado_em": _r[2],
+                          "baldes": [{"uid": b[0], "nivel": float(b[1])} for b in _bal],
+                          "fotos": int(_nf or 0)})
         conn.execute("DELETE FROM avaria_unidades WHERE avaria_id = ?", (avaria_id,))
         conn.execute("DELETE FROM avaria_fotos WHERE avaria_id = ?", (avaria_id,))
         conn.execute("DELETE FROM avarias WHERE id = ?", (avaria_id,))
+        if antes is not None:
+            _log_avaria(conn, avaria_id, "apagar", antes, None)
         conn.commit()
         sync_db()
-        listar_avarias.clear()
-        get_avarias_count_abertas.clear()
+        _limpar_caches_avarias()
     except Exception as e:
         st.error(f"❌ Erro ao deletar avaria: {e}")
 
@@ -3317,7 +3463,12 @@ def atualizar_nivel_unidade(uid: str, nivel: float):
     """Grava o nível de preenchimento (0-100) de uma unidade no Turso."""
     try:
         conn = get_db()
+        _u = conn.execute("SELECT avaria_id, nivel FROM avaria_unidades WHERE uid = ?", (uid,)).fetchone()
         conn.execute("UPDATE avaria_unidades SET nivel = ? WHERE uid = ?", (nivel, uid))
+        if _u:
+            _log_avaria(conn, int(_u[0]), "nivel", {"uid": uid, "nivel": float(_u[1])},
+                        {"uid": uid, "nivel": float(nivel)})
+            listar_log_avarias.clear()
         conn.commit()
         sync_db()
     except Exception as e:
@@ -3333,6 +3484,8 @@ def adicionar_unidade_avaria(avaria_id: int, nivel: float = 50.0) -> dict | None
             "INSERT INTO avaria_unidades (avaria_id, uid, nivel) VALUES (?, ?, ?)",
             (avaria_id, uid, nivel)
         )
+        _log_avaria(conn, avaria_id, "balde_add", None, {"uid": uid, "nivel": float(nivel)})
+        listar_log_avarias.clear()
         conn.commit()
         sync_db()
         row = conn.execute(
@@ -3349,7 +3502,11 @@ def remover_unidade_avaria(uid: str):
     """Remove um galão/balde pelo uid."""
     try:
         conn = get_db()
+        _u = conn.execute("SELECT avaria_id, nivel FROM avaria_unidades WHERE uid = ?", (uid,)).fetchone()
         conn.execute("DELETE FROM avaria_unidades WHERE uid = ?", (uid,))
+        if _u:
+            _log_avaria(conn, int(_u[0]), "balde_rm", {"uid": uid, "nivel": float(_u[1])}, None)
+            listar_log_avarias.clear()
         conn.commit()
         sync_db()
     except Exception as e:
@@ -3377,11 +3534,14 @@ def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str,
                 "INSERT INTO avaria_unidades (avaria_id, uid, nivel) VALUES (?, ?, 50.0)",
                 (avaria_id, uid)
             )
-        # Um único commit para os dois inserts
+        if avaria_id:
+            _log_avaria(conn, int(avaria_id), "criar", None,
+                        {"quantidade": int(qtd), "motivo": motivo, "status": "aberto",
+                         "resolvido_em": "", "obs_resolucao": ""})
+        # Um único commit para os inserts
         conn.commit()
         sync_db()
-        listar_avarias.clear()
-        get_avarias_count_abertas.clear()
+        _limpar_caches_avarias()
         return True
     except Exception as e:
         st.error(f"❌ Erro ao registrar avaria: {e}")
@@ -3417,6 +3577,8 @@ def adicionar_foto_avaria(avaria_id: int, foto_bytes: bytes) -> bool:
             "INSERT INTO avaria_fotos (avaria_id, foto_base64, registrado_em) VALUES (?, ?, ?)",
             (avaria_id, foto_b64, now)
         )
+        _log_avaria(conn, avaria_id, "foto_add", None, {"registrado_em": now})
+        listar_log_avarias.clear()
         conn.commit()
         sync_db()
         return True
@@ -3429,7 +3591,11 @@ def remover_foto_item(foto_id: int):
     """Remove uma foto individual da tabela avaria_fotos pelo id."""
     try:
         conn = get_db()
+        _f = conn.execute("SELECT avaria_id, registrado_em FROM avaria_fotos WHERE id = ?", (foto_id,)).fetchone()
         conn.execute("DELETE FROM avaria_fotos WHERE id = ?", (foto_id,))
+        if _f:
+            _log_avaria(conn, int(_f[0]), "foto_rm", {"foto_id": int(foto_id), "registrado_em": _f[1]}, None)
+            listar_log_avarias.clear()
         conn.commit()
         sync_db()
     except Exception as e:
@@ -13151,6 +13317,24 @@ new Chart(document.getElementById('coop-chart'),{
         </style>
         """, unsafe_allow_html=True)
 
+        _log_av_all = listar_log_avarias()
+
+        def _render_hist_avaria(_aid: int, inline: bool = False):
+            _ev = _log_av_all.get(int(_aid), [])
+            if not _ev:
+                return
+            # inline: dentro de outro expander (o Streamlit não deixa aninhar expanders)
+            with (st.container() if inline else st.expander(f"Histórico ({len(_ev)})")):
+                st.markdown(
+                    "".join(
+                        f'<div style="font-size:11px;color:var(--c-text-2);'
+                        f'font-family:\'IBM Plex Mono\',monospace;line-height:1.55;">'
+                        f'{_hx(_fmt_log_avaria(_e))}</div>'
+                        for _e in reversed(_ev[-40:])
+                    ),
+                    unsafe_allow_html=True,
+                )
+
         # ── Registrar nova avaria ──
         with st.expander("➕ Registrar nova avaria", expanded=False):
             df_estoque_av = get_current_stock()
@@ -13384,6 +13568,14 @@ new Chart(document.getElementById('coop-chart'),{
                                 f'✅ Resolvido em: {av["resolvido_em"]}</div>',
                                 unsafe_allow_html=True
                             )
+                            if av.get("obs_resolucao"):
+                                st.markdown(
+                                    f'<div style="color:var(--c-text-2);font-size:0.65rem;">'
+                                    f'📝 {_hx(av["obs_resolucao"])}</div>',
+                                    unsafe_allow_html=True
+                                )
+
+                        _render_hist_avaria(av_id)
 
                         # ── Chave versionada de foto ───────────────────────
                         _foto_ver_key = f"av_foto_ver_{av_id}"
@@ -13446,11 +13638,19 @@ new Chart(document.getElementById('coop-chart'),{
                                             st.rerun()
 
                             st.markdown("<div style='margin-top:6px;'></div>", unsafe_allow_html=True)
+                            if is_aberta:
+                                _obs_res = st.text_input(
+                                    "Observação da resolução (opcional)",
+                                    key=f"av_obs_{av_id}", max_chars=300,
+                                    placeholder="Ex.: devolvido ao fornecedor, descartado...",
+                                )
+                            else:
+                                _obs_res = ""
                             col_res, col_del, col_close = st.columns([1, 1, 1])
                             with col_res:
                                 if is_aberta and st.button("✅ Resolver", key=f"av_res_{av_id}",
                                                             use_container_width=True):
-                                    resolver_avaria(av_id)
+                                    resolver_avaria(av_id, _obs_res)
                                     st.rerun()
                             with col_del:
                                 if st.button("🗑️ Excluir", key=f"av_del_{av_id}",
@@ -13491,6 +13691,30 @@ new Chart(document.getElementById('coop-chart'),{
                                         st.error("❌ Senha incorreta")
 
                 st.markdown("<div style='margin-bottom:8px;'></div>", unsafe_allow_html=True)
+
+        # ── Resolvidas (só leitura) ──
+        df_av_res = listar_avarias(apenas_resolvidas=True)
+        if not df_av_res.empty:
+            with st.expander(f"✅ Avarias resolvidas ({len(df_av_res)})", expanded=False):
+                for _, avr in df_av_res.head(30).iterrows():
+                    _obs_r = str(avr.get("obs_resolucao") or "")
+                    st.markdown(
+                        f'<div class="av-card fechada" style="padding:10px 12px 8px;">'
+                        f'<div style="display:flex;align-items:center;gap:8px;">'
+                        f'<span class="av-badge av-resolvido">✅ RESOLVIDA</span>'
+                        f'<span class="av-tempo">{_hx(avr.get("resolvido_em") or "")}</span>'
+                        f'</div>'
+                        f'<p class="av-produto-nome" style="margin:6px 0 4px;">'
+                        f'{_hx(avr["produto"])} · {int(avr.get("qtd_avariada") or 0)} un</p>'
+                        f'<div style="font-size:11px;color:var(--c-label);">{_hx(avr.get("motivo") or "")}</div>'
+                        + (f'<div style="font-size:11px;color:var(--c-text-2);margin-top:4px;">📝 {_hx(_obs_r)}</div>'
+                           if _obs_r else "")
+                        + '</div>',
+                        unsafe_allow_html=True,
+                    )
+                    _render_hist_avaria(int(avr["id"]), inline=True)
+                if len(df_av_res) > 30:
+                    st.caption(f"Mostrando as 30 mais recentes de {len(df_av_res)}.")
 
     if _dash_tab == _TAB_AGENDA:
         import iframe_compat as components
