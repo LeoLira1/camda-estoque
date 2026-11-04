@@ -129,6 +129,12 @@ antemão em vez de redescobri-las:
   reabrir volta `resolvido_em` para `''`. A aba lista só as abertas; as resolvidas
   ficam no expander "✅ Avarias resolvidas" no fim da aba (o histórico ali é
   inline: o Streamlit não deixa aninhar expanders).
+- **Baldes "a medir".** `avaria_unidades.nivel` é `REAL NOT NULL`, então balde sem
+  nível medido é gravado como `-1` (`NIVEL_A_MEDIR`, igual no MCP). Registrar cria
+  1 balde por unidade, todos a medir; "＋ Balde" também nasce a medir. Balde a medir
+  aparece tracejado, sem líquido, e fica fora de RESTANTE/PERDIDO; no modo de edição
+  vira um campo em litros vazio (o slider só aparece depois de medido). Se o nº de
+  baldes ≠ `qtd_avariada`, o card mostra um aviso.
 - **Nunca mande uma lista inteira num único `st.markdown`.** Acima de 10 000
   bytes (`global.minCachedMessageSize`) o Streamlit marca o ForwardMsg como
   *cacheable*: na segunda vez que aquele conteúdo aparece na sessão o servidor
