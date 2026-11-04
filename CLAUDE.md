@@ -129,12 +129,15 @@ antemão em vez de redescobri-las:
   reabrir volta `resolvido_em` para `''`. A aba lista só as abertas; as resolvidas
   ficam no expander "✅ Avarias resolvidas" no fim da aba (o histórico ali é
   inline: o Streamlit não deixa aninhar expanders).
-- **Baldes "a medir".** `avaria_unidades.nivel` é `REAL NOT NULL`, então balde sem
-  nível medido é gravado como `-1` (`NIVEL_A_MEDIR`, igual no MCP). Registrar cria
-  1 balde por unidade, todos a medir; "＋ Balde" também nasce a medir. Balde a medir
-  aparece tracejado, sem líquido, e fica fora de RESTANTE/PERDIDO; no modo de edição
-  vira um campo em litros vazio (o slider só aparece depois de medido). Se o nº de
-  baldes ≠ `qtd_avariada`, o card mostra um aviso.
+- **Avaria = quantidade + conteúdo restante.** Não há mais nível por balde: cada
+  avaria tem `qtd_avariada` (unidades físicas — o card mostra "baldes/galões/frascos/
+  un." por `_unidade_fisica`) e `conteudo_restante` (REAL, vazio = "a medir") +
+  `unidade_conteudo` ("L" ou "kg"; o formulário sugere kg quando a embalagem do nome
+  é KG/G, senão L). É o TOTAL nas embalagens avariadas. `avaria_unidades` continua no
+  banco (dados antigos) mas o app não lê nem grava nela — só o excluir avaria apaga as
+  linhas daquela avaria. A migração única (`_migrar_conteudo_avarias`, marca
+  `migracao_conteudo_v1` no `avarias_log`, mesmo SQL do camda-mcp) somou os litros dos
+  baldes medidos; avaria só com baldes em 50% (o nível que era inventado) ficou "a medir".
 - **Nunca mande uma lista inteira num único `st.markdown`.** Acima de 10 000
   bytes (`global.minCachedMessageSize`) o Streamlit marca o ForwardMsg como
   *cacheable*: na segunda vez que aquele conteúdo aparece na sessão o servidor
