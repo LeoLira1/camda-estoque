@@ -120,6 +120,14 @@ antemão em vez de redescobri-las:
   saldo atual e inventavam sobras. Vendeu/movimentou (qualquer upload que muda
   `qtd_sistema`) → volta a pendente — mas divergência aberta aparece (cor e
   filtros) mesmo em item pendente.
+- **Frescor das divergências.** As leituras vêm da réplica local do libSQL;
+  `get_db()` chama `_sync_replica_periodico` (no máx. a cada `_REPLICA_SYNC_S`
+  = 15 s, estado em `cache_resource`) e, se a assinatura de `divergencias`/
+  `estoque_mestre` mudou, roda `_invalidar_caches_divergencia()`. Toda escrita
+  nova em `divergencias` ou no status/ciclo do mestre deve chamar essa função
+  (já chamam: `registrar_divergencia_manual`, `resolver_divergencia`,
+  `atualizar_item_contagem`). No Inv. Cíclico o flag
+  `_ciclo_cache_clear_needed` é drenado ANTES do `get_current_stock()`.
 - **Avarias: histórico em `avarias_log`.** Toda ação do app sobre uma avaria
   (registrar, resolver, excluir, ＋/✕ balde, nível, ＋/✕ foto) grava uma linha via
   `_log_avaria` (origem `'app'`) no mesmo commit; o MCP `camda-mcp` grava as dele
