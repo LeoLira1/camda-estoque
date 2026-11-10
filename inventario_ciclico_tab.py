@@ -965,6 +965,16 @@ def build_inventario_ciclico_tab(
     if short_name is None:
         short_name = lambda x: x  # noqa: E731
 
+    # ── Drena flag de clear de caches setado pelo dialog ────────────────────
+    # TEM de vir antes do get_current_stock(): senão o rerun que segue o OK /
+    # Divergência do modal ainda desenha o card com o status antigo.
+    if st.session_state.pop("_ciclo_cache_clear_needed", False):
+        get_current_stock.clear()
+        if get_divergencias is not None:
+            get_divergencias.clear()
+        if get_historico_divergencias is not None:
+            get_historico_divergencias.clear()
+
     df = get_current_stock()
     divergencias_cicli = _get_divergencias_cicli(get_db)
     # Data da última contagem física de cada produto — sobrevive à invalidação
@@ -984,14 +994,6 @@ def build_inventario_ciclico_tab(
             st.session_state["ciclo_dialog_open"] = True
         else:
             st.toast(f"⚠️ Código '{_clicked}' não encontrado.", icon="⚠️")
-
-    # ── Drena flag de clear de caches setado pelo dialog ────────────────────
-    if st.session_state.pop("_ciclo_cache_clear_needed", False):
-        get_current_stock.clear()
-        if get_divergencias is not None:
-            get_divergencias.clear()
-        if get_historico_divergencias is not None:
-            get_historico_divergencias.clear()
 
     # ── Abre modal (one-shot: pop antes de chamar evita reabrir após X) ───────
     if st.session_state.pop("ciclo_dialog_open", False):

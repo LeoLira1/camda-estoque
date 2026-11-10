@@ -4,6 +4,7 @@ import libsql
 import re
 import os
 import time
+import threading
 import logging
 import random
 import base64
@@ -2476,6 +2477,73 @@ def _force_reconnect():
     return _get_connection()
 
 
+# ── Sync periódico da réplica ────────────────────────────────────────────────
+# As leituras vêm da réplica LOCAL do libSQL. Antes ela só puxava do Turso uma
+# vez por sessão, após escritas DESTE processo ou quando a conexão era renovada
+# (30 min). Tudo que outro app grava (Contagemsimplificada, MCP camda-mcp, outra
+# instância) ficava invisível até lá — e ainda atrás dos caches de 60 s/10 min.
+# Agora a réplica sincroniza no máximo a cada _REPLICA_SYNC_S segundos e, se as
+# divergências ou o ciclo mudaram, invalida os caches que mostram essas listas.
+_REPLICA_SYNC_S = 15
+
+_SQL_ASSINATURA_DIVERG = """
+    SELECT
+      (SELECT COUNT(*) || ':' || COALESCE(MAX(id), 0) || ':' || COALESCE(SUM(delta), 0)
+              || ':' || COALESCE(SUM(LENGTH(cooperado)), 0) FROM divergencias),
+      (SELECT COUNT(*) || ':' || COALESCE(MAX(contado_ciclo_em), '')
+              || ':' || COALESCE(SUM(status_ciclo = 'ok'), 0)
+              || ':' || COALESCE(SUM(status IN ('falta', 'sobra')), 0)
+              || ':' || COALESCE(SUM(qtd_sistema), 0) FROM estoque_mestre)
+"""
+
+
+@st.cache_resource
+def _replica_sync_state() -> dict:
+    """Estado do sync periódico, compartilhado por todas as sessões do processo
+    (variável de módulo não serve: o script é reexecutado a cada rerun)."""
+    return {"ultimo": 0.0, "assinatura": None, "lock": threading.Lock()}
+
+
+def _invalidar_caches_divergencia() -> None:
+    """Limpa os caches que mostram divergências / status do mestre.
+
+    Chame depois de QUALQUER escrita em `divergencias` ou nos campos de
+    status/ciclo de `estoque_mestre`. Usa globals() porque get_db() pode rodar
+    antes de as funções cacheadas serem definidas no script.
+    """
+    for _nome in ("get_divergencias", "get_historico_divergencias", "get_current_stock"):
+        _fn = globals().get(_nome)
+        if _fn is not None and hasattr(_fn, "clear"):
+            try:
+                _fn.clear()
+            except Exception:
+                pass
+
+
+def _sync_replica_periodico(conn) -> None:
+    est = _replica_sync_state()
+    agora = time.monotonic()
+    if agora - est["ultimo"] < _REPLICA_SYNC_S:
+        return
+    if not est["lock"].acquire(blocking=False):
+        return  # outra sessão já está sincronizando
+    try:
+        est["ultimo"] = agora
+        try:
+            conn.sync()
+        except Exception:
+            return
+        try:
+            assinatura = tuple(conn.execute(_SQL_ASSINATURA_DIVERG).fetchone())
+        except Exception:
+            return
+        if est["assinatura"] is not None and assinatura != est["assinatura"]:
+            _invalidar_caches_divergencia()
+        est["assinatura"] = assinatura
+    finally:
+        est["lock"].release()
+
+
 def get_db():
     """Retorna conexão pronta, reconectando automaticamente se o stream expirou."""
     conn = _get_connection()
@@ -2487,6 +2555,8 @@ def get_db():
             except Exception as _e:
                 if "stream not found" in str(_e) or "404" in str(_e):
                     conn = _force_reconnect()
+        else:
+            _sync_replica_periodico(conn)
         # Probe rápido para detectar stream expirado
         try:
             conn.execute("SELECT 1").fetchone()
@@ -6148,6 +6218,7 @@ def registrar_divergencia_manual(codigo: str, delta: int, cooperado: str = "") -
         )
         conn.commit()
         sync_db()
+        _invalidar_caches_divergencia()
         sinal = "+" if delta > 0 else ""
         nome = cooperado.strip() or "sem cooperado"
         return (True, f"✅ {produto} ({codigo}) → {status} de {sinal}{delta} un. registrada para {nome}.")
@@ -6177,6 +6248,7 @@ def resolver_divergencia(div_id: int):
                 )
         conn.commit()
         sync_db()
+        _invalidar_caches_divergencia()
     except Exception as e:
         st.error(f"❌ Erro ao resolver divergência: {e}")
 
@@ -7356,6 +7428,8 @@ def atualizar_item_contagem(
     # do Turso sobrescreva o write antes de ele ser confirmado no remoto.
     conn.commit()
     _invalidar_cache_contagem()
+    if codigo and status in ("certa", "divergencia"):
+        _invalidar_caches_divergencia()
     return rows_afetadas != 0
 
 
