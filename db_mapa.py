@@ -191,8 +191,19 @@ def _ensure_codigo_schema(conn):
 _ensure_codigo_column = _ensure_codigo_schema
 
 
+_mapa_tables_ok = False
+
+
 def ensure_mapa_tables(conn):
-    """Cria tabelas do mapa se não existirem (idempotente)."""
+    """Cria tabelas do mapa se não existirem (idempotente).
+
+    Roda uma vez por processo: é chamada no começo de quase todo CRUD do mapa
+    (inclusive leituras), e cada chamada mandava 7 DDLs + o seed dos racks para
+    o Turso — DDL e INSERT não rodam na réplica local.
+    """
+    global _mapa_tables_ok
+    if _mapa_tables_ok:
+        return
     conn.execute("""
         CREATE TABLE IF NOT EXISTS racks (
             rack_id    TEXT PRIMARY KEY,
@@ -240,6 +251,7 @@ def ensure_mapa_tables(conn):
             ('R10', 'R10', 2, 4, 1, 1)
     """)
     conn.commit()
+    _mapa_tables_ok = True
 
 
 # Alias para compatibilidade com a interface descrita no schema

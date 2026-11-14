@@ -163,6 +163,33 @@ antemão em vez de redescobri-las:
   resumo operacional à direita) — breakpoints em 980px e 720px. Se mudar o
   conteúdo do header, reveja esses paddings.
 
+## Cota de row reads do Turso (o que gasta e o que não gasta)
+
+- **Leitura normal do app é grátis**: sai da réplica local. Conta na cota só o que
+  roda no Turso: toda escrita (UPDATE/DELETE varrem para achar as linhas; DDL também
+  é escrita), **toda leitura feita depois de uma escrita e antes do `commit()`** (a
+  conexão entra em transação de escrita e os SELECTs passam a ir ao servidor) e
+  tudo que o MCP `camda-mcp` consulta por HTTP. Regra prática: leia tudo primeiro,
+  escreva depois, em lote, e dê `commit()` (ou `rollback()` no `except`) — a conexão
+  é compartilhada por todas as sessões.
+- **`_init_schema` não roda a cada conexão.** `_get_connection` compara a marca
+  `schema_version` de `app_meta` com `_schema_version()` (hash de `app_turso.py`,
+  `db_mapa.py` e `inventario_ciclico_tab.py`) e só manda o DDL quando o código mudou.
+  Migração nova entra em `_init_schema` e roda sozinha no próximo deploy; precisa
+  continuar idempotente. `ensure_mapa_tables` roda uma vez por processo.
+- **Alertas: no máximo 1x por dia** (`_registrar_alertas_1x_dia`; marca em memória e
+  em `app_meta.alertas_registrados_em`) mais uma vez depois de cada upload (o
+  `pop("alertas_cache")`). Não volte a chamar `_registrar_alertas_no_banco` direto.
+- **Índices** ficam na lista `_indices` de `_init_schema` (espelho em
+  `sugestao_indices.sql`). Índice em expressão `UPPER(TRIM(codigo))` muda o plano de
+  consultas com `GROUP BY UPPER(TRIM(codigo))` — confira com `EXPLAIN QUERY PLAN`.
+- **BLOCKED (cota estourada).** `_is_turso_blocked` reconhece o erro. Com réplica
+  local, o app segue em modo somente leitura com um aviso (`_turso_estado()`); sem
+  réplica (boot do Streamlit Cloud), `get_db()` mostra `_tela_turso_bloqueado()` em
+  vez de traceback. Mensagens de erro de escrita passam por `_msg_erro_banco(e)`.
+- Aumentar `ttl` de `st.cache_data` **não** economiza cota (a leitura é local); só
+  vale para dado que muda por upload deste app e cujo writer limpa o cache.
+
 ## Princípio ativo: casamento por nome (`_lookup_pa_from_index`)
 
 - O fuzzy (cutoff 0,72) compara o **miolo** do nome (`_pcore`): sem tamanho e sem

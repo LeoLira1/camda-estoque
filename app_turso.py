@@ -115,10 +115,73 @@ def _avisar_erro_banco(onde: str, e: Exception) -> None:
     log. Fora de uma execução do Streamlit (thread, teste) o st.warning é ignorado.
     """
     logging.getLogger("camda").warning("erro de banco em %s: %s", onde, e)
+    if _is_turso_blocked(e):
+        try:
+            st.warning(f"⚠️ **{onde}**: {_MSG_TURSO_BLOQUEADO}")
+        except Exception:
+            pass
+        return
     try:
         st.warning(f"⚠️ Não consegui ler **{onde}** do banco — a lista abaixo pode estar incompleta. Erro: `{e}`")
     except Exception:
         pass
+
+
+# ── Turso bloqueado (cota mensal estourada) ──────────────────────────────────
+# Quando a cota de "row reads" do plano acaba, o Turso responde BLOCKED a tudo
+# que chega nele: sync da réplica e qualquer escrita. A réplica local continua
+# respondendo leituras, então o app segue mostrando o último retrato sincronizado
+# em vez de quebrar com traceback.
+class TursoBloqueado(RuntimeError):
+    """O Turso recusou a operação por cota/bloqueio e não há réplica local."""
+
+
+_BLOCKED_PISTAS = (
+    "blocked", "quota", "upgrade your plan", "payment required",
+    "operations are forbidden", "reads are forbidden", "writes are forbidden",
+)
+
+
+def _is_turso_blocked(e) -> bool:
+    """True se a exceção é o bloqueio por cota do Turso (erro BLOCKED)."""
+    txt = str(e).lower()
+    return any(p in txt for p in _BLOCKED_PISTAS)
+
+
+_MSG_TURSO_BLOQUEADO = (
+    "O banco de dados (Turso) **bloqueou o acesso porque a cota mensal de leituras "
+    "do plano acabou**. Nada foi perdido. As gravações voltam sozinhas quando a cota "
+    "renovar (virada do mês) ou assim que o plano for ampliado no painel do Turso."
+)
+
+
+def _msg_erro_banco(e) -> str:
+    """Texto de erro para a tela: troca o BLOCKED cru do Turso por uma explicação."""
+    if _is_turso_blocked(e):
+        return _MSG_TURSO_BLOQUEADO
+    return str(e)
+
+
+@st.cache_resource
+def _turso_estado() -> dict:
+    """Estado do bloqueio, compartilhado entre as sessões do processo."""
+    return {"bloqueado": False}
+
+
+def _tela_turso_bloqueado() -> None:
+    """Tela amigável quando não dá para abrir o banco (sem réplica local)."""
+    st.error("### 🚧 Banco de dados temporariamente indisponível\n\n" + _MSG_TURSO_BLOQUEADO)
+    st.info(
+        "**O que fazer agora**\n\n"
+        "- Para voltar na hora: painel do Turso → *Billing* → ampliar o plano "
+        "(ou liberar *overages*).\n"
+        "- Sem ampliar: o acesso volta sozinho na renovação mensal da cota.\n"
+        "- Os dados estão seguros; só o acesso está pausado."
+    )
+    if st.button("🔄 Tentar de novo", key="turso_blocked_retry"):
+        _get_connection.clear()
+        st.rerun()
+    st.stop()
 
 
 # ── Weather Widget ───────────────────────────────────────────────────────────
@@ -1756,20 +1819,20 @@ def _migrar_conteudo_avarias(conn):
     conn.commit()
 
 
-@st.cache_resource(ttl=1800)
-def _get_connection():
-    """Cria conexão (renovada a cada 30 min) e inicializa tabelas + migrações."""
-    if _using_cloud:
-        conn = libsql.connect(
-            LOCAL_DB_PATH,
-            sync_url=TURSO_DATABASE_URL,
-            auth_token=TURSO_AUTH_TOKEN,
-        )
-        conn.sync()
-    else:
-        conn = libsql.connect(LOCAL_DB_PATH)
+def _init_schema(conn):
+    """Cria tabelas, índices, triggers e roda as migrações.
 
-    # ── Criar tabelas (roda 1x, não a cada get_db()) ──
+    Cada statement daqui é uma ida ao Turso (DDL é escrita, não roda na réplica
+    local). Por isso NÃO roda a cada conexão: `_get_connection` só chama quando
+    a marca `schema_version` em `app_meta` difere da versão do código (ver
+    `_schema_version`). Tudo aqui precisa continuar idempotente.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS app_meta (
+            chave TEXT PRIMARY KEY,
+            valor TEXT NOT NULL DEFAULT ''
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS estoque_mestre (
             codigo TEXT PRIMARY KEY,
@@ -2147,6 +2210,33 @@ def _get_connection():
         "CREATE INDEX IF NOT EXISTS idx_ret_ter_data    ON retiradas_terceiros(data_movimento)",
         "CREATE INDEX IF NOT EXISTS idx_ret_ter_coop    ON retiradas_terceiros(cooperado)",
         "CREATE INDEX IF NOT EXISTS idx_cvet_classe     ON classificacao_vet(classe)",
+        # ── Auditoria de row reads (EXPLAIN QUERY PLAN) ──────────────────────
+        # Só o que roda NO TURSO conta leitura: escritas, leituras dentro de
+        # transação de escrita e tudo que o MCP (camda-mcp) consulta por HTTP.
+        # variacao_estoque não tinha índice nenhum e cresce a cada upload.
+        "CREATE INDEX IF NOT EXISTS idx_ve_detectado    ON variacao_estoque(detectado_em)",
+        "CREATE INDEX IF NOT EXISTS idx_ve_status_det   ON variacao_estoque(status, detectado_em)",
+        # DELETE ... WHERE data_disparo < ? (limpeza dos alertas)
+        "CREATE INDEX IF NOT EXISTS idx_ad_data         ON alertas_disparados(data_disparo)",
+        # DELETE/SELECT ... WHERE data_ref = ? (upload e conferência GV)
+        "CREATE INDEX IF NOT EXISTS idx_fgv_data_ref    ON faturamento_gv(data_ref)",
+        # DELETE ... WHERE data_referencia = ? (reimportar MATR480)
+        "CREATE INDEX IF NOT EXISTS idx_mt_data_ref     ON materiais_terceiros(data_referencia)",
+        # Históricos consultados por período pelo MCP
+        "CREATE INDEX IF NOT EXISTS idx_hd_criado       ON historico_divergencias(criado_em)",
+        "CREATE INDEX IF NOT EXISTS idx_lm_registrado   ON lancamentos_manuais(registrado_em)",
+        "CREATE INDEX IF NOT EXISTS idx_ret_ter_reg     ON retiradas_terceiros(registrado_em)",
+        # UPDATE/DELETE ... WHERE data_contagem=? AND produto_id=? a cada contagem
+        "CREATE INDEX IF NOT EXISTS idx_cicli_prod_data ON inventario_cicli(produto_id, data_contagem)",
+        # Subconsulta correlacionada de fotos por avaria (ver_avarias do MCP)
+        "CREATE INDEX IF NOT EXISTS idx_af_avaria       ON avaria_fotos(avaria_id)",
+        "CREATE INDEX IF NOT EXISTS idx_au_avaria       ON avaria_unidades(avaria_id)",
+        "CREATE INDEX IF NOT EXISTS idx_pa_produto      ON principios_ativos(produto)",
+        # Índices de EXPRESSÃO: o MCP filtra por UPPER(TRIM(codigo)), o que
+        # anula os índices simples em codigo e varria a tabela inteira.
+        "CREATE INDEX IF NOT EXISTS idx_vh_cod_norm     ON vendas_historico(UPPER(TRIM(codigo)), data_upload)",
+        "CREATE INDEX IF NOT EXISTS idx_em_cod_norm     ON estoque_mestre(UPPER(TRIM(codigo)))",
+        "CREATE INDEX IF NOT EXISTS idx_div_cod_norm    ON divergencias(UPPER(TRIM(codigo)))",
     ]
     for _idx_sql in _indices:
         try:
@@ -2442,7 +2532,14 @@ def _get_connection():
         pass
 
 
-    # ── Migração: sincroniza divergências órfãs (só em estoque_mestre) para tabela divergencias ──
+
+
+def _sincronizar_divergencias_orfas(conn):
+    """Divergências que só existem em estoque_mestre viram linha em `divergencias`.
+
+    A busca roda na réplica local (não gasta leitura no Turso); só escreve
+    quando acha alguma órfã.
+    """
     try:
         agora_mig = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
         orphans = conn.execute("""
@@ -2467,6 +2564,103 @@ def _get_connection():
     except Exception:
         pass
 
+
+def _schema_version() -> str:
+    """Versão do esquema = hash dos arquivos que contêm DDL.
+
+    Qualquer deploy que mexa em app_turso.py / db_mapa.py / inventario_ciclico_tab.py
+    muda o hash e faz o `_init_schema` rodar UMA vez; sem mudança de código, a
+    conexão nova (a cada 30 min, a cada reconexão, a cada boot) não manda nenhum
+    DDL para o Turso. Não há número de versão para lembrar de incrementar.
+    """
+    import hashlib
+    h = hashlib.sha1()
+    _base = os.path.dirname(os.path.abspath(__file__))
+    for _nome in ("app_turso.py", "db_mapa.py", "inventario_ciclico_tab.py"):
+        try:
+            with open(os.path.join(_base, _nome), "rb") as _f:
+                h.update(_f.read())
+        except Exception:
+            h.update(_nome.encode())
+    return h.hexdigest()[:16]
+
+
+def _meta_get(conn, chave: str) -> str:
+    """Lê uma marca de `app_meta` (réplica local). '' se não existe."""
+    try:
+        row = conn.execute("SELECT valor FROM app_meta WHERE chave = ?", (chave,)).fetchone()
+        return str(row[0]) if row else ""
+    except Exception:
+        return ""
+
+
+def _meta_set(conn, chave: str, valor: str) -> None:
+    """Grava uma marca em `app_meta` (sem commit — quem chama faz)."""
+    conn.execute(
+        "INSERT INTO app_meta (chave, valor) VALUES (?, ?) "
+        "ON CONFLICT(chave) DO UPDATE SET valor = excluded.valor",
+        (chave, valor),
+    )
+
+
+def _replica_tem_dados(conn) -> bool:
+    try:
+        return bool(conn.execute("SELECT COUNT(*) FROM estoque_mestre").fetchone()[0])
+    except Exception:
+        return False
+
+
+@st.cache_resource(ttl=1800)
+def _get_connection():
+    """Cria a conexão (renovada a cada 30 min).
+
+    Tabelas/índices/migrações só rodam quando o código mudou desde a última vez
+    (`_schema_version`): antes eram ~90 statements de DDL enviados ao Turso a
+    cada conexão nova, incluindo DROP/CREATE de trigger, que ainda gerava frames
+    para todas as réplicas sincronizarem.
+    """
+    if _using_cloud:
+        conn = libsql.connect(
+            LOCAL_DB_PATH,
+            sync_url=TURSO_DATABASE_URL,
+            auth_token=TURSO_AUTH_TOKEN,
+        )
+        try:
+            conn.sync()
+        except Exception as _e:
+            if not _is_turso_blocked(_e):
+                raise
+            # Cota estourada: se a réplica local já tem dados, segue em modo
+            # leitura com o último retrato; senão não há o que mostrar.
+            if not _replica_tem_dados(conn):
+                raise TursoBloqueado(str(_e)) from _e
+            _turso_estado()["bloqueado"] = True
+            logging.getLogger("camda").warning("Turso BLOCKED — usando réplica local: %s", _e)
+            return conn
+        _turso_estado()["bloqueado"] = False
+    else:
+        conn = libsql.connect(LOCAL_DB_PATH)
+
+    _versao = _schema_version()
+    if _meta_get(conn, "schema_version") != _versao:
+        try:
+            _init_schema(conn)
+            _meta_set(conn, "schema_version", _versao)
+            conn.commit()
+            if _using_cloud:
+                conn.sync()
+        except Exception as _e:
+            if not _is_turso_blocked(_e):
+                raise
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            if not _replica_tem_dados(conn):
+                raise TursoBloqueado(str(_e)) from _e
+            _turso_estado()["bloqueado"] = True
+            return conn
+    _sincronizar_divergencias_orfas(conn)
     return conn
 
 
@@ -2546,7 +2740,15 @@ def _sync_replica_periodico(conn) -> None:
 
 def get_db():
     """Retorna conexão pronta, reconectando automaticamente se o stream expirou."""
-    conn = _get_connection()
+    try:
+        conn = _get_connection()
+    except TursoBloqueado:
+        _tela_turso_bloqueado()
+        raise  # só chega aqui fora de uma execução do Streamlit
+    if _using_cloud and _turso_estado()["bloqueado"]:
+        # Sync e probe iriam ao Turso só para levar outro BLOCKED. A conexão é
+        # recriada a cada 30 min e tenta de novo sozinha.
+        return conn
     if _using_cloud:
         if not st.session_state.get("_synced"):
             try:
@@ -2572,7 +2774,9 @@ def sync_db():
         try:
             _get_connection().sync()
         except Exception as e:
-            st.warning(f"⚠️ Sync falhou: {e}")
+            if _is_turso_blocked(e):
+                _turso_estado()["bloqueado"] = True
+            st.warning(f"⚠️ Sync falhou: {_msg_erro_banco(e)}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2596,7 +2800,7 @@ def inserir_lancamento(codigo: str, produto: str, categoria: str,
         listar_lancamentos.clear()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao salvar lançamento: {e}")
+        st.error(f"❌ Erro ao salvar lançamento: {_msg_erro_banco(e)}")
         return False
 
 
@@ -2629,7 +2833,7 @@ def excluir_lancamento(lancamento_id: int) -> bool:
         listar_lancamentos.clear()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao excluir lançamento: {e}")
+        st.error(f"❌ Erro ao excluir lançamento: {_msg_erro_banco(e)}")
         return False
 
 
@@ -2890,90 +3094,112 @@ def _incluir_saidas_na_contagem(grupos: list, conn) -> None:
     _invalidar_cache_contagem()
 
 
+@st.cache_resource
+def _alertas_registro_estado() -> dict:
+    """Dia em que os alertas foram registrados pela última vez neste processo."""
+    return {"dia": "", "lock": threading.Lock()}
+
+
+def _registrar_alertas_1x_dia(forcar: bool = False) -> bool:
+    """Roda `_registrar_alertas_no_banco` no máximo UMA vez por dia.
+
+    Antes rodava 1x por sessão do navegador — cada aba aberta, cada F5 e cada
+    reconexão do celular repetia o registro inteiro. Agora o dia fica marcado em
+    dois lugares: na memória do processo e em `app_meta` (para valer também
+    depois de o Streamlit Cloud reiniciar o app). `forcar=True` é para depois de
+    um upload, quando há dado novo para avaliar.
+
+    Devolve True se registrou (quem chama invalida o cache de leitura).
+    """
+    hoje_iso = datetime.now(tz=_BRT).date().isoformat()
+    est = _alertas_registro_estado()
+    if not forcar and est["dia"] == hoje_iso:
+        return False
+    if _turso_estado()["bloqueado"]:
+        return False  # não dá para gravar; os alertas já gravados continuam aparecendo
+    if not est["lock"].acquire(blocking=False):
+        return False  # outra sessão já está registrando
+    try:
+        if not forcar and _meta_get(get_db(), "alertas_registrados_em") == hoje_iso:
+            est["dia"] = hoje_iso
+            return False
+        _registrar_alertas_no_banco()
+        est["dia"] = hoje_iso
+        return True
+    finally:
+        est["lock"].release()
+
+
 def _registrar_alertas_no_banco():
     """Verifica condições de alerta e registra no banco (side-effect only).
-    Chamada 1x/dia/sessão via guard de session_state no ponto de chamada."""
-    from datetime import timedelta
+
+    Chamada só por `_registrar_alertas_1x_dia`. Faz TODAS as leituras primeiro
+    (réplica local, de graça) e só então escreve, num lote: depois do primeiro
+    INSERT a conexão entra em transação de escrita e qualquer SELECT seguinte
+    passa a rodar no Turso — era o que fazia cada alerta custar uma ida ao banco
+    e as buscas em variacao_estoque virarem full scan remoto.
+    """
     hoje = datetime.now(tz=_BRT).date()
+    hoje_iso = hoje.isoformat()
     conn = get_db()
-    houve_escrita = False
+
+    # ── 1. Leituras (nenhuma escrita antes daqui) ────────────────────────────
+    try:
+        ja_disparados = {
+            (str(t), str(k)): str(d)
+            for t, k, d in conn.execute(
+                "SELECT tipo, ref_chave, data_disparo FROM alertas_disparados"
+            ).fetchall()
+        }
+    except Exception:
+        ja_disparados = {}
+
+    novos: list = []      # [(tipo, ref_chave)]
+    vistos: set = set()
+
+    def _novo(tipo: str, chave: str) -> bool:
+        """Enfileira o alerta se ainda não foi disparado. True = é novo."""
+        k = (tipo, chave)
+        if k in ja_disparados or k in vistos:
+            return False
+        vistos.add(k)
+        novos.append(k)
+        return True
 
     try:
-        lotes = conn.execute(
-            "SELECT produto, lote, vencimento FROM validade_lotes"
-        ).fetchall()
-        for produto, lote, venc_str in lotes:
+        for produto, lote, venc_str in conn.execute(
+            "SELECT produto, lote, vencimento FROM validade_lotes "
+            "WHERE vencimento >= ? AND vencimento <= ?",
+            (hoje_iso, (hoje + timedelta(days=30)).isoformat() + "~"),
+        ).fetchall():
             try:
                 venc = date.fromisoformat(str(venc_str)[:10])
                 if 0 <= (venc - hoje).days <= 30:
-                    chave = f"{produto}|{lote}"
-                    rec = conn.execute(
-                        "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
-                        ("validade_30d", chave),
-                    ).fetchone()
-                    if rec is None:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
-                            ("validade_30d", chave, hoje.isoformat()),
-                        )
-                        houve_escrita = True
+                    _novo("validade_30d", f"{produto}|{lote}")
             except Exception:
                 continue
     except Exception:
         pass
 
     try:
-        pendencias = listar_pendencias_meta()
-        for pid, data_reg in pendencias:
+        for pid, data_reg in listar_pendencias_meta():
             if _dias_desde(data_reg) > 5:
-                chave = str(pid)
-                rec = conn.execute(
-                    "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
-                    ("pendencia_5d", chave),
-                ).fetchone()
-                if rec is None:
-                    conn.execute(
-                        "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
-                        ("pendencia_5d", chave, hoje.isoformat()),
-                    )
-                    houve_escrita = True
+                _novo("pendencia_5d", str(pid))
     except Exception:
         pass
 
     try:
-        divergencias_gv = checar_reconciliacao_gv()
-        for item in divergencias_gv:
-            chave = f"{item['cooperado']}|{item['data_ref']}"
-            rec = conn.execute(
-                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
-                ("reconciliacao_gv", chave),
-            ).fetchone()
-            if rec is None:
-                conn.execute(
-                    "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
-                    ("reconciliacao_gv", chave, hoje.isoformat()),
-                )
-                houve_escrita = True
+        for item in checar_reconciliacao_gv():
+            _novo("reconciliacao_gv", f"{item['cooperado']}|{item['data_ref']}")
     except Exception:
         pass
 
     try:
-        aumentos = conn.execute(
+        for codigo, produto, delta, detectado_em in conn.execute(
             "SELECT codigo, produto, delta, detectado_em FROM variacao_estoque "
             "WHERE delta > 0 AND status = 'pendente'"
-        ).fetchall()
-        for codigo, produto, delta, detectado_em in aumentos:
-            chave = f"{codigo}|{str(detectado_em)[:10]}"
-            rec = conn.execute(
-                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
-                ("aumento_estoque", chave),
-            ).fetchone()
-            if rec is None:
-                conn.execute(
-                    "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
-                    ("aumento_estoque", chave, hoje.isoformat()),
-                )
-                houve_escrita = True
+        ).fetchall():
+            _novo("aumento_estoque", f"{codigo}|{str(detectado_em)[:10]}")
     except Exception:
         pass
 
@@ -2983,29 +3209,22 @@ def _registrar_alertas_no_banco():
     # ainda não ter sido disparado, e entradas detectadas ONTEM continuam
     # entrando na contagem de hoje. A janela de _DIAS_ENTRADA_CONTAGEM dias
     # evita que variações antigas ainda 'pendente' inundem a lista.
+    novas_entradas: dict = {}
     try:
         corte_ent = (hoje - timedelta(days=_DIAS_ENTRADA_CONTAGEM)).isoformat()
-        entradas = conn.execute(
+        # Um mesmo código pode ter várias entradas na janela (uploads
+        # diferentes): acumula o delta e guarda o qtd_atual mais recente.
+        for codigo, produto, delta, detectado_em, qtd_atual in conn.execute(
             "SELECT codigo, produto, delta, detectado_em, qtd_atual FROM variacao_estoque "
             "WHERE delta > 0 AND detectado_em >= ? ORDER BY detectado_em ASC",
             (corte_ent,),
-        ).fetchall()
-        # Um mesmo código pode ter várias entradas na janela (uploads
-        # diferentes): acumula o delta e guarda o qtd_atual mais recente.
-        novas_entradas: dict = {}
-        for codigo, produto, delta, detectado_em, qtd_atual in entradas:
+        ).fetchall():
             chave = f"{codigo}|{str(detectado_em)[:10]}"
-            rec = conn.execute(
-                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
-                ("contagem_entrada", chave),
-            ).fetchone()
-            if rec is not None:
+            # A mesma chave pode vir em mais de uma linha (dois uploads no dia):
+            # todas somam no delta, mas o marcador é gravado uma vez só.
+            if ("contagem_entrada", chave) in ja_disparados:
                 continue
-            conn.execute(
-                "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
-                ("contagem_entrada", chave, hoje.isoformat()),
-            )
-            houve_escrita = True
+            _novo("contagem_entrada", chave)
             ent = novas_entradas.setdefault(codigo, {
                 "codigo": codigo, "produto": produto,
                 "qtd_atual": qtd_atual, "delta": 0,
@@ -3013,46 +3232,49 @@ def _registrar_alertas_no_banco():
             ent["produto"] = produto
             ent["qtd_atual"] = qtd_atual  # ASC ⇒ o último visto é o mais recente
             ent["delta"] += int(delta)
+    except Exception:
+        novas_entradas = {}
+
+    novos_transf: list = []
+    try:
+        for g in checar_saidas_sem_venda():
+            if _novo("transferencia_saida", f"{g['codigo']}|{g['dia']}"):
+                novos_transf.append(g)
+    except Exception:
+        novos_transf = []
+
+    cutoff = (hoje - timedelta(days=5)).isoformat()
+    ha_antigos = any(d < cutoff for d in ja_disparados.values())
+
+    # ── 2. Escritas, num lote só ─────────────────────────────────────────────
+    try:
+        for chunk in _chunks(novos, 200):
+            ph = ", ".join("(?, ?, ?)" for _ in chunk)
+            flat = [v for (tipo, chave) in chunk for v in (tipo, chave, hoje_iso)]
+            conn.execute(
+                "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) "
+                f"VALUES {ph}",
+                flat,
+            )
         if novas_entradas:
             _incluir_entradas_na_contagem(list(novas_entradas.values()), conn)
-    except Exception:
-        pass
-
-    try:
-        novos_transf = []
-        for g in checar_saidas_sem_venda():
-            chave = f"{g['codigo']}|{g['dia']}"
-            rec = conn.execute(
-                "SELECT data_disparo FROM alertas_disparados WHERE tipo=? AND ref_chave=?",
-                ("transferencia_saida", chave),
-            ).fetchone()
-            if rec is None:
-                conn.execute(
-                    "INSERT OR IGNORE INTO alertas_disparados (tipo, ref_chave, data_disparo) VALUES (?,?,?)",
-                    ("transferencia_saida", chave, hoje.isoformat()),
-                )
-                houve_escrita = True
-                novos_transf.append(g)
         # Primeira detecção também coloca o produto na lista de contagem —
         # a conferência física decide se foi transferência ou falta.
         if novos_transf:
             _incluir_saidas_na_contagem(novos_transf, conn)
-    except Exception:
-        pass
-
-    try:
-        cutoff = (hoje - timedelta(days=5)).isoformat()
-        conn.execute("DELETE FROM alertas_disparados WHERE data_disparo < ?", (cutoff,))
-        houve_escrita = True
-    except Exception:
-        pass
-
-    if houve_escrita:
+        if ha_antigos:
+            conn.execute("DELETE FROM alertas_disparados WHERE data_disparo < ?", (cutoff,))
+        _meta_set(conn, "alertas_registrados_em", hoje_iso)
+        conn.commit()
+        sync_db()
+    except Exception as _e:
+        logging.getLogger("camda").warning("registro de alertas falhou: %s", _e)
         try:
-            conn.commit()
-            sync_db()
+            conn.rollback()  # não deixa a conexão compartilhada presa em transação
         except Exception:
             pass
+        if _is_turso_blocked(_e):
+            _turso_estado()["bloqueado"] = True
 
 
 @st.cache_data(ttl=3600)
@@ -3553,7 +3775,7 @@ def resolver_avaria(avaria_id: int, observacao: str = ""):
         sync_db()
         _limpar_caches_avarias()
     except Exception as e:
-        st.error(f"❌ Erro ao resolver avaria: {e}")
+        st.error(f"❌ Erro ao resolver avaria: {_msg_erro_banco(e)}")
 
 
 def deletar_avaria(avaria_id: int):
@@ -3579,7 +3801,7 @@ def deletar_avaria(avaria_id: int):
         sync_db()
         _limpar_caches_avarias()
     except Exception as e:
-        st.error(f"❌ Erro ao deletar avaria: {e}")
+        st.error(f"❌ Erro ao deletar avaria: {_msg_erro_banco(e)}")
 
 
 def ajustar_qtd_manual(codigo: str, nova_qtd: int) -> tuple:
@@ -3608,7 +3830,7 @@ def ajustar_qtd_manual(codigo: str, nova_qtd: int) -> tuple:
         sync_db()
         return (True, f"✅ {produto} ({codigo}) → {nova_qtd} un. salvo.")
     except Exception as e:
-        return (False, f"❌ Erro ao ajustar: {e}")
+        return (False, f"❌ Erro ao ajustar: {_msg_erro_banco(e)}")
 
 
 def excluir_produto_mestre(codigo: str) -> tuple:
@@ -3628,7 +3850,7 @@ def excluir_produto_mestre(codigo: str) -> tuple:
         sync_db()
         return (True, f"✅ Registro '{codigo} — {row[0]}' ({row[1]} un.) removido do mestre.")
     except Exception as e:
-        return (False, f"❌ Erro ao excluir: {e}")
+        return (False, f"❌ Erro ao excluir: {_msg_erro_banco(e)}")
 
 
 @st.cache_data(ttl=60)
@@ -3666,7 +3888,7 @@ def registrar_avaria(codigo: str, produto: str, qtd: int, motivo: str,
         _limpar_caches_avarias()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao registrar avaria: {e}")
+        st.error(f"❌ Erro ao registrar avaria: {_msg_erro_banco(e)}")
         return False
 
 
@@ -3698,7 +3920,7 @@ def editar_avaria_app(avaria_id: int, qtd: int, motivo: str,
         _limpar_caches_avarias()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao editar avaria: {e}")
+        st.error(f"❌ Erro ao editar avaria: {_msg_erro_banco(e)}")
         return False
 
 
@@ -3737,7 +3959,7 @@ def adicionar_foto_avaria(avaria_id: int, foto_bytes: bytes) -> bool:
         sync_db()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao salvar foto: {e}")
+        st.error(f"❌ Erro ao salvar foto: {_msg_erro_banco(e)}")
         return False
 
 
@@ -3753,7 +3975,7 @@ def remover_foto_item(foto_id: int):
         conn.commit()
         sync_db()
     except Exception as e:
-        st.error(f"❌ Erro ao remover foto: {e}")
+        st.error(f"❌ Erro ao remover foto: {_msg_erro_banco(e)}")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -3851,7 +4073,7 @@ def get_current_stock() -> pd.DataFrame:
             df.loc[_falso_positivo, "status_ciclo"] = "ok"
         return df
     except Exception as e:
-        st.warning(f"⚠️ Erro ao carregar estoque: {e}")
+        st.warning(f"⚠️ Erro ao carregar estoque: {_msg_erro_banco(e)}")
         return pd.DataFrame(columns=_STOCK_COLS)
 
 
@@ -3882,11 +4104,11 @@ def get_reposicao_pendente() -> pd.DataFrame:
         """, excl).fetchall()
         return pd.DataFrame(rows, columns=cols)
     except Exception as e:
-        st.warning(f"⚠️ Erro ao buscar reposição: {e}")
+        st.warning(f"⚠️ Erro ao buscar reposição: {_msg_erro_banco(e)}")
         return pd.DataFrame(columns=cols)
 
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=600)
 def get_historico_uploads() -> pd.DataFrame:
     cols = ["data", "tipo", "arquivo", "total_produtos_lote", "novos", "atualizados", "divergentes"]
     try:
@@ -4153,7 +4375,7 @@ def delete_fabricante(fabricante: str) -> bool:
 
 # ── Estocados de Cooperados ───────────────────────────────────────────────────
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_estocados_ativos() -> pd.DataFrame:
     cols = ["id", "produto", "cooperado", "quantidade", "data_entrada", "observacao"]
     try:
@@ -4185,7 +4407,7 @@ def inserir_estocado(produto: str, cooperado: str, quantidade: int,
         get_estocados_count_ativos.clear()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao inserir estocado: {e}")
+        st.error(f"❌ Erro ao inserir estocado: {_msg_erro_banco(e)}")
         return False
 
 
@@ -4202,11 +4424,11 @@ def baixar_estocado(estocado_id: int) -> bool:
         get_estocados_count_ativos.clear()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao dar baixa: {e}")
+        st.error(f"❌ Erro ao dar baixa: {_msg_erro_banco(e)}")
         return False
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_estocados_count_ativos() -> int:
     try:
         row = get_db().execute(
@@ -4481,7 +4703,7 @@ def upsert_materiais_terceiros(records: list, data_referencia: str) -> tuple[int
     return len(records), removidos, retiradas
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_materiais_separacao() -> dict:
     """Retorna {razao_social: separado_em} dos parceiros já marcados como separados."""
     try:
@@ -4494,7 +4716,7 @@ def get_materiais_separacao() -> dict:
         return {}
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_materiais_separacao_itens() -> set:
     """Retorna {(razao_social, produto)} dos itens já separados."""
     try:
@@ -4633,7 +4855,7 @@ def render_checkbox_separado(
     )
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_materiais_terceiros(
     armazem: str | None = None,
     tipo: str | None = None,
@@ -4676,7 +4898,7 @@ def get_materiais_terceiros(
         return pd.DataFrame(columns=cols)
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_materiais_cooperados() -> list:
     """Retorna lista ordenada de razões sociais distintas em materiais_terceiros."""
     try:
@@ -4691,7 +4913,7 @@ def get_materiais_cooperados() -> list:
         return []
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_materiais_grupos() -> list:
     """Retorna lista ordenada de grupos distintos em materiais_terceiros."""
     try:
@@ -4706,7 +4928,7 @@ def get_materiais_grupos() -> list:
         return []
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_materiais_descricoes() -> list:
     """Retorna lista ordenada de descrições distintas em materiais_terceiros."""
     try:
@@ -4822,7 +5044,7 @@ def gerar_imagem_resumo_matr(parceiro: str, df_resumo, data_ref: str) -> bytes:
     return buf.getvalue()
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_materiais_resumo() -> dict:
     """Retorna dict com totalizadores: parceiros, itens, saldo_total."""
     try:
@@ -4842,7 +5064,7 @@ def get_materiais_resumo() -> dict:
         return {"parceiros": 0, "itens": 0, "saldo_total": 0.0}
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_retiradas_terceiros(
     data_movimento: str | None = None,
     cooperado: str | None = None,
@@ -4915,7 +5137,7 @@ def get_retiradas_mes(
         return pd.DataFrame(columns=cols)
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_retiradas_datas() -> list:
     """Retorna as datas (YYYY-MM-DD) que possuem retiradas registradas, mais recente primeiro."""
     try:
@@ -4930,7 +5152,7 @@ def get_retiradas_datas() -> list:
         return []
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_retiradas_recentes(horas: int = 24) -> list:
     """Retorna as retiradas registradas nas últimas `horas`, agrupadas por cooperado.
 
@@ -6178,7 +6400,7 @@ def reset_db():
         conn.commit()
         sync_db()
     except Exception as e:
-        st.error(f"❌ Erro ao limpar banco: {e}")
+        st.error(f"❌ Erro ao limpar banco: {_msg_erro_banco(e)}")
 
 
 def marcar_reposto(item_id: int):
@@ -6191,7 +6413,7 @@ def marcar_reposto(item_id: int):
         conn.commit()
         sync_db()
     except Exception as e:
-        st.error(f"❌ Erro ao marcar reposto: {e}")
+        st.error(f"❌ Erro ao marcar reposto: {_msg_erro_banco(e)}")
 
 
 def registrar_divergencia_manual(codigo: str, delta: int, cooperado: str = "") -> tuple:
@@ -6223,7 +6445,7 @@ def registrar_divergencia_manual(codigo: str, delta: int, cooperado: str = "") -
         nome = cooperado.strip() or "sem cooperado"
         return (True, f"✅ {produto} ({codigo}) → {status} de {sinal}{delta} un. registrada para {nome}.")
     except Exception as e:
-        return (False, f"❌ Erro: {e}")
+        return (False, f"❌ Erro: {_msg_erro_banco(e)}")
 
 
 def resolver_divergencia(div_id: int):
@@ -6250,7 +6472,7 @@ def resolver_divergencia(div_id: int):
         sync_db()
         _invalidar_caches_divergencia()
     except Exception as e:
-        st.error(f"❌ Erro ao resolver divergência: {e}")
+        st.error(f"❌ Erro ao resolver divergência: {_msg_erro_banco(e)}")
 
 
 @st.cache_data(ttl=60)
@@ -6296,7 +6518,7 @@ def apagar_historico_divergencia(hist_id: int):
         conn.commit()
         sync_db()
     except Exception as e:
-        st.error(f"❌ Erro ao apagar histórico: {e}")
+        st.error(f"❌ Erro ao apagar histórico: {_msg_erro_banco(e)}")
 
 
 def apagar_todo_historico_divergencias():
@@ -6307,7 +6529,7 @@ def apagar_todo_historico_divergencias():
         conn.commit()
         sync_db()
     except Exception as e:
-        st.error(f"❌ Erro ao apagar histórico: {e}")
+        st.error(f"❌ Erro ao apagar histórico: {_msg_erro_banco(e)}")
 
 
 _SENHA_HISTORICO = ACCESS_PASSWORD  # mesma senha de acesso ao dashboard
@@ -6737,7 +6959,7 @@ def read_excel_to_records(uploaded_file) -> tuple:
     try:
         df_raw = pd.read_excel(uploaded_file, sheet_name=0, header=None)
     except Exception as e:
-        return (False, f"Erro ao ler arquivo: {e}", [])
+        return (False, f"Erro ao ler arquivo: {_msg_erro_banco(e)}", [])
 
     fmt = detect_format(df_raw)
     if fmt == "vendas":
@@ -6829,7 +7051,7 @@ def upload_mestre(records: list, do_sync: bool = True) -> tuple:
             )
         return (True, msg)
     except Exception as e:
-        return (False, f"❌ Erro: {e}")
+        return (False, f"❌ Erro: {_msg_erro_banco(e)}")
 
 
 def upload_parcial(records: list, zerados: list = None, do_sync: bool = True) -> tuple:
@@ -6951,7 +7173,7 @@ def upload_parcial(records: list, zerados: list = None, do_sync: bool = True) ->
             parts.append(f"🔄 {len(invalidar_ciclo)} voltaram pra contagem (movimentaram)")
         return (True, " · ".join(parts))
     except Exception as e:
-        return (False, f"❌ Erro: {e}")
+        return (False, f"❌ Erro: {_msg_erro_banco(e)}")
 
 
 def _num_eq(a, b) -> bool:
@@ -7222,7 +7444,7 @@ def upload_parcial_estoque(records: list, do_sync: bool = True,
             )
         return (True, " · ".join(parts))
     except Exception as e:
-        return (False, f"❌ Erro: {e}")
+        return (False, f"❌ Erro: {_msg_erro_banco(e)}")
 
 
 def popular_contagem(records: list, upload_id: int, conn, zerados: list = None) -> None:
@@ -7555,7 +7777,7 @@ def marcar_variacao_verificada(variacao_id: int):
         get_variacoes_pendentes_count.clear()
         checar_saidas_sem_venda.clear()
     except Exception as e:
-        st.error(f"❌ Erro: {e}")
+        st.error(f"❌ Erro: {_msg_erro_banco(e)}")
 
 
 def limpar_variacoes_pendentes() -> int:
@@ -7623,11 +7845,11 @@ def save_validade_lotes(df: pd.DataFrame) -> bool:
         get_giro_ruptura_grupos.clear()
         return True
     except Exception as e:
-        st.error(f"❌ Erro ao salvar validade: {e}")
+        st.error(f"❌ Erro ao salvar validade: {_msg_erro_banco(e)}")
         return False
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_validade_lotes() -> pd.DataFrame:
     """Carrega todos os lotes de validade do banco."""
     cols = ["id", "filial", "grupo", "produto", "lote", "fabricacao", "vencimento",
@@ -7652,7 +7874,7 @@ def get_validade_lotes() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=1800)
 def get_validade_upload_date() -> str:
     """Retorna a data do último upload de validade, ou string vazia."""
     try:
@@ -8981,7 +9203,7 @@ def save_faturamento_gv(records: list, data_ref: str):
         get_resumo_reconciliacao_gv.clear()
         return True, f"{len(rows)} registros de faturamento GV salvos para {data_ref}."
     except Exception as e:
-        return False, f"Erro ao salvar faturamento GV: {e}"
+        return False, f"Erro ao salvar faturamento GV: {_msg_erro_banco(e)}"
 
 
 @st.cache_data(ttl=1800)
@@ -9970,7 +10192,7 @@ def salvar_classificacao_vet(codigos: list, classe: str, especie: str = "",
         conn.commit()
         sync_db()
     except Exception as e:
-        return (False, f"Erro ao gravar classificação: {e}")
+        return (False, f"Erro ao gravar classificação: {_msg_erro_banco(e)}")
     return (True, f"{len(codigos)} produto(s) classificado(s) como **{classe}**.")
 
 # Nomes em validade_lotes vêm com prefixo de código do BI ("100235440 - FUNGICIDA
@@ -10040,7 +10262,7 @@ def get_cobertura_estoque() -> pd.DataFrame:
               LEFT JOIN classif_vet   c ON c.cod = UPPER(TRIM(e.codigo))
         """, (d90, d180)).fetchall()
     except Exception as e:
-        st.warning(f"⚠️ Erro ao calcular cobertura: {e}")
+        st.warning(f"⚠️ Erro ao calcular cobertura: {_msg_erro_banco(e)}")
         return pd.DataFrame(columns=cols)
     if not rows:
         return pd.DataFrame(columns=cols)
@@ -11265,14 +11487,27 @@ else:
     _whtml = ""
 
 # ── Alertas automáticos (computados aqui, renderizados abaixo da busca) ──────
+get_db()  # abre a conexão: é ela que descobre se o Turso está bloqueado
+if _turso_estado()["bloqueado"]:
+    st.warning(
+        "🚧 **Modo somente leitura.** " + _MSG_TURSO_BLOQUEADO
+        + " Enquanto isso o app mostra os dados da última sincronização; "
+        "uploads, contagens e demais gravações não vão funcionar."
+    )
+
+_hoje_alertas = datetime.now(tz=_BRT).date().isoformat()
 if (
-    "alertas_reg_date" not in st.session_state
-    or "alertas_cache" not in st.session_state  # pop() nos uploads força re-registro
-    or st.session_state.get("alertas_reg_date") != datetime.now(tz=_BRT).date().isoformat()
+    "alertas_cache" not in st.session_state  # pop() nos uploads força re-registro
+    or st.session_state.get("alertas_reg_date") != _hoje_alertas
 ):
-    _registrar_alertas_no_banco()
-    _ler_alertas_para_exibir.clear()  # invalida cache de leitura após escrita
-    st.session_state["alertas_reg_date"] = datetime.now(tz=_BRT).date().isoformat()
+    # Sessão nova NÃO força: o registro roda no máximo 1x por dia para o app
+    # inteiro. Só força quando um upload desta sessão tirou o "alertas_cache".
+    _forcar_alertas = (
+        "alertas_reg_date" in st.session_state and "alertas_cache" not in st.session_state
+    )
+    if _registrar_alertas_1x_dia(forcar=_forcar_alertas):
+        _ler_alertas_para_exibir.clear()  # invalida cache de leitura após escrita
+    st.session_state["alertas_reg_date"] = _hoje_alertas
     st.session_state["alertas_cache"] = True  # sentinela para que os pop() nos uploads continuem funcionando
 
 _alertas = _ler_alertas_para_exibir()
@@ -14474,7 +14709,7 @@ new Chart(document.getElementById('coop-chart'),{
                                 st.warning(f"⚠️ Lembre-se: {len(lotes_auto)} lote(s) AUTO foram salvos com possível validade incorreta. Solicite a correção!")
                             st.rerun()
                 except Exception as e:
-                    st.error(f"❌ Erro ao processar planilha: {e}")
+                    st.error(f"❌ Erro ao processar planilha: {_msg_erro_banco(e)}")
                     st.info("Verifique se é a planilha SIG de validade com as colunas: FILIAL, GRUPO, PRODUTO, LOTE, FABRICAÇÃO, VENCIMENTO, QUANTIDADE, VALOR")
 
         # ── Carrega dados do banco ────────────────────────────────────────────
@@ -16108,7 +16343,7 @@ with st.expander("📤 Upload de Planilha", expanded=not has_mestre):
                         ok, result = parse_parcial_estoque(df_raw)
                         zerados = []
                     except Exception as e:
-                        ok, result, zerados = False, f"Erro ao ler arquivo: {e}", []
+                        ok, result, zerados = False, f"Erro ao ler arquivo: {_msg_erro_banco(e)}", []
                 else:
                     ok, result, zerados = read_excel_to_records(uploaded)
                 # Produtos que sumiram da planilha: calculado junto com o parse
