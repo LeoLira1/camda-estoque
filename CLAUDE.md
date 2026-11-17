@@ -146,6 +146,23 @@ antemão em vez de redescobri-las:
   linhas daquela avaria. A migração única (`_migrar_conteudo_avarias`, marca
   `migracao_conteudo_v1` no `avarias_log`, mesmo SQL do camda-mcp) somou os litros dos
   baldes medidos; avaria só com baldes em 50% (o nível que era inventado) ficou "a medir".
+- **Códigos irmãos** (`_grupos_codigos_irmaos`, espelho de `montarVinculos` em
+  `gondolas.ts` do camda-mcp — mude os dois juntos): 1) vínculo do mapa
+  (`mapa_produtos.codigo` + `mapa_produtos_codigos`); 2) sem vínculo, a mesma chave
+  de nome — `estoque_mestre` primeiro, e para o código que não está lá o nome das
+  vendas/contagem/divergências; 3) o mesmo número com e sem "US" (227579/US227579)
+  é o mesmo produto: o sem vínculo entra no produto do mapa do gêmeo, dois sem
+  vínculo juntam os grupos de nome; só não junta se os dois estão vinculados a
+  produtos diferentes. Código sem vínculo NÃO entra num produto do mapa só pelo
+  nome (decisão antiga, com teste no MCP).
+- **Produto zerado continua no `estoque_mestre` com `qtd_sistema = 0`** (para não
+  sumir das buscas nem quebrar os irmãos). Os três uploads (`upload_mestre`,
+  `upload_parcial` com zerados, `upload_parcial_estoque` com zerar ausentes)
+  chamam `_zerar_no_mestre` em vez de `DELETE`. As telas de estoque filtram
+  `qtd_sistema != 0` (`get_current_stock`, `get_stock_count`, progresso do ciclo,
+  sem P.A., Etiquetas). Leitura nova do mestre que lista "o estoque" precisa do
+  mesmo filtro. `_migrar_mestre_zerados` (marca `mestre_zerados_v1`) devolveu
+  uma vez os códigos que já tinham sumido.
 - **Nunca mande uma lista inteira num único `st.markdown`.** Acima de 10 000
   bytes (`global.minCachedMessageSize`) o Streamlit marca o ForwardMsg como
   *cacheable*: na segunda vez que aquele conteúdo aparece na sessão o servidor

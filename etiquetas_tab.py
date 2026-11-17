@@ -207,7 +207,8 @@ def _carregar_produtos(_conn) -> list:
     """
     try:
         estoque_rows = _conn.execute(
-            "SELECT codigo, produto, categoria, qtd_sistema FROM estoque_mestre"
+            "SELECT codigo, produto, categoria, qtd_sistema FROM estoque_mestre "
+            "WHERE qtd_sistema != 0"
         ).fetchall()
     except Exception:
         estoque_rows = []

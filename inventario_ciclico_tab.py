@@ -798,6 +798,7 @@ def _get_progresso_ciclo(get_db) -> dict:
                     THEN 1 ELSE 0 END),
                 SUM(CASE WHEN status_ciclo='' OR status_ciclo IS NULL THEN 1 ELSE 0 END)
             FROM estoque_mestre
+            WHERE qtd_sistema != 0
         """).fetchone()
         return {"total": row[0] or 0, "ok": row[1] or 0, "divergencia": row[2] or 0, "pendente": row[3] or 0}
     except Exception:
