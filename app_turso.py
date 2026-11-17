@@ -2531,7 +2531,84 @@ def _init_schema(conn):
     except Exception:
         pass
 
+    try:
+        _migrar_mestre_zerados(conn)
+    except Exception as _e_mig:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"[mestre] recarga dos zerados falhou: {_e_mig}")
 
+
+def _migrar_mestre_zerados(conn) -> int:
+    """Migração única (marca `mestre_zerados_v1` em app_meta): devolve ao
+    estoque_mestre, com saldo 0, todo código que já saiu de lá mas aparece na
+    contagem, nas divergências, nas vendas ou no mapa — antes os uploads
+    apagavam o produto que zerava e ele sumia das buscas (ex.: Alion 5L
+    227579/US227579). Daqui para frente os uploads zeram em vez de apagar
+    (_zerar_no_mestre). Nome e categoria: contagem > divergência > venda > mapa;
+    a categoria da venda (grupo do Protheus) perde para a de um código irmão
+    que já está no mestre. Lê tudo antes, grava num INSERT OR IGNORE só."""
+    if _meta_get(conn, "mestre_zerados_v1"):
+        return 0
+    conn.commit()  # leituras abaixo fora de transação de escrita (réplica local)
+    K = _codigo_key
+    mestre = conn.execute("SELECT codigo, produto, categoria FROM estoque_mestre").fetchall()
+    no_mestre = {K(c) for c, _, _ in mestre}
+    cat_por_nome = {_chave_nome_produto(p): cat for _, p, cat in mestre if cat}
+    cand: dict = {}
+
+    def _add(rows, cat_fraca=False):
+        for cod, prod, cat in rows:
+            ck = K(cod)
+            if not ck or ck in no_mestre or _is_produto_ignorado(prod or ""):
+                continue
+            if not re.fullmatch(r"[A-Z]*\d+", ck):
+                continue  # ex.: AUTO_US227579HERBICIDAALI, gravado por parser antigo na contagem
+            e = cand.setdefault(ck, {"produto": "", "categoria": "", "fraca": True})
+            if not e["produto"] and str(prod or "").strip():
+                e["produto"] = str(prod).strip()
+            cat = str(cat or "").strip()
+            if cat and not e["categoria"]:  # fontes fortes vêm primeiro
+                e["categoria"], e["fraca"] = cat, cat_fraca
+
+    fontes = [
+        ("SELECT UPPER(TRIM(codigo)), MAX(produto), MAX(categoria) FROM contagem_itens GROUP BY 1", False),
+        ("SELECT UPPER(TRIM(codigo)), MAX(produto), MAX(categoria) FROM divergencias GROUP BY 1", False),
+        ("SELECT UPPER(TRIM(codigo)), MAX(produto), MAX(grupo) FROM vendas_historico GROUP BY 1", True),
+        ("SELECT UPPER(TRIM(m.codigo)), p.nome, '' FROM ("
+         " SELECT codigo, produto_id FROM mapa_produtos WHERE codigo IS NOT NULL"
+         " UNION SELECT codigo, produto_id FROM mapa_produtos_codigos) m"
+         " JOIN mapa_produtos p ON p.produto_id = m.produto_id", True),
+    ]
+    for sql, fraca in fontes:
+        try:
+            _add(conn.execute(sql).fetchall(), fraca)
+        except Exception:
+            continue  # tabela ausente neste banco
+    for e in cand.values():  # categoria forte de um candidato irmão (mesmo nome)
+        if e["produto"] and e["categoria"] and not e["fraca"]:
+            cat_por_nome.setdefault(_chave_nome_produto(e["produto"]), e["categoria"])
+    agora = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+    linhas = []
+    for ck, e in sorted(cand.items()):
+        if not e["produto"]:
+            continue  # sem nome não dá para buscar nem juntar
+        cat = e["categoria"]
+        if e["fraca"]:
+            cat = cat_por_nome.get(_chave_nome_produto(e["produto"])) or cat
+        linhas.append((ck, e["produto"], cat or "OUTROS", agora, agora))
+    if linhas:
+        conn.executemany(
+            "INSERT OR IGNORE INTO estoque_mestre "
+            "(codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em) "
+            "VALUES (?, ?, ?, 0, 0, 0, '', 'ok', ?, ?)",
+            linhas,
+        )
+    _meta_set(conn, "mestre_zerados_v1", f"{agora} · {len(linhas)} códigos")
+    conn.commit()
+    return len(linhas)
 
 
 def _sincronizar_divergencias_orfas(conn):
@@ -3833,6 +3910,26 @@ def ajustar_qtd_manual(codigo: str, nova_qtd: int) -> tuple:
         return (False, f"❌ Erro ao ajustar: {_msg_erro_banco(e)}")
 
 
+# Produto que zerou continua no estoque_mestre com saldo 0, para não sumir das
+# buscas (buscar_produto/ficha_produto do MCP, códigos irmãos por nome). As
+# telas de estoque filtram qtd_sistema > 0 (get_current_stock, progresso do
+# ciclo). Status, divergência e ciclo voltam ao neutro: o produto movimentou.
+_SQL_ZERAR_MESTRE = """
+    UPDATE estoque_mestre SET
+        qtd_sistema = 0, qtd_fisica = 0, diferenca = 0, nota = '', status = 'ok',
+        status_ciclo = '', qtd_contada_ciclo = NULL,
+        qtd_sistema_na_contagem = NULL, contado_ciclo_em = '',
+        ultima_contagem = ?
+    WHERE codigo IN ({ph})
+"""
+
+
+def _zerar_no_mestre(conn, codigos, now: str) -> None:
+    """Zera (em vez de apagar) os códigos no estoque_mestre."""
+    for chunk in _chunks(list(codigos), 400):
+        conn.execute(_SQL_ZERAR_MESTRE.format(ph=",".join("?" * len(chunk))), [now, *chunk])
+
+
 def excluir_produto_mestre(codigo: str) -> tuple:
     """
     Remove um produto do estoque mestre pelo código exato.
@@ -4055,7 +4152,11 @@ _STOCK_COLS = ["codigo", "produto", "categoria", "qtd_sistema", "qtd_fisica",
 @st.cache_data(ttl=600)
 def get_current_stock() -> pd.DataFrame:
     try:
-        rows = get_db().execute("SELECT * FROM estoque_mestre ORDER BY categoria, produto").fetchall()
+        # Produto zerado fica no mestre só para as buscas e os códigos irmãos
+        # (_zerar_no_mestre); as telas de estoque mostram o que tem saldo.
+        rows = get_db().execute(
+            "SELECT * FROM estoque_mestre WHERE qtd_sistema != 0 ORDER BY categoria, produto"
+        ).fetchall()
         df = pd.DataFrame(rows, columns=_STOCK_COLS)
         if not df.empty and _PRODUTOS_IGNORADOS:
             df = df[~df["produto"].str.strip().str.upper().isin(_PRODUTOS_IGNORADOS)]
@@ -4080,7 +4181,7 @@ def get_current_stock() -> pd.DataFrame:
 @st.cache_data(ttl=600)
 def get_stock_count() -> int:
     try:
-        row = get_db().execute("SELECT COUNT(*) FROM estoque_mestre").fetchone()
+        row = get_db().execute("SELECT COUNT(*) FROM estoque_mestre WHERE qtd_sistema != 0").fetchone()
         return row[0] if row else 0
     except Exception:
         return 0
@@ -7010,7 +7111,24 @@ def upload_mestre(records: list, do_sync: bool = True) -> tuple:
         ausentes = detectar_ausentes_na_planilha(records, conn)
         detectar_e_registrar_variacoes(records, conn, now, upload_id, ausentes=ausentes)
 
+        # Quem estava no mestre e não veio na planilha (zerou) continua com saldo 0.
+        _presentes = {_codigo_key(r["codigo"]) for r in records}
+        zerados_mestre = [
+            (cod, prod, cat, crit)
+            for cod, prod, cat, crit in conn.execute(
+                "SELECT codigo, produto, categoria, criado_em FROM estoque_mestre"
+            ).fetchall()
+            if _codigo_key(cod) not in _presentes
+        ]
+
         conn.execute("DELETE FROM estoque_mestre")
+
+        if zerados_mestre:
+            conn.executemany("""
+                INSERT INTO estoque_mestre
+                    (codigo, produto, categoria, qtd_sistema, qtd_fisica, diferenca, nota, status, ultima_contagem, criado_em)
+                VALUES (?, ?, ?, 0, 0, 0, '', 'ok', ?, ?)
+            """, [(cod, prod, cat or "", now, crit or now) for cod, prod, cat, crit in zerados_mestre])
 
         # BATCH INSERT via executemany
         conn.executemany("""
@@ -7034,7 +7152,8 @@ def upload_mestre(records: list, do_sync: bool = True) -> tuple:
                        diferenca = ?,
                        qtd_fisica = qtd_sistema + ?
                    WHERE codigo = ? AND status = 'ok'""",
-                [(status, dif, dif, codigo) for codigo, (status, dif) in existing_div.items()]
+                [(status, dif, dif, codigo) for codigo, (status, dif) in existing_div.items()
+                 if _codigo_key(codigo) in _presentes]  # zerado volta neutro
             )
 
         # Auto-cachear princípios ativos para todos os produtos do mestre
@@ -7087,8 +7206,7 @@ def upload_parcial(records: list, zerados: list = None, do_sync: bool = True) ->
             codigos_zerados = [z["codigo"] if isinstance(z, dict) else z for z in zerados]
             codigos_remover = [c for c in codigos_zerados if c in existing]
             if codigos_remover:
-                ph = ",".join(["?" for _ in codigos_remover])
-                conn.execute(f"DELETE FROM estoque_mestre WHERE codigo IN ({ph})", codigos_remover)
+                _zerar_no_mestre(conn, codigos_remover, now)
 
         novos_data, update_data = [], []
         for r in records:
@@ -7327,13 +7445,9 @@ def upload_parcial_estoque(records: list, do_sync: bool = True,
         )
 
         # Os ausentes já viraram saída em variacao_estoque acima; aqui eles
-        # saem do estoque. Mesmo tratamento dos zerados em upload_parcial().
+        # ficam com saldo 0. Mesmo tratamento dos zerados em upload_parcial().
         if ausentes:
-            for chunk in _chunks([a["codigo"] for a in ausentes], 400):
-                ph = ",".join("?" * len(chunk))
-                conn.execute(
-                    f"DELETE FROM estoque_mestre WHERE codigo IN ({ph})", chunk
-                )
+            _zerar_no_mestre(conn, [a["codigo"] for a in ausentes], now)
 
         batch_ok = _supports_update_from(conn)
 
@@ -9429,12 +9543,48 @@ def _chave_nome_produto(texto) -> str:
     return " ".join(t.split())
 
 
+def _gemeo_us(ck: str) -> str:
+    """O gêmeo com/sem "US" do código já normalizado (227579 ↔ US227579), ou ""."""
+    if ck.startswith("US") and ck[2:].isdigit():
+        return ck[2:]
+    if ck.isdigit():
+        return "US" + ck
+    return ""
+
+
+def _nomes_fora_do_mestre(conn, ja_tem: set) -> list:
+    """[(codigo, produto)] dos códigos que não estão em `ja_tem`, com o nome da
+    planilha de vendas, da contagem ou da divergência (nessa ordem). Produto
+    que zerou sai do estoque_mestre; sem isso o 227579 e o US227579 (Alion 5L)
+    ficavam cada um num grupo."""
+    out, visto = [], set(ja_tem)
+    for tabela in ("vendas_historico", "contagem_itens", "divergencias"):
+        try:
+            rows = conn.execute(
+                f"SELECT UPPER(TRIM(codigo)), MAX(produto) FROM {tabela} "
+                "GROUP BY UPPER(TRIM(codigo))"
+            ).fetchall()
+        except Exception:
+            continue  # tabela ausente neste banco
+        for cod, prod in rows:
+            ck = _codigo_key(cod)
+            if ck and ck not in visto:
+                visto.add(ck)
+                out.append((ck, prod))
+    return out
+
+
 def _grupos_codigos_irmaos(conn, nomes) -> dict:
-    """codigo → id do grupo de códigos do mesmo produto, com a regra do Gondolas
-    (codigos_vinculados.dart, igual ao camda-mcp): primeiro o vínculo do mapa
-    (mapa_produtos.codigo + mapa_produtos_codigos); sem vínculo, a mesma chave
-    de nome. `nomes` = [(codigo, produto)], o primeiro nome de cada código vale.
-    Código fora dos dois fica sozinho (grupo = ele mesmo)."""
+    """codigo → id do grupo de códigos do mesmo produto. Mesma regra do
+    camda-mcp (gondolas.ts/montarVinculos) — mude os dois juntos:
+    1. vínculo do mapa (mapa_produtos.codigo + mapa_produtos_codigos);
+    2. sem vínculo, a mesma chave de nome. `nomes` = [(codigo, produto)], o
+       primeiro nome de cada código vale; código que não veio em `nomes` usa o
+       nome das vendas/contagem/divergências (_nomes_fora_do_mestre);
+    3. o mesmo número com e sem "US" é o mesmo produto: o sem vínculo entra no
+       produto do mapa do gêmeo, e dois sem vínculo juntam os grupos de nome.
+       Só não junta quando os dois estão vinculados a produtos diferentes.
+    Código fora de tudo fica sozinho (grupo = ele mesmo)."""
     pid_por_cod: dict = {}
     for sql in ("SELECT codigo, produto_id FROM mapa_produtos WHERE codigo IS NOT NULL",
                 "SELECT codigo, produto_id FROM mapa_produtos_codigos"):
@@ -9446,13 +9596,46 @@ def _grupos_codigos_irmaos(conn, nomes) -> dict:
             ck, pid = _codigo_key(cod), str(pid or "").strip()
             if ck and pid:
                 pid_por_cod[ck] = pid
-    grupo: dict = {ck: f"pid:{pid}" for ck, pid in pid_por_cod.items()}
+    chave_de: dict = {}
+    conhecidos = set(pid_por_cod)
+    nomes = list(nomes)
+    nomes += _nomes_fora_do_mestre(conn, {_codigo_key(c) for c, _ in nomes} | conhecidos)
     for cod, prod in nomes:
         ck = _codigo_key(cod)
-        if not ck or ck in grupo:
+        if not ck or ck in conhecidos:
             continue
+        conhecidos.add(ck)
         chave = _chave_nome_produto(prod)
-        grupo[ck] = f"nome:{chave}" if chave else f"cod:{ck}"
+        if chave:
+            chave_de[ck] = chave
+    # regra 3, gêmeo com vínculo
+    for ck in list(conhecidos):
+        if ck not in pid_por_cod and pid_por_cod.get(_gemeo_us(ck)):
+            pid_por_cod[ck] = pid_por_cod[_gemeo_us(ck)]
+    # regra 2 + 3 entre os sem vínculo: união das chaves de nome
+    pai: dict = {}
+
+    def _raiz(k):
+        r = k
+        while pai.get(r, r) != r:
+            r = pai[r]
+        pai[k] = r
+        return r
+
+    sem_vinculo = [ck for ck in conhecidos if ck not in pid_por_cod]
+    for ck in sem_vinculo:
+        g = _gemeo_us(ck)
+        if not g or g not in conhecidos or g in pid_por_cod:
+            continue
+        k = chave_de.get(ck) or chave_de.get(g) or f"#US{ck[2:] if ck.startswith('US') else ck}"
+        chave_de.setdefault(ck, k)
+        chave_de.setdefault(g, k)
+        ra, rb = _raiz(chave_de[ck]), _raiz(chave_de[g])
+        if ra != rb:
+            pai[max(ra, rb)] = min(ra, rb)
+    grupo: dict = {ck: f"pid:{pid}" for ck, pid in pid_por_cod.items()}
+    for ck in sem_vinculo:
+        grupo[ck] = f"nome:{_raiz(chave_de[ck])}" if ck in chave_de else f"cod:{ck}"
     return grupo
 
 
@@ -10031,6 +10214,7 @@ def get_produtos_sem_principio_ativo() -> list:
             SELECT produto, categoria, criado_em
             FROM estoque_mestre
             WHERE categoria IN ('HERBICIDAS','FUNGICIDAS','INSETICIDAS','NEMATICIDAS')
+              AND qtd_sistema != 0
             ORDER BY criado_em DESC
         """).fetchall()
         if not rows:
