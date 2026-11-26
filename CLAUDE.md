@@ -128,6 +128,15 @@ antemão em vez de redescobri-las:
   (já chamam: `registrar_divergencia_manual`, `resolver_divergencia`,
   `atualizar_item_contagem`). No Inv. Cíclico o flag
   `_ciclo_cache_clear_needed` é drenado ANTES do `get_current_stock()`.
+- **Baixa parcial (aba Divergências).** `get_baixas_parciais()` agrupa as linhas de
+  lançamento de `historico_divergencias` (`acao` vazia) por cooperado normalizado
+  (`_bp_norm_coop`: sem acento, maiúsculas, sem DE/DA/DO/DOS/DAS/E; ignora FALTANDO,
+  SOBRANDO, INVERTIDO, TESTE) + dia do `criado_em`. Aberta = ainda existe em
+  `divergencias` com o mesmo código + `criado_em` (regra do `situacao` do camda-mcp).
+  Hora da baixa: log `acao='apagar'` do MCP ou `divergencias_baixas` (gravada pelo ✅ do
+  app); sem registro, conta o lançamento. "ok, está certo assim" grava em
+  `baixas_parciais_dispensadas` (cooperado normalizado, dia). O ✅ pergunta antes de
+  resolver quando o grupo tem outras abertas (`_bp_outras_abertas`).
 - **Avarias: histórico em `avarias_log`.** Toda ação do app sobre uma avaria
   (registrar, resolver, excluir, ＋/✕ balde, nível, ＋/✕ foto) grava uma linha via
   `_log_avaria` (origem `'app'`) no mesmo commit; o MCP `camda-mcp` grava as dele
