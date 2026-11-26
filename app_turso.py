@@ -2054,6 +2054,28 @@ def _init_schema(conn):
             criado_em TEXT NOT NULL
         )
     """)
+    # Alerta de "baixa parcial" (aba Divergências): grupos (cooperado + dia do
+    # lançamento) que o usuário marcou como "ok, está certo assim".
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS baixas_parciais_dispensadas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cooperado TEXT NOT NULL,
+            dia TEXT NOT NULL,
+            dispensado_em TEXT NOT NULL,
+            UNIQUE(cooperado, dia)
+        )
+    """)
+    # Quando o app deu baixa (✅) numa divergência: historico_divergencias não
+    # guarda a hora da baixa feita pelo app (o MCP grava a dele como acao='apagar').
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS divergencias_baixas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo TEXT NOT NULL,
+            cooperado TEXT DEFAULT '',
+            criado_em TEXT NOT NULL,
+            baixado_em TEXT NOT NULL
+        )
+    """)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS fabricantes_produtos (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2782,7 +2804,8 @@ def _invalidar_caches_divergencia() -> None:
     status/ciclo de `estoque_mestre`. Usa globals() porque get_db() pode rodar
     antes de as funções cacheadas serem definidas no script.
     """
-    for _nome in ("get_divergencias", "get_historico_divergencias", "get_current_stock"):
+    for _nome in ("get_divergencias", "get_historico_divergencias", "get_current_stock",
+                  "get_baixas_parciais"):
         _fn = globals().get(_nome)
         if _fn is not None and hasattr(_fn, "clear"):
             try:
@@ -6631,6 +6654,255 @@ def apagar_todo_historico_divergencias():
         sync_db()
     except Exception as e:
         st.error(f"❌ Erro ao apagar histórico: {_msg_erro_banco(e)}")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# BAIXA PARCIAL — mesmo cooperado, mesmo dia (mesma planilha), parte resolvida
+# e parte ainda aberta há mais de 1 dia desde a primeira baixa.
+# ══════════════════════════════════════════════════════════════════════════════
+import json as _json_bp
+
+_BP_STOPWORDS = {"DE", "DA", "DO", "DOS", "DAS", "E"}
+_BP_IGNORAR = {"FALTANDO", "SOBRANDO", "INVERTIDO", "TESTE"}
+
+
+def _bp_norm_coop(nome) -> str:
+    """Sem acento, maiúsculas, sem DE/DA/DO/DOS/DAS/E. '' = sem cooperado ou ignorado."""
+    s = unicodedata.normalize("NFKD", str(nome or ""))
+    s = "".join(c for c in s if not unicodedata.combining(c)).upper()
+    palavras = re.findall(r"[A-Z0-9]+", s)
+    if not palavras or any(p in _BP_IGNORAR for p in palavras):
+        return ""
+    return " ".join(p for p in palavras if p not in _BP_STOPWORDS)
+
+
+def _bp_fmt_qtd(produto, qtd) -> str:
+    """Quantidade na embalagem física: baldes (20L), galões (10L), caixas (5L x 4 / nXm)."""
+    n = abs(int(qtd or 0))
+    nome = str(produto or "").upper()
+    m = re.search(r"(\d+)\s*X\s*(\d+(?:[.,]\d+)?)\s*(L|LT|KG|ML|G)\b", nome)
+    if m and int(m.group(1)) > 1:
+        por_cx = int(m.group(1))
+        cx = n / por_cx
+        return f"{n} un. ({cx:g} cx {m.group(1)}x{m.group(2)}) 📦"
+    m = re.search(r"(\d+(?:[.,]\d+)?)\s*(L|LT|LTS|KG|ML)\b", nome)
+    if m:
+        tam = float(m.group(1).replace(",", "."))
+        un = m.group(2)
+        if un == "ML":
+            return f"{n} frasco{'s' if n != 1 else ''} 🧴"
+        if tam >= 15:
+            return f"{n} balde{'s' if n != 1 else ''} 🪣"
+        if tam >= 10:
+            return f"{n} {'galões' if n != 1 else 'galão'}"
+        if tam == 5:
+            emb = "frasco" if un.startswith("L") else "emb."
+            emb = (emb + "s") if (n != 1 and emb == "frasco") else emb
+            return f"{n} {emb} ({n / 4:g} cx 5x4) 📦"
+        if un.startswith("L"):
+            return f"{n} frasco{'s' if n != 1 else ''} 🧴"
+    return f"{n} un."
+
+
+@st.cache_data(ttl=60)
+def get_baixas_parciais() -> list:
+    """Grupos (cooperado normalizado + dia) com ≥1 resolvida e ≥1 aberta, cuja
+    primeira baixa foi há mais de 1 dia, e que não foram dispensados.
+
+    Fonte: historico_divergencias (linhas de lançamento, acao vazia). Aberta =
+    ainda existe em `divergencias` com o mesmo código + criado_em (mesma regra do
+    situacao do camda-mcp). Hora da baixa: log 'apagar' do MCP, ou
+    divergencias_baixas (✅ do app); sem registro, conta o próprio lançamento.
+    Só leitura (réplica local).
+    """
+    try:
+        conn = get_db()
+        hist = conn.execute(
+            "SELECT id, codigo, produto, cooperado, delta, status, criado_em "
+            "FROM historico_divergencias WHERE COALESCE(acao, '') = ''"
+        ).fetchall()
+        abertas_rows = conn.execute(
+            "SELECT id, codigo, criado_em FROM divergencias"
+        ).fetchall()
+        apagar_rows = conn.execute(
+            "SELECT criado_em, detalhe FROM historico_divergencias WHERE acao = 'apagar'"
+        ).fetchall()
+        try:
+            app_baixas = conn.execute(
+                "SELECT codigo, criado_em, baixado_em FROM divergencias_baixas"
+            ).fetchall()
+        except Exception:
+            app_baixas = []
+        try:
+            dispensados = {
+                (str(r[0]), str(r[1]))
+                for r in conn.execute("SELECT cooperado, dia FROM baixas_parciais_dispensadas").fetchall()
+            }
+        except Exception:
+            dispensados = set()
+    except Exception as _e_db:
+        _avisar_erro_banco('baixas parciais', _e_db)
+        return []
+
+    # multiconjunto de abertas por (codigo, criado_em) → ids
+    abertas: dict = {}
+    for _id, cod, cri in abertas_rows:
+        abertas.setdefault((str(cod).strip(), str(cri)), []).append(int(_id))
+
+    # hora da baixa por (codigo, criado_em)
+    baixa_em: dict = {}
+    for quando, det in apagar_rows:
+        try:
+            ap = _json_bp.loads(det or "{}").get("apagado") or {}
+            k = (str(ap.get("codigo", "")).strip(), str(ap.get("criado_em", "")))
+            if k[0] and k[1]:
+                baixa_em.setdefault(k, []).append(str(quando))
+        except Exception:
+            continue
+    for cod, cri, quando in app_baixas:
+        baixa_em.setdefault((str(cod).strip(), str(cri)), []).append(str(quando))
+
+    grupos: dict = {}
+    for hid, cod, prod, coop, delta, status, cri in sorted(hist, key=lambda r: (str(r[6]), r[0])):
+        chave_coop = _bp_norm_coop(coop)
+        cri = str(cri or "")
+        if not chave_coop or len(cri) < 10:
+            continue
+        dia = cri[:10]
+        g = grupos.setdefault((chave_coop, dia), {
+            "cooperado": " ".join(str(coop).upper().split()), "chave": chave_coop, "dia": dia,
+            "resolvidas": [], "abertas": [], "baixas_em": [],
+        })
+        k = (str(cod).strip(), cri)
+        item = {"codigo": str(cod).strip(), "produto": str(prod), "delta": int(delta or 0),
+                "status": str(status), "criado_em": cri}
+        livres = abertas.get(k) or []
+        if livres:
+            item["div_id"] = livres.pop(0)
+            g["abertas"].append(item)
+        else:
+            g["resolvidas"].append(item)
+            quandos = baixa_em.get(k) or []
+            g["baixas_em"].append(min(quandos) if quandos else cri)
+
+    agora = datetime.now(tz=_BRT).replace(tzinfo=None)
+    saida = []
+    for (chave, dia), g in grupos.items():
+        if not g["resolvidas"] or not g["abertas"] or (chave, dia) in dispensados:
+            continue
+        try:
+            primeira = datetime.strptime(min(g["baixas_em"])[:19], "%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError):
+            continue
+        if agora - primeira < timedelta(days=1):
+            continue
+        g["primeira_baixa"] = primeira.strftime("%Y-%m-%d %H:%M:%S")
+        saida.append(g)
+    saida.sort(key=lambda g: g["dia"], reverse=True)
+    return saida
+
+
+def dispensar_baixa_parcial(chave_coop: str, dia: str) -> None:
+    """'ok, está certo assim' — o grupo some do alerta."""
+    try:
+        conn = get_db()
+        conn.execute(
+            "INSERT OR IGNORE INTO baixas_parciais_dispensadas (cooperado, dia, dispensado_em) VALUES (?, ?, ?)",
+            [chave_coop, dia, datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")],
+        )
+        conn.commit()
+        sync_db()
+    except Exception as e:
+        try:
+            get_db().rollback()
+        except Exception:
+            pass
+        st.error(f"❌ Erro ao dispensar alerta: {_msg_erro_banco(e)}")
+    get_baixas_parciais.clear()
+
+
+def _bp_outras_abertas(ids_resolver: list) -> list:
+    """Divergências abertas do MESMO grupo (cooperado normalizado + dia) das que
+    vão ser resolvidas, fora elas mesmas. Lê só a réplica local."""
+    df = get_divergencias()
+    if df.empty:
+        return []
+    ids_set = {int(i) for i in ids_resolver}
+    sel = df[df["id"].astype(int).isin(ids_set)]
+    chaves = {(_bp_norm_coop(r["cooperado"]), str(r["criado_em"])[:10]) for _, r in sel.iterrows()}
+    chaves = {c for c in chaves if c[0]}
+    if not chaves:
+        return []
+    out = []
+    for _, r in df.iterrows():
+        if int(r["id"]) in ids_set:
+            continue
+        if (_bp_norm_coop(r["cooperado"]), str(r["criado_em"])[:10]) in chaves:
+            out.append({"id": int(r["id"]), "codigo": str(r["codigo"]), "produto": str(r["produto"]),
+                        "delta": int(r["delta"] or 0)})
+    return out
+
+
+def _bp_registrar_baixas(ids_resolver: list) -> None:
+    """Guarda a hora da baixa (✅ do app) antes de resolver: lê primeiro, grava em lote."""
+    df = get_divergencias()
+    if df.empty:
+        return
+    sel = df[df["id"].astype(int).isin({int(i) for i in ids_resolver})]
+    if sel.empty:
+        return
+    agora = datetime.now(tz=_BRT).strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn = get_db()
+        for _, r in sel.iterrows():
+            conn.execute(
+                "INSERT INTO divergencias_baixas (codigo, cooperado, criado_em, baixado_em) VALUES (?, ?, ?, ?)",
+                [str(r["codigo"]), str(r["cooperado"] or ""), str(r["criado_em"]), agora],
+            )
+        conn.commit()
+    except Exception:
+        try:
+            get_db().rollback()
+        except Exception:
+            pass
+
+
+def _render_baixas_parciais() -> None:
+    """Card '⚠️ Baixa parcial' no topo da aba Divergências."""
+    grupos = get_baixas_parciais()
+    if not grupos:
+        return
+    for g in grupos:
+        try:
+            dia_br = datetime.strptime(g["dia"], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except ValueError:
+            dia_br = g["dia"]
+
+        def _linhas(itens, cor):
+            return "".join(
+                f'<div style="font-size:0.78rem;color:var(--c-text-2);padding:2px 0;">'
+                f'<b style="color:var(--c-text);">{_hx(i["codigo"])}</b> · {_hx(i["produto"])} · '
+                f'<span style="color:{cor};font-weight:700;">{_hx(_bp_fmt_qtd(i["produto"], i["delta"]))}</span></div>'
+                for i in itens
+            )
+
+        st.markdown(
+            f'<div style="background:var(--c-surface-2);border-left:4px solid #FFB020;border-radius:12px;'
+            f'padding:12px 16px;margin:4px 0 6px;">'
+            f'<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">'
+            f'<span style="color:#FFB020;font-weight:700;font-size:0.9rem;">⚠️ Baixa parcial — {_hx(g["cooperado"])}</span>'
+            f'<span style="color:var(--c-muted);font-size:0.72rem;">lançado em {dia_br}</span></div>'
+            f'<div style="margin-top:8px;font-size:0.7rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;">'
+            f'✅ Baixado ({len(g["resolvidas"])})</div>{_linhas(g["resolvidas"], "#4CC38A")}'
+            f'<div style="margin-top:8px;font-size:0.7rem;color:var(--c-muted);text-transform:uppercase;letter-spacing:.06em;">'
+            f'⏳ Continua aberto ({len(g["abertas"])})</div>{_linhas(g["abertas"], "#FF5A5A")}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+        _bp_key = re.sub(r"[^A-Za-z0-9]+", "_", f"bp_ok_{g['chave']}_{g['dia']}")
+        if st.button("ok, está certo assim", key=_bp_key):
+            dispensar_baixa_parcial(g["chave"], g["dia"])
+            st.rerun()
 
 
 _SENHA_HISTORICO = ACCESS_PASSWORD  # mesma senha de acesso ao dashboard
@@ -12666,6 +12938,7 @@ if has_mestre:
 
     if _dash_tab == _TAB_DIVERG:
         df_div = get_divergencias()
+        _render_baixas_parciais()
         if df_div.empty:
             st.info("Nenhuma divergência.")
         else:
@@ -13072,11 +13345,45 @@ new Chart(document.getElementById('coop-chart'),{
                 with col_btn:
                     _btn_key = f"div_{'_'.join(str(i) for i in _item_ids)}"
                     if st.button("✅", key=_btn_key, help="Resolver divergência manualmente"):
-                        for _rid in _item_ids:
-                            resolver_divergencia(int(_rid))
-                        get_divergencias.clear()
-                        get_historico_divergencias.clear()
-                        st.rerun()
+                        _bp_outras = _bp_outras_abertas(_item_ids)
+                        if _bp_outras:
+                            # Pergunta antes: o mesmo cooperado tem outras abertas do mesmo dia.
+                            st.session_state["_bp_confirmar"] = {"key": _btn_key, "ids": list(_item_ids),
+                                                                 "outras": _bp_outras}
+                        else:
+                            _bp_registrar_baixas(_item_ids)
+                            for _rid in _item_ids:
+                                resolver_divergencia(int(_rid))
+                            get_divergencias.clear()
+                            get_historico_divergencias.clear()
+                            get_baixas_parciais.clear()
+                            st.rerun()
+
+                _bp_conf = st.session_state.get("_bp_confirmar")
+                if _bp_conf and _bp_conf.get("key") == _btn_key:
+                    _bp_lista = "; ".join(
+                        f"{o['codigo']} {o['produto']} ({_bp_fmt_qtd(o['produto'], o['delta'])})"
+                        for o in _bp_conf["outras"]
+                    )
+                    st.warning(
+                        f"Esse cooperado ainda tem {len(_bp_conf['outras'])} aberta(s) do mesmo dia: "
+                        f"{_bp_lista}. Confirma?"
+                    )
+                    _bpc1, _bpc2 = st.columns(2)
+                    with _bpc1:
+                        if st.button("Confirmar", key=f"bp_sim_{_btn_key}", type="primary", use_container_width=True):
+                            st.session_state.pop("_bp_confirmar", None)
+                            _bp_registrar_baixas(_bp_conf["ids"])
+                            for _rid in _bp_conf["ids"]:
+                                resolver_divergencia(int(_rid))
+                            get_divergencias.clear()
+                            get_historico_divergencias.clear()
+                            get_baixas_parciais.clear()
+                            st.rerun()
+                    with _bpc2:
+                        if st.button("Cancelar", key=f"bp_nao_{_btn_key}", use_container_width=True):
+                            st.session_state.pop("_bp_confirmar", None)
+                            st.rerun()
 
                 # Alerta de estocado de cooperado (apenas para faltas)
                 if item["status"] == "falta":
