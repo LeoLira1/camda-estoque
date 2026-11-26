@@ -6886,7 +6886,9 @@ def _render_baixas_parciais() -> None:
                 for i in itens
             )
 
-        st.markdown(
+        _bp_key = re.sub(r"[^A-Za-z0-9]+", "_", f"bp_ok_{g['chave']}_{g['dia']}")
+        _bp_box = st.container(key=f"{_bp_key}_box")
+        _bp_box.markdown(
             f'<div style="background:var(--c-surface-2);border-left:4px solid #FFB020;border-radius:12px;'
             f'padding:12px 16px;margin:4px 0 6px;">'
             f'<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">'
@@ -6899,8 +6901,7 @@ def _render_baixas_parciais() -> None:
             f'</div>',
             unsafe_allow_html=True,
         )
-        _bp_key = re.sub(r"[^A-Za-z0-9]+", "_", f"bp_ok_{g['chave']}_{g['dia']}")
-        if st.button("ok, está certo assim", key=_bp_key):
+        if _bp_box.button("ok, está certo assim", key=_bp_key):
             dispensar_baixa_parcial(g["chave"], g["dia"])
             st.rerun()
 
@@ -12938,7 +12939,6 @@ if has_mestre:
 
     if _dash_tab == _TAB_DIVERG:
         df_div = get_divergencias()
-        _render_baixas_parciais()
         if df_div.empty:
             st.info("Nenhuma divergência.")
         else:
@@ -13396,6 +13396,9 @@ new Chart(document.getElementById('coop-chart'),{
                             f"📦 Possível retirada indevida de estocado — "
                             f"{item['produto']} possui estocado de cooperado(s): {detalhes}"
                         )
+
+        # Alerta de baixa parcial: no fim da aba, depois da lista.
+        _render_baixas_parciais()
 
     if _dash_tab == _TAB_REPOR:
         if df_reposicao.empty:  # Repor na Loja
